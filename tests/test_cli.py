@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -201,7 +202,9 @@ def test_firefox_dir_completion_filters_by_prefix(monkeypatch):
 
 def test_the_yes_help_says_everything_it_skips():
     result = runner.invoke(app, ["install", "--help"])
-    flat = " ".join(result.output.replace("│", " ").split())
+    # Typer decides on colors when it is imported (CI forces them), so strip any that are there.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    flat = " ".join(plain.replace("│", " ").split())
     help_text = flat.split("--yes -y")[1]
     for skipped in ("confirming", "profile", "Firefox installation"):
         assert skipped in help_text

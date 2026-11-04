@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -149,5 +150,6 @@ def test_typers_own_errors_show_odd_paths_literally(tmp_path: Path, option: str,
     result = runner.invoke(app, ["install", option, str(missing), "--yes"])
     assert result.exit_code == 2 and "Traceback" not in result.output
     # Typer draws this error in an 80-column box, so compare without the wrapping.
-    flat = "".join(result.output.replace("│", "").split())
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)  # Typer's colors are fixed at import
+    flat = "".join(plain.replace("│", "").split())
     assert "".join(name.split()) in flat
