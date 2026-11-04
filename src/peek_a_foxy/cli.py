@@ -407,7 +407,7 @@ def done_summary(skipped_loader: bool, loader_conflict: bool) -> tuple[str, str]
         f"Both autohides start [bold]off[/]. Turn them on with [bold]{TABS_SHORTCUT}[/] (tabs) and "
         f"[bold]{URLBAR_SHORTCUT}[/] (urlbar), or add the buttons from Customize Toolbar. "
         "The shortcuts, sizes and timings can be changed in Firefox's settings, under "
-        "[bold]Peek-a-Foxy[/].\n\n"
+        "[bold]Peek a Foxy[/].\n\n"
         "No button or shortcut? Clear the startup cache in [bold]about:support[/]. "
         "A Firefox update can remove the loader: run [bold]peek-a-foxy install[/] again.\n\n"
         f"[bold magenta]PEEK-A-BOO![/] {ui.fox()}https://youtu.be/6uJf2IT2Zh8?t=59"

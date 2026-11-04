@@ -36,7 +36,7 @@
 - **Autohide da barra de navegação** (urlbar, botões, extensões). Ela abre pela própria faixa de hover, sempre que a barra de endereço recebe foco (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`) e enquanto o dropdown dela ou um popup da toolbar está aberto. A barra de favoritos se esconde e aparece junto com ela, e as barras tentam ficar abertas enquanto algo é arrastado para fora delas (com favoritos isso ainda não é confiável, veja o [roadmap](#roadmap)).
 - **Sai da frente quando precisa.** O modo Personalizar barra de ferramentas e a tela cheia ficam por conta do Firefox: as barras aparecem por inteiro ali.
 - **Opcional e por janela.** Os dois ficam desligados até você ligá-los, e cada janela mantém o seu próprio estado, guardado com a sessão.
-- **Configurações dentro do Firefox.** Uma seção Peek-a-Foxy na página de configurações muda os padrões, o tamanho da faixa, os tempos e os atalhos de todas as janelas abertas ao mesmo tempo ([detalhes](#configurações)).
+- **Configurações dentro do Firefox.** Uma seção **Peek a Foxy 🦊** na página de configurações muda os padrões, o tamanho da faixa, os tempos e os atalhos de todas as janelas abertas ao mesmo tempo ([detalhes](#configurações)).
 - **Um oi quando carrega.** Na primeira vez que o script roda num perfil, o Firefox mostra uma notificação única ("Instaalaadoooo PEEK A BOO!!! >.<"), para você saber que está funcionando. Ela segue o idioma do Firefox: inglês, ou português do Brasil quando o Firefox está em português. O botão dela abre a música da qual o nome é uma homenagem ([veja abaixo](#sobre-o-nome)).
 - **Instalador discreto.** O seu `userChrome.css` não é alterado, uma configuração de autoconfig já existente nunca é sobrescrita, e tudo pode ser removido com um comando.
 
@@ -165,7 +165,7 @@ peek-a-foxy --install-completion      # depois reinicie o shell
 
 ## Configurações
 
-A página de configurações do próprio Firefox tem uma seção **Peek-a-Foxy** (`about:preferences#peekafoxy`, ou *Configurações* no menu). Tudo abaixo vale para todas as janelas abertas ao mesmo tempo, sem reiniciar:
+A página de configurações do próprio Firefox tem uma seção **Peek a Foxy 🦊** (`about:preferences#peekafoxy`, ou *Configurações* no menu). Tudo abaixo vale para todas as janelas abertas ao mesmo tempo, sem reiniciar:
 
 - se as **janelas novas** começam com a barra de abas e a barra de navegação ocultas (as janelas que já estão abertas mantêm o próprio estado);
 - **o que abre a barra de abas por um instante**, cada coisa com o seu interruptor: trocar para outra aba, abrir uma aba nova (`Ctrl+T`, o botão `+`) e uma aba que abre direto num endereço (um link em que você clica, um favorito, uma página que abre uma janela); mais **quanto tempo ela fica aberta** depois. Passar o mouse na faixa sempre a abre. O Firefox não diz como uma aba foi aberta, então "direto num endereço" significa qualquer aba que vai carregar algo diferente da página de nova aba ou da sua página inicial;
@@ -258,7 +258,7 @@ CSS puro não detecta troca de aba nem mantém um estado separado por janela, po
 ## Solução de problemas
 
 - **Sem botão e sem atalho:** o loader não rodou. Feche todas as janelas do Firefox, abra de novo e limpe o cache de startup em `about:support`.
-- **Sem a seção Peek-a-Foxy nas configurações:** rode `peek-a-foxy install` de novo (ele define a pref de que a página precisa) e reinicie o Firefox. Se mesmo assim ela não aparecer, o Firefox pode ter mudado a página; veja o motivo no Console do Navegador, filtrando por `peekafoxy settings`.
+- **Sem a seção Peek a Foxy nas configurações:** rode `peek-a-foxy install` de novo (ele define a pref de que a página precisa) e reinicie o Firefox. Se mesmo assim ela não aparecer, o Firefox pode ter mudado a página; veja o motivo no Console do Navegador, filtrando por `peekafoxy settings`.
 - **Nada depois de uma atualização do Firefox:** a atualização substituiu a pasta de instalação; rode `peek-a-foxy install` de novo.
 - **Erros:** abra o Console do Navegador (`Ctrl+Shift+J`) e filtre por `autohide`.
 
