@@ -1,0 +1,21 @@
+name: Question or help
+description: You are stuck, or something in the docs is unclear
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        You can write in English or in Português (Brasil). Please check the
+        [Troubleshooting](https://github.com/paodelonga/peek-a-foxy#troubleshooting) section first.
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you need help with?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Commands you ran, and what they printed.
+      render: shell

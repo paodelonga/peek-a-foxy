@@ -1,0 +1,121 @@
+name: Bug report
+description: Something does not work the way the README says it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. You can write in English or in Português (Brasil).
+
+        Peek-a-Foxy changes how Firefox's own toolbars behave, so the **environment matters a lot**:
+        the same CSS can act differently with another Firefox build, desktop, window manager or theme.
+        The more of the fields below you fill in, the faster this can be reproduced.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what did you see?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Turn on the urlbar autohide with Ctrl+Alt+U
+        2. ...
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Peek-a-Foxy version
+      description: Output of `peek-a-foxy --version`
+      placeholder: peek-a-foxy 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: firefox-build
+    attributes:
+      label: Firefox build
+      options:
+        - Release
+        - Developer Edition
+        - Beta
+        - Nightly
+        - ESR
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: firefox-version
+    attributes:
+      label: Firefox version
+      description: From `about:support` or Help > About Firefox
+      placeholder: "158.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Arch Linux, Ubuntu 24.04, ...
+    validations:
+      required: true
+  - type: dropdown
+    id: display-server
+    attributes:
+      label: Display server
+      options:
+        - X11
+        - Wayland
+        - I don't know
+    validations:
+      required: true
+  - type: input
+    id: desktop
+    attributes:
+      label: Desktop environment or window manager
+      description: Say so if it is a tiling window manager (i3, sway, dwm, Hyprland, ...)
+      placeholder: GNOME, KDE Plasma, i3, ...
+    validations:
+      required: true
+  - type: checkboxes
+    id: state
+    attributes:
+      label: Which autohides were on, and what else is on screen?
+      options:
+        - label: Tab bar autohide
+        - label: Navigation bar autohide
+        - label: Bookmarks bar is shown
+        - label: I use other userChrome.css or userChrome.js customizations
+        - label: Vertical tabs or a sidebar extension (Sidebery, Tree Style Tab, ...)
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install it?
+      options:
+        - pipx
+        - uv tool
+        - pip in a virtual environment
+        - From a clone of the repository
+        - Other
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser Console output
+      description: Open the Browser Console (Ctrl+Shift+J), filter for `autohide`, and paste what shows up.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: I searched the existing issues, and this is not a duplicate
+          required: true
