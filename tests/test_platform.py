@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from support import needs_symlinks
 
 from peek_a_foxy import platform
 
@@ -62,6 +63,7 @@ def test_candidates_are_deduplicated(monkeypatch, tmp_path):
     assert platform.firefox_dir_candidates() == [directory]
 
 
+@needs_symlinks
 def test_a_symlinked_binary_resolves_to_the_real_install(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "platform", "linux")
     real = _install(tmp_path, "lib", "firefox")

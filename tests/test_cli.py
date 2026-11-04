@@ -157,10 +157,16 @@ def test_profile_option_completes_from_profiles_ini(tmp_path: Path):
     for root in (
         tmp_path / ".mozilla" / "firefox",
         tmp_path / "Library" / "Application Support" / "Firefox",
+        tmp_path / "AppData" / "Roaming" / "Mozilla" / "Firefox",
     ):
         root.mkdir(parents=True)
         (root / "profiles.ini").write_text(ini)
-    offered = _complete("peek-a-foxy install --profile ", 3, HOME=str(tmp_path))
+    home = {
+        "HOME": str(tmp_path),
+        "USERPROFILE": str(tmp_path),  # what Path.home() reads on Windows
+        "APPDATA": str(tmp_path / "AppData" / "Roaming"),
+    }
+    offered = _complete("peek-a-foxy install --profile ", 3, **home)
     assert any(path.endswith("Profiles/one") for path in offered)
     assert any(path.endswith("Profiles/two") for path in offered)
 
