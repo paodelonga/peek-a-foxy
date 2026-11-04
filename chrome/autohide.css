@@ -23,7 +23,9 @@
 :root[autohide-tabs] #TabsToolbar:hover,
 :root[autohide-tabs] #TabsToolbar:focus-within,
 :root[autohide-tabs][tabs-flash] #TabsToolbar,
-:root[autohide-tabs]:has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar {
+:root[autohide-tabs]:has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar,
+/* Hover is not updated during a drag session, so keep the bar open while a tab is being dragged. */
+:root[autohide-tabs] #TabsToolbar:has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget]) {
   height: 40px !important;
   max-height: 40px !important;
   opacity: 1;
