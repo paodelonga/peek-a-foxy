@@ -157,7 +157,7 @@ def launched(install_dir: Path, root: Path, extra_user_js: str = "") -> Iterator
             "--profile",
             str(profile),
         ],
-        env={**os.environ, "MOZ_HEADLESS": "1"},
+        env={**os.environ, "MOZ_HEADLESS": "1", "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS": "1"},
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
