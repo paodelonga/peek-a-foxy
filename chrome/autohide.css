@@ -33,23 +33,43 @@
   --autohide-bookmarks-height: 40px;
 }
 
-/* ---- Tab bar: also revealed on tab switch/open ---- */
+/* ---- Tab bar: also revealed on tab switch/open ----
+   Two variants, told apart by the root attribute customtitlebar, which Firefox sets when it draws the
+   title bar itself (Windows, macOS, Linux with client-side decorations):
+   - no customtitlebar (native title bar, e.g. tiling window managers): #TabsToolbar only holds tabs,
+     so the whole toolbar collapses to the --autohide-strip hover strip;
+   - customtitlebar: #TabsToolbar also holds the window buttons (.titlebar-buttonbox-container) and is
+     the window's drag area, so it must stay. Only the tabs (#TabsToolbar .toolbar-items: the tabs,
+     the new-tab and the list-all-tabs buttons) collapse. There is no strip here: the row stays about
+     as tall as the window buttons and the row itself is the hover target (--autohide-strip is unused).
+   Both variants share the same reveal conditions. */
 
 /* 1. base */
-:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar {
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]) #TabsToolbar {
   min-height: 0 !important;
   overflow: hidden !important;
   transition:
     max-height var(--autohide-hide), opacity var(--autohide-hide), padding var(--autohide-hide),
     margin var(--autohide-hide), border-width var(--autohide-hide);
 }
-:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar > *,
-:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar #tabbrowser-tabs {
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]) #TabsToolbar > *,
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]) #TabsToolbar #tabbrowser-tabs {
+  min-height: 0 !important;
+}
+/* customtitlebar: the toolbar itself is left alone; the tabs holder is what clips and animates */
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar .toolbar-items {
+  min-height: 0 !important;
+  overflow: hidden !important;
+  transition:
+    max-height var(--autohide-hide), opacity var(--autohide-hide), padding var(--autohide-hide),
+    margin var(--autohide-hide), border-width var(--autohide-hide);
+}
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar #tabbrowser-tabs {
   min-height: 0 !important;
 }
 
 /* 2. collapsed: none of the reveal conditions below holds */
-:root[autohide-tabs]:not([inFullscreen], [customizing]):not([tabs-flash], [peekafoxy-dragging="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]):not([tabs-flash], [peekafoxy-dragging="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
   #TabsToolbar:not(:hover, :focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])) {
   max-height: var(--autohide-strip) !important;
   padding: 0 !important;
@@ -57,15 +77,29 @@
   border-width: 0 !important;
   opacity: 0;
 }
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]):not([tabs-flash], [peekafoxy-dragging="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
+  #TabsToolbar:not(:hover, :focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])) .toolbar-items {
+  max-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-width: 0 !important;
+  opacity: 0;
+}
 
 /* 3. revealed */
-:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar:hover,
-:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar:focus-within,
-:root[autohide-tabs]:not([inFullscreen], [customizing])[tabs-flash] #TabsToolbar,
-:root[autohide-tabs]:not([inFullscreen], [customizing])[peekafoxy-dragging="tabs"] #TabsToolbar,
-:root[autohide-tabs]:not([inFullscreen], [customizing]):has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar,
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]) #TabsToolbar:hover,
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]) #TabsToolbar:focus-within,
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing])[tabs-flash] #TabsToolbar,
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing])[peekafoxy-dragging="tabs"] #TabsToolbar,
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]):has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar,
 /* Hover is not updated during a drag session, so keep the bar open while a tab is being dragged. */
-:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar:has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget]) {
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]) #TabsToolbar:has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget]),
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar:hover .toolbar-items,
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar:focus-within .toolbar-items,
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing])[tabs-flash] #TabsToolbar .toolbar-items,
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing])[peekafoxy-dragging="tabs"] #TabsToolbar .toolbar-items,
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]):has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar .toolbar-items,
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar:has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget]) .toolbar-items {
   max-height: var(--autohide-tabs-height) !important;
   opacity: 1;
   transition:
