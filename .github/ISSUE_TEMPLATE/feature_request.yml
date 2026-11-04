@@ -1,0 +1,34 @@
+name: Feature request
+description: An idea for a new behavior or option
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. You can write in English or in Português (Brasil).
+        The [roadmap](https://github.com/paodelonga/peek-a-foxy#roadmap) lists what is already planned.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation first, then the solution you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to work on it?
+      options:
+        - "Yes, I can send a pull request"
+        - "Maybe, with some guidance"
+        - "No, I'm only suggesting it"

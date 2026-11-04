@@ -115,7 +115,7 @@ def main(
 
 
 def _fail(message: str) -> NoReturn:
-    errors.print(f"[bold red]error:[/] {message}")
+    errors.print(f"[bold red]error:[/] {message}", soft_wrap=True)  # paths must not be broken
     raise typer.Exit(1)
 
 
@@ -152,7 +152,7 @@ def _prompt_profile(profiles: list[Profile], preferred: Profile | None) -> Path:
         table.add_row(str(number), entry.name, str(entry.path), "yes" if entry.is_default else "")
     console.print(table)
     default_number = profiles.index(preferred) + 1 if preferred else None
-    choice = typer.prompt("Install into profile number", default=default_number, type=int)
+    choice: int = typer.prompt("Install into profile number", default=default_number, type=int)
     if not 1 <= choice <= len(profiles):
         _fail(f"choose a number between 1 and {len(profiles)}")
     return profiles[choice - 1].path
@@ -187,7 +187,7 @@ def _choose_firefox_dir(yes: bool) -> Path:
     for number, candidate in enumerate(candidates, start=1):
         table.add_row(str(number), str(candidate))
     console.print(table)
-    choice = typer.prompt("Install the loader into number", type=int)
+    choice: int = typer.prompt("Install the loader into number", type=int)
     if not 1 <= choice <= len(candidates):
         _fail(f"choose a number between 1 and {len(candidates)}")
     return candidates[choice - 1]
@@ -243,7 +243,7 @@ def install(
     warnings = _apply(plan, f"Install into {profile_path}", dry_run, yes)
 
     for warning in warnings:
-        console.print(f"[yellow]warning:[/] {warning}")
+        console.print(f"[yellow]warning:[/] {warning}", soft_wrap=True)
     console.print(
         Panel(
             "Close [bold]all[/] Firefox windows and start it again.\n\n"

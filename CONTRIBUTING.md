@@ -50,7 +50,32 @@ fix(installer): do not overwrite an existing config.js
 docs: add a Portuguese README
 ```
 
-One logical change per commit.
+One logical change per commit. CI checks every commit message of a pull request with commitizen.
+
+## Releasing
+
+Releases are cut from `main` by the maintainer. The version lives in `pyproject.toml`, the notes in
+`CHANGELOG.md` (written by hand, in the [Keep a Changelog](https://keepachangelog.com/) format), and
+[commitizen](https://commitizen-tools.github.io/commitizen/) does the mechanical part.
+
+1. On `devel/devel`, move the `[Unreleased]` entries of `CHANGELOG.md` under the new version and date,
+   and commit that (`docs: changelog for X.Y.Z`).
+2. Run `cz bump --dry-run` to see the version the commits since the last tag call for, then `cz bump`:
+   it updates `pyproject.toml`, makes the commit `chore(release): X.Y.Z` and creates the annotated tag
+   `vX.Y.Z`.
+3. Open a pull request from `devel/devel` into `main` and merge it once CI is green, then push the tag
+   (`git push origin vX.Y.Z`).
+4. Create the GitHub release from the tag, with the changelog entry as its notes.
+
+The commit types decide the number: a `feat` is a minor bump, a `fix` a patch, and a `!` or a
+`BREAKING CHANGE:` footer a major bump (a minor one while the version is below 1.0).
+The first release, `v0.1.0`, was made by hand with the same steps, since there was no earlier tag.
+
+## Reporting problems and asking for things
+
+Use the issue forms: bug reports ask for the details that matter here (Firefox build, desktop or
+window manager, display server). Security problems go through the private advisory form instead; see
+[SECURITY.md](SECURITY.md).
 
 ## Development setup
 
@@ -60,7 +85,12 @@ Python 3.10 or newer.
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 peek-a-foxy --help
+pre-commit install          # optional: runs ruff and checks your commit message on every commit
 ```
+
+`pre-commit` runs the same checks as CI (whitespace, YAML, `ruff`, and the commit message format), so
+problems show up before you push. `cz commit` asks for the type and the summary and writes a valid
+message for you. Both are optional: CI is what enforces them.
 
 ## Tests and lint
 
