@@ -252,7 +252,7 @@ Planejado; contribuições são bem-vindas.
 
 ## Contribuindo
 
-Veja o [CONTRIBUTING.md](CONTRIBUTING.md) para o fluxo de branches, o estilo de commits e como rodar os testes.
+Veja o [CONTRIBUTING.md](CONTRIBUTING.md) para o fluxo de branches, o estilo de commits e como rodar os testes. Espera-se que todos sigam o [Código de Conduta](CODE_OF_CONDUCT.md), que está em inglês. Problemas de segurança seguem a [política de segurança](SECURITY.md).
 
 ## Licença e créditos
 
