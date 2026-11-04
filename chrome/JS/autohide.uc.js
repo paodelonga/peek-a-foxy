@@ -126,9 +126,43 @@
     clearTimeout(flashTimer);
     flashTimer = setTimeout(() => root.removeAttribute("tabs-flash"), Peek.read(PREFS.flashMs));
   };
-  for (const type of ["TabSelect", "TabOpen"]) {
-    gBrowser.tabContainer.addEventListener(type, flashTabs);
-  }
+
+  // Which events open the bar is up to the user (three prefs). A tab that is opened and selected fires
+  // TabOpen and then TabSelect in the same task: the open decides, so that turning "new tab" off is
+  // not undone by the switch that comes with it.
+  //
+  // Firefox does not say whether a tab was opened by a link, so it is told apart by what the tab is
+  // going to load: the new-tab page, the home page or nothing is a tab you opened; any other address
+  // (a link, a bookmark, window.open...) counts as "opens straight to an address". The load is started
+  // right after TabOpen, so the address is read one tick later.
+  const justOpened = new WeakSet();
+  const isNewTabPage = (spec) => {
+    const known = new Set(["", "about:blank", "about:newtab", "about:home"]);
+    for (const [module, object, getter] of [
+      ["AboutNewTab", "AboutNewTab", (o) => o.newTabURL],
+      ["HomePage", "HomePage", (o) => o.get(window)],
+    ]) {
+      try {
+        known.add(getter(ChromeUtils.importESModule(`resource:///modules/${module}.sys.mjs`)[object]));
+      } catch (e) {
+        // Not fatal: the fixed list above still covers the usual cases.
+      }
+    }
+    return known.has(spec);
+  };
+  gBrowser.tabContainer.addEventListener("TabSelect", (event) => {
+    if (!justOpened.has(event.target) && Peek.read(PREFS.revealSwitch)) flashTabs();
+  });
+  gBrowser.tabContainer.addEventListener("TabOpen", (event) => {
+    const tab = event.target;
+    justOpened.add(tab);
+    setTimeout(() => {
+      justOpened.delete(tab);
+      const browser = tab.linkedBrowser;
+      const address = browser?.userTypedValue ?? browser?.currentURI?.spec ?? "";
+      if (Peek.read(isNewTabPage(address) ? PREFS.revealNew : PREFS.revealLink)) flashTabs();
+    }, 0);
+  });
 
   // --- keep a bar open while something is dragged out of it ---
   //

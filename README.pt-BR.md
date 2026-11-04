@@ -166,7 +166,8 @@ peek-a-foxy --install-completion      # depois reinicie o shell
 A página de configurações do próprio Firefox tem uma seção **Peek-a-Foxy** (`about:preferences#peekafoxy`, ou *Configurações* no menu). Tudo abaixo vale para todas as janelas abertas ao mesmo tempo, sem reiniciar:
 
 - se as **janelas novas** começam com a barra de abas e a barra de navegação ocultas (as janelas que já estão abertas mantêm o próprio estado);
-- a **altura da faixa de hover**, a **animação de abertura**, o **atraso antes de uma barra se fechar** e **quanto tempo a barra de abas fica aberta** depois de trocar de aba ou abrir uma nova;
+- **o que abre a barra de abas por um instante**, cada coisa com o seu interruptor: trocar para outra aba, abrir uma aba nova (`Ctrl+T`, o botão `+`) e uma aba que abre direto num endereço (um link em que você clica, um favorito, uma página que abre uma janela); mais **quanto tempo ela fica aberta** depois. Passar o mouse na faixa sempre a abre. O Firefox não diz como uma aba foi aberta, então "direto num endereço" significa qualquer aba que vai carregar algo diferente da página de nova aba ou da sua página inicial;
+- a **altura da faixa de hover**, a **animação de abertura** e o **atraso antes de uma barra se fechar**;
 - os **atalhos** que alternam cada barra: clique no campo e pressione o novo (uma letra, um dígito ou F1 a F12, com Ctrl, Alt ou Meta; ele é validado, e as duas barras não podem compartilhar um). Cada configuração tem um botão **Restaurar**;
 - um botão para **mostrar a saudação de novo**.
 
@@ -181,7 +182,10 @@ Cada configuração é uma pref de verdade, listada no `about:config` com o seu 
 | `peekafoxy.strip.px` | `8` | Altura da faixa de hover, em pixels (1 a 40). |
 | `peekafoxy.show.ms` | `120` | Animação de abertura, em milissegundos (0 a 2000). |
 | `peekafoxy.hide.delay.ms` | `300` | Espera antes de uma barra se fechar, em milissegundos (0 a 5000). |
-| `peekafoxy.tabs.flash.ms` | `1500` | Quanto tempo a barra de abas fica aberta depois de trocar de aba ou abrir uma nova (0 a 10000). |
+| `peekafoxy.tabs.reveal.switch` | `true` | Abre a barra de abas por um instante ao trocar para outra aba. |
+| `peekafoxy.tabs.reveal.new` | `true` | Idem, ao abrir uma aba nova (a página de nova aba ou a sua página inicial). |
+| `peekafoxy.tabs.reveal.link` | `true` | Idem, quando uma aba abre direto em qualquer outro endereço (um link, um favorito, `window.open`...). |
+| `peekafoxy.tabs.flash.ms` | `1500` | Quanto tempo a barra de abas fica aberta depois de um desses eventos (0 a 10000). |
 | `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Atalho que alterna a barra de abas na janela atual. |
 | `peekafoxy.urlbar.shortcut` | `Ctrl+Alt+U` | Atalho que alterna a barra de navegação. |
 | `peekafoxy.welcomed` | `false` | Vira `true` depois da saudação única. Volte para `false` para vê-la de novo. |
