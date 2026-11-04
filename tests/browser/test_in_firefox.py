@@ -267,3 +267,85 @@ def test_a_pref_with_the_wrong_type_does_not_break_the_script(browser_with_a_bad
     press(b, "KeyU")
     assert b.js(f"return {HAS};", "autohide-urlbar")  # still fully functional
     press(b, "KeyU")
+
+
+# --- dragging out of a bar ---------------------------------------------------------------------
+
+DRAG = """
+  const node = document.querySelector(arguments[0]);
+  node.dispatchEvent(new DragEvent(arguments[1], {bubbles: true, composed: true}));
+"""
+
+
+def drag(browser, selector: str, kind: str = "dragstart") -> None:
+    browser.js(DRAG, selector, kind)
+
+
+def add_bookmark(browser) -> None:
+    browser.js(
+        """PlacesUtils.bookmarks.insert({
+             parentGuid: PlacesUtils.bookmarks.toolbarGuid,
+             url: 'https://example.com/', title: 'x',
+           });"""
+    )
+    browser.wait("document.querySelector('#PlacesToolbarItems .bookmark-item')", timeout=10)
+
+
+def test_dragging_a_bookmark_keeps_the_bookmarks_bar_open(browser):
+    browser.new_window()
+    browser.js("CustomizableUI.setToolbarVisibility('PersonalToolbar', true);")
+    add_bookmark(browser)
+    normal = browser.settled_heights()
+    press(browser, "KeyU")
+    browser.wait(
+        "document.getElementById('PersonalToolbar').getBoundingClientRect().height === 0", 8
+    )
+
+    drag(browser, "#PlacesToolbarItems .bookmark-item")
+    browser.wait(
+        f"Math.round(document.getElementById('PersonalToolbar').getBoundingClientRect().height)"
+        f" === {normal['bookmarks']}",
+        5,
+        "the bookmarks bar collapsed under the dragged bookmark",
+    )
+    assert browser.js(f"return {HAS};", "peekafoxy-dragging")
+
+    drag(browser, "#PlacesToolbarItems .bookmark-item", "dragend")
+    browser.wait(
+        "document.getElementById('PersonalToolbar').getBoundingClientRect().height === 0", 8
+    )
+    assert not browser.js(f"return {HAS};", "peekafoxy-dragging")
+    press(browser, "KeyU")
+    browser.js("CustomizableUI.setToolbarVisibility('PersonalToolbar', false);")
+
+
+def test_a_drag_that_never_reports_its_end_still_ends_on_the_next_mouse_move(browser):
+    browser.new_window()
+    browser.js("CustomizableUI.setToolbarVisibility('PersonalToolbar', true);")
+    add_bookmark(browser)
+    press(browser, "KeyU")
+    drag(browser, "#PlacesToolbarItems .bookmark-item")  # no dragend, no drop
+    assert browser.js(f"return {HAS};", "peekafoxy-dragging")
+    browser.js("window.dispatchEvent(new MouseEvent('mousemove', {bubbles: true}));")
+    assert not browser.js(f"return {HAS};", "peekafoxy-dragging")
+    press(browser, "KeyU")
+    browser.js("CustomizableUI.setToolbarVisibility('PersonalToolbar', false);")
+
+
+def test_dragging_a_tab_keeps_the_tab_bar_open_but_not_the_navigation_bar(browser):
+    browser.new_window()
+    press(browser, "KeyT")
+    press(browser, "KeyU")
+    browser.wait(
+        "document.getElementById('TabsToolbar').getBoundingClientRect().height <= 8"
+        " && document.getElementById('nav-bar').getBoundingClientRect().height <= 8",
+        8,
+    )
+    drag(browser, "#tabbrowser-tabs .tabbrowser-tab")
+    browser.wait("document.getElementById('TabsToolbar').getBoundingClientRect().height > 8", 5)
+    assert (
+        browser.js("return document.getElementById('nav-bar').getBoundingClientRect().height;") <= 8
+    )
+    drag(browser, "#tabbrowser-tabs .tabbrowser-tab", "dragend")
+    press(browser, "KeyT")
+    press(browser, "KeyU")

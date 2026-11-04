@@ -11,6 +11,8 @@
         padding, margin and border (Firefox's styling) are untouched while it is revealed;
      3. a REVEALED rule: the reveal conditions, which only set the open height.
    Rules 2 and 3 must stay exact opposites; when you add a way to reveal a bar, add it to both.
+   peekafoxy-dragging on :root (set by the script) names the bar something is being dragged out of:
+   hover does not update during a drag, so that bar has to stay open by other means.
 
    Every rule is guarded with :not([inFullscreen], [customizing]): full screen has Firefox's own way of
    showing the toolbars, and in Customize Toolbar the bars must be fully visible to be rearranged. */
@@ -43,7 +45,7 @@
 }
 
 /* 2. collapsed: none of the reveal conditions below holds */
-:root[autohide-tabs]:not([inFullscreen], [customizing]):not([tabs-flash]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
+:root[autohide-tabs]:not([inFullscreen], [customizing]):not([tabs-flash], [peekafoxy-dragging="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
   #TabsToolbar:not(:hover, :focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])) {
   max-height: var(--autohide-strip) !important;
   padding: 0 !important;
@@ -56,6 +58,7 @@
 :root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar:hover,
 :root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar:focus-within,
 :root[autohide-tabs]:not([inFullscreen], [customizing])[tabs-flash] #TabsToolbar,
+:root[autohide-tabs]:not([inFullscreen], [customizing])[peekafoxy-dragging="tabs"] #TabsToolbar,
 :root[autohide-tabs]:not([inFullscreen], [customizing]):has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar,
 /* Hover is not updated during a drag session, so keep the bar open while a tab is being dragged. */
 :root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar:has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget]) {
@@ -85,7 +88,7 @@
 }
 
 /* 2. collapsed */
-:root[autohide-urlbar]:not([inFullscreen], [customizing]):not(:has(#urlbar[open]))
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"]):not(:has(#urlbar[open]))
   #navigator-toolbox:not(:has(#PersonalToolbar:is(:hover, :focus-within)))
   #nav-bar:not(:hover, :focus-within, :has(toolbarbutton[open])) {
   max-height: var(--autohide-strip) !important;
@@ -100,6 +103,7 @@
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #nav-bar:focus-within,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #nav-bar:has(toolbarbutton[open]),
 :root[autohide-urlbar]:not([inFullscreen], [customizing]):has(#urlbar[open]) #nav-bar,
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):is([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"]) #nav-bar,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#PersonalToolbar:is(:hover, :focus-within)) #nav-bar {
   max-height: var(--autohide-nav-height) !important;
   opacity: 1;
@@ -123,7 +127,7 @@
 }
 
 /* 2. collapsed */
-:root[autohide-urlbar]:not([inFullscreen], [customizing]):not(:has(#urlbar[open]))
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"]):not(:has(#urlbar[open]))
   #navigator-toolbox:not(:has(#nav-bar:is(:hover, :focus-within), #nav-bar toolbarbutton[open]))
   #PersonalToolbar:not(:hover, :focus-within) {
   max-height: 0 !important;
@@ -137,6 +141,7 @@
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#nav-bar:is(:hover, :focus-within)) #PersonalToolbar,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#nav-bar toolbarbutton[open]) #PersonalToolbar,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]):has(#urlbar[open]) #PersonalToolbar,
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):is([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"]) #PersonalToolbar,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #PersonalToolbar:is(:hover, :focus-within) {
   max-height: var(--autohide-bookmarks-height) !important;
   opacity: 1;

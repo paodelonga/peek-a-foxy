@@ -95,6 +95,33 @@
     gBrowser.tabContainer.addEventListener(type, flashTabs);
   }
 
+  // --- keep a bar open while something is dragged out of it ---
+  //
+  // Hover is not updated during a drag, so a bar would collapse under the item being dragged (a tab, a
+  // bookmark, a toolbar button). The drag's source bar is recorded on the window root as
+  // peekafoxy-dragging="tabs|navbar|bookmarks"; the CSS treats that as one more way to reveal it.
+  // The drag is over on dragend/drop, or, if the source node was rebuilt and those never arrive, on
+  // the first mouse movement once no drag session is running (mouse events pause during a drag).
+
+  const DRAG_SOURCES = { TabsToolbar: "tabs", "nav-bar": "navbar", PersonalToolbar: "bookmarks" };
+  const endDrag = () => root.removeAttribute("peekafoxy-dragging");
+  const dragInProgress = () => {
+    try {
+      return Boolean(Services.dragService.getCurrentSession(window));
+    } catch (e) {
+      return false;
+    }
+  };
+  window.addEventListener("dragstart", (event) => {
+    const node = event.composedTarget ?? event.target;
+    const bar = (node?.closest ? node : node?.parentElement)?.closest("#TabsToolbar, #nav-bar, #PersonalToolbar");
+    if (bar) root.setAttribute("peekafoxy-dragging", DRAG_SOURCES[bar.id]);
+  }, true);
+  for (const type of ["dragend", "drop"]) window.addEventListener(type, endDrag, true);
+  window.addEventListener("mousemove", () => {
+    if (root.hasAttribute("peekafoxy-dragging") && !dragInProgress()) endDrag();
+  }, true);
+
   // --- Ctrl+Alt+T / Ctrl+Alt+U toggle the current window only ---
 
   window.addEventListener("keydown", (event) => {
