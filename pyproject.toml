@@ -26,6 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "hypothesis>=6",
+  "marionette-driver>=3",
   "pytest>=8",
   "pytest-cov>=5",
   "ruff>=0.6",
@@ -47,8 +48,11 @@ include = ["src", "chrome", "tests", "README.md", "README.pt-BR.md", "CONTRIBUTI
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Tests marked "network" clone the real fx-autoconfig; run them with `pytest -m network`.
-addopts = "-m 'not network'"
-markers = ["network: needs internet access (clones the real fx-autoconfig repository)"]
+addopts = "-m 'not network and not browser'"
+markers = [
+  "network: needs internet access (clones the real fx-autoconfig repository)",
+  "browser: drives a real headless Firefox (needs network too); see tests/browser/conftest.py",
+]
 
 [tool.coverage.run]
 source = ["peek_a_foxy"]
