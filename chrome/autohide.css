@@ -4,6 +4,13 @@
    userchrome.tabs.autohide / userchrome.urlbar.autohide.
    Collapsed to a thin hover strip; revealed on the strip, while focused, or while a related popup is open. */
 
+/* Timing: reveal fast, hide slowly. The hide delay keeps the bar from flickering when the cursor
+   briefly leaves it (e.g. drifting off the strip) and gives a moment to reach it again. */
+:root {
+  --autohide-show: 0.12s ease-out 0s;
+  --autohide-hide: 0.2s ease-in 0.3s;
+}
+
 /* ---- Tab bar: also revealed on tab switch/open ---- */
 :root[autohide-tabs] #TabsToolbar {
   height: 8px !important;
@@ -14,7 +21,7 @@
   border: 0 !important;
   overflow: hidden !important;
   opacity: 0;
-  transition: max-height 0.12s, height 0.12s, opacity 0.12s;
+  transition: max-height var(--autohide-hide), height var(--autohide-hide), opacity var(--autohide-hide);
 }
 :root[autohide-tabs] #TabsToolbar > *,
 :root[autohide-tabs] #TabsToolbar #tabbrowser-tabs {
@@ -29,6 +36,7 @@
   height: 40px !important;
   max-height: 40px !important;
   opacity: 1;
+  transition: max-height var(--autohide-show), height var(--autohide-show), opacity var(--autohide-show);
 }
 
 #tabs-autohide-button {
@@ -46,12 +54,21 @@
   border: 0 !important;
   overflow: hidden !important;
   opacity: 0;
-  transition: max-height 0.12s, opacity 0.12s;
+  transition: max-height var(--autohide-hide), opacity var(--autohide-hide);
 }
 :root[autohide-urlbar] #nav-bar:hover,
 :root[autohide-urlbar] #nav-bar:focus-within,
 :root[autohide-urlbar] #nav-bar:has(toolbarbutton[open]),
 :root[autohide-urlbar]:has(#urlbar[open]) #nav-bar {
-  max-height: 64px !important;
+  /* Close to the bar's natural height, so the animation has no dead time at its end. */
+  max-height: 52px !important;
   opacity: 1;
+  transition: max-height var(--autohide-show), opacity var(--autohide-show);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --autohide-show: 0s;
+    --autohide-hide: 0s 0.3s;
+  }
 }
