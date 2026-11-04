@@ -15,9 +15,24 @@ LEGACY_CSS_IMPORT = '@import url("tabs-autohide.css");'  # name before the proje
 OWN_IMPORTS = (CSS_IMPORT, LEGACY_CSS_IMPORT)
 
 STYLESHEETS_PREF = "toolkit.legacyUserProfileCustomizations.stylesheets"
+# fx-autoconfig only runs scripts in the browser window unless this is set; the settings page is a
+# script for about:preferences, which is a document inside a tab. Read once, at startup.
+SUBDOCUMENTS_PREF = "userChromeJS.persistent_domcontent_callback"
 TABS_PREF = "peekafoxy.tabs.autohide"
 URLBAR_PREF = "peekafoxy.urlbar.autohide"
-OWN_PREFS = (TABS_PREF, URLBAR_PREF)
+# Every pref the script registers (chrome/resources/peekafoxy.sys.mjs); uninstall removes them
+# from user.js, where people may have put them.
+OWN_PREFS = (
+    TABS_PREF,
+    URLBAR_PREF,
+    "peekafoxy.strip.px",
+    "peekafoxy.show.ms",
+    "peekafoxy.hide.delay.ms",
+    "peekafoxy.tabs.flash.ms",
+    "peekafoxy.tabs.shortcut",
+    "peekafoxy.urlbar.shortcut",
+    "peekafoxy.welcomed",
+)
 # Names used before the prefs moved under the project's own prefix, mapped to their replacements.
 LEGACY_PREFS = {
     "userchrome.tabs.autohide": TABS_PREF,

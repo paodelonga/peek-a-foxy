@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from peek_a_foxy import userfiles as uf
+from peek_a_foxy.assets import FILES
 from peek_a_foxy.installer import plan_install, plan_uninstall
 
 
@@ -11,12 +12,14 @@ def install(profile: Path, firefox_dir: Path | None = None) -> list[str]:
 def test_fresh_install_without_loader(profile: Path):
     install(profile)
     assert (profile / "chrome" / "autohide.css").is_file()
-    assert (profile / "chrome" / "JS" / "autohide.uc.js").is_file()
+    for name in FILES:
+        assert (profile / "chrome" / name).is_file(), name
     assert (profile / "chrome" / "userChrome.css").read_text() == uf.CSS_IMPORT + "\n"
-    # Only the pref Firefox needs. The autohide prefs stay out of user.js, which is re-applied on
-    # every start and would undo changes made in about:config; a missing pref means "off".
+    # Only the prefs Firefox itself needs. The autohide prefs stay out of user.js, which is
+    # re-applied on every start and would undo changes made in about:config.
     assert (profile / "user.js").read_text() == (
         'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);\n'
+        'user_pref("userChromeJS.persistent_domcontent_callback", true);\n'
     )
 
 
@@ -86,7 +89,8 @@ def test_uninstall_removes_only_what_was_installed(profile: Path):
     plan_uninstall(profile).execute()
     chrome = profile / "chrome"
     assert not (chrome / "autohide.css").exists()
-    assert not (chrome / "JS" / "autohide.uc.js").exists()
+    for name in FILES:
+        assert not (chrome / name).exists(), name
     assert (chrome / "userChrome.css").read_text() == "body{}\n"
     user_js = (profile / "user.js").read_text()
     assert 'user_pref("my.own", 1);' in user_js
@@ -130,3 +134,48 @@ def test_uninstall_also_removes_the_old_pref_names(profile: Path):
     (profile / "user.js").write_text('user_pref("userchrome.tabs.autohide", true);\n')
     plan_uninstall(profile).execute()
     assert "userchrome." not in (profile / "user.js").read_text()
+
+
+# --- the settings page: more files, more prefs ------------------------------------------------
+
+
+def test_uninstall_removes_every_pref_the_script_registers_and_keeps_firefoxs_own(profile: Path):
+    lines = "".join(f'user_pref("{name}", 1);\n' for name in uf.OWN_PREFS)
+    (profile / "user.js").write_text(lines + 'user_pref("my.own", 1);\n')
+    install(profile)
+    plan_uninstall(profile).execute()
+    user_js = (profile / "user.js").read_text()
+    assert "peekafoxy." not in user_js and 'user_pref("my.own", 1);' in user_js
+    # Shared with other scripts and other tools, so it is left alone, like the stylesheets pref.
+    assert uf.SUBDOCUMENTS_PREF in user_js and uf.STYLESHEETS_PREF in user_js
+
+
+def test_the_settings_page_needs_scripts_in_subdocuments_and_install_turns_it_on(profile: Path):
+    (profile / "user.js").write_text(f'user_pref("{uf.SUBDOCUMENTS_PREF}", false);\n')
+    install(profile)
+    assert f'user_pref("{uf.SUBDOCUMENTS_PREF}", true);' in (profile / "user.js").read_text()
+    again = (profile / "user.js").read_bytes()
+    install(profile)
+    assert (profile / "user.js").read_bytes() == again  # idempotent
+
+
+def test_an_install_that_predates_the_settings_page_is_completed_by_installing_again(
+    profile: Path,
+):
+    install(profile)
+    for name in ("JS/autohide-prefs.uc.js", "resources/peekafoxy.sys.mjs"):
+        (profile / "chrome" / name).unlink()
+    install(profile)
+    assert (profile / "chrome" / "JS" / "autohide-prefs.uc.js").is_file()
+    assert (profile / "chrome" / "resources" / "peekafoxy.sys.mjs").is_file()
+
+
+def test_other_scripts_and_resources_in_the_profile_are_left_alone(profile: Path):
+    (profile / "chrome" / "resources").mkdir()
+    (profile / "chrome" / "resources" / "userChrome.au.css").write_text("/* theirs */\n")
+    (profile / "chrome" / "JS").mkdir()
+    (profile / "chrome" / "JS" / "other.uc.js").write_text("// theirs\n")
+    install(profile)
+    plan_uninstall(profile).execute()
+    assert (profile / "chrome" / "resources" / "userChrome.au.css").read_text() == "/* theirs */\n"
+    assert (profile / "chrome" / "JS" / "other.uc.js").read_text() == "// theirs\n"

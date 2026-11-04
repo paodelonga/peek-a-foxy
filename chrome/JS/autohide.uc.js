@@ -4,91 +4,56 @@
 // @include        main
 // ==/UserScript==
 
-// Runs once per browser window through fx-autoconfig. It only flips attributes on the window root;
-// chrome/autohide.css does the actual collapsing and revealing.
+// Runs once per browser window through fx-autoconfig. It flips attributes and sets variables on the
+// window root; chrome/autohide.css does the actual collapsing and revealing. The prefs, the shortcut
+// format and the texts are in chrome/resources/peekafoxy.sys.mjs, shared with the settings page
+// (JS/autohide-prefs.uc.js).
 
 (() => {
   const LOG = "[autohide]";
-  const FLASH_MS = 1500; // how long the tab bar stays open after a tab switch/open
+  const Peek = ChromeUtils.importESModule("chrome://userchrome/content/peekafoxy.sys.mjs");
+  const { PREFS } = Peek;
 
   const root = document.documentElement;
 
   // One entry per autohidden bar.
-  //   name    key of the bar's texts in STRINGS
-  //   attr    :root attribute that chrome/autohide.css keys on
-  //   pref    default state for windows that have no saved state
-  //   session key under which the state is stored with the window (SessionStore)
-  //   code    KeyboardEvent.code of the Ctrl+Alt shortcut
-  //   button  toolbar button shown in Customize Toolbar (its texts are in STRINGS)
+  //   name     key of the bar's texts in Peek.STRINGS
+  //   attr     :root attribute that chrome/autohide.css keys on
+  //   pref     default state for windows that have no saved state
+  //   shortcut pref holding the shortcut that toggles the bar in the current window
+  //   session  key under which the state is stored with the window (SessionStore)
+  //   button   toolbar button shown in Customize Toolbar (its texts are in Peek.STRINGS)
+  //   binding  the parsed shortcut (kept up to date by applySettings)
   const TARGETS = [
     {
-      name: "tabs", attr: "autohide-tabs", pref: "peekafoxy.tabs.autohide", defaultOn: false,
-      session: "autohideTabs", code: "KeyT",
+      name: "tabs", attr: "autohide-tabs", pref: PREFS.tabsAutohide, shortcut: PREFS.tabsShortcut,
+      session: "autohideTabs",
       button: { id: "tabs-autohide-button", image: "chrome://browser/skin/tabs.svg" },
     },
     {
-      name: "urlbar", attr: "autohide-urlbar", pref: "peekafoxy.urlbar.autohide", defaultOn: false,
-      session: "autohideUrlbar", code: "KeyU",
+      name: "urlbar", attr: "autohide-urlbar", pref: PREFS.urlbarAutohide, shortcut: PREFS.urlbarShortcut,
+      session: "autohideUrlbar",
       button: { id: "urlbar-autohide-button", image: "chrome://global/skin/icons/search-glass.svg" },
     },
   ];
 
   // --- texts ---
   //
-  // Everything the user can read comes from here, in the language of Firefox's interface: Portuguese
-  // (pt, pt-BR, pt-PT...) gets the Brazilian Portuguese strings, everything else gets English. To add
-  // a language, add an entry keyed by its language code (the part before the "-" or "_"). "{key}" in a
-  // tooltip is replaced by the shortcut, so it always matches the code in TARGETS.
-  //
   // The toolbar buttons are created once, by the first window, so their texts follow the language
   // Firefox started with.
 
-  const STRINGS = {
-    en: {
-      greeting: "Instaalleeeeed PEEK A BOO!!! >.<",
-      greetingButton: "Peek-a-boo!",
-      tabs: { label: "Tabs autohide", tooltip: "Toggle tab bar autohide for this window ({key})" },
-      urlbar: { label: "Urlbar autohide",
-                tooltip: "Toggle navigation bar autohide for this window ({key})" },
-    },
-    pt: {
-      greeting: "Instaalaadoooo PEEK A BOO!!! >.<",
-      greetingButton: "Peek-a-boo!",
-      tabs: { label: "Ocultar abas automaticamente",
-              tooltip: "Alterna o ocultamento automático da barra de abas nesta janela ({key})" },
-      urlbar: { label: "Ocultar barra de endereço automaticamente",
-                tooltip: "Alterna o ocultamento automático da barra de navegação nesta janela ({key})" },
-    },
-  };
   const LOCALE = Services.locale.appLocaleAsBCP47;
-  const TEXT = STRINGS[String(LOCALE).split(/[-_]/)[0].toLowerCase()] ?? STRINGS.en;
-  const shortcutOf = (target) => `Ctrl+Alt+${target.code.replace(/^Key/, "")}`;
+  const TEXT = Peek.textFor(LOCALE);
+  const tooltipFor = (target) => TEXT[target.name].tooltip.replace("{key}", target.binding.text);
 
   // --- prefs ---
   //
-  // Registered as booleans on Firefox's *default* branch, so they are listed in about:config with the
-  // right type and a toggle button (nobody has to create them by hand, or pick the wrong type). That is
-  // not "pinning" them: nothing is written to user.js or prefs.js until someone changes a value.
-  // Reads never throw: if a pref ended up with another type (say, a number set in user.js), the
-  // default is used.
+  // Registered on Firefox's *default* branch, so they are listed in about:config with the right type
+  // (nobody has to create them by hand, or pick the wrong type). That is not "pinning" them: nothing
+  // is written to user.js or prefs.js until someone changes a value. Reads never throw: a pref of
+  // another type gives the default.
 
-  const WELCOMED_PREF = "peekafoxy.welcomed";
-  const defaultBranch = Services.prefs.getDefaultBranch("");
-  for (const [name, value] of [...TARGETS.map((t) => [t.pref, t.defaultOn]), [WELCOMED_PREF, false]]) {
-    try {
-      defaultBranch.setBoolPref(name, value);
-    } catch (e) {
-      console.warn(`${LOG} could not register ${name}:`, e);
-    }
-  }
-  const readBool = (name, fallback) => {
-    try {
-      return Services.prefs.getBoolPref(name, fallback);
-    } catch (e) {
-      console.warn(`${LOG} ${name} is not a boolean, using ${fallback}:`, e);
-      return fallback;
-    }
-  };
+  Peek.registerDefaults(console);
 
   const setEnabled = (target, on) => {
     root.toggleAttribute(target.attr, on);
@@ -99,6 +64,48 @@
     }
   };
 
+  // --- settings that apply live ---
+  //
+  // The strip height and the timings are CSS variables set on the root, but only while the user has
+  // changed the pref: with no user value the variable stays whatever autohide.css says (which people
+  // may have edited). The shortcuts are re-read and the button tooltips rewritten. The observer lives
+  // as long as the window.
+
+  const CSS_SETTINGS = [
+    [PREFS.stripPx, "--autohide-strip", (v) => `${v}px`],
+    [PREFS.showMs, "--autohide-show-duration", (v) => `${v}ms`],
+    [PREFS.hideDelayMs, "--autohide-hide-delay", (v) => `${v}ms`],
+  ];
+
+  const updateTooltips = () => {
+    for (const target of TARGETS) {
+      try {
+        const node = CustomizableUI.getWidget(target.button.id).forWindow(window).node;
+        node?.setAttribute("tooltiptext", tooltipFor(target));
+      } catch (e) {
+        // The button may not exist yet or any more; the tooltip is only a convenience.
+      }
+    }
+  };
+
+  const applySettings = () => {
+    for (const [pref, variable, css] of CSS_SETTINGS) {
+      if (Peek.hasUserValue(pref)) root.style.setProperty(variable, css(Peek.read(pref)));
+      else root.style.removeProperty(variable);
+    }
+    for (const target of TARGETS) target.binding = Peek.bindingFor(target.shortcut);
+    updateTooltips();
+  };
+
+  applySettings();
+  const settingsObserver = {
+    observe: (subject, topic, name) => {
+      if (name?.startsWith(Peek.PREF_BRANCH)) applySettings();
+    },
+  };
+  Services.prefs.addObserver(Peek.PREF_BRANCH, settingsObserver);
+  window.addEventListener("unload", () => Services.prefs.removeObserver(Peek.PREF_BRANCH, settingsObserver), { once: true });
+
   // --- initial state: saved per-window value, else the pref default ---
 
   for (const target of TARGETS) {
@@ -108,7 +115,7 @@
     } catch (e) {
       // No saved state for a brand new window.
     }
-    setEnabled(target, saved ? saved === "1" : readBool(target.pref, target.defaultOn));
+    setEnabled(target, saved ? saved === "1" : Peek.read(target.pref));
   }
 
   // --- flash the tab bar when tabs change (shortcuts, links, background tabs) ---
@@ -117,7 +124,7 @@
   const flashTabs = () => {
     root.setAttribute("tabs-flash", "");
     clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => root.removeAttribute("tabs-flash"), FLASH_MS);
+    flashTimer = setTimeout(() => root.removeAttribute("tabs-flash"), Peek.read(PREFS.flashMs));
   };
   for (const type of ["TabSelect", "TabOpen"]) {
     gBrowser.tabContainer.addEventListener(type, flashTabs);
@@ -150,11 +157,10 @@
     if (root.hasAttribute("peekafoxy-dragging") && !dragInProgress()) endDrag();
   }, true);
 
-  // --- Ctrl+Alt+T / Ctrl+Alt+U toggle the current window only ---
+  // --- the shortcuts (Ctrl+Alt+T and Ctrl+Alt+U by default) toggle the current window only ---
 
   window.addEventListener("keydown", (event) => {
-    if (!event.ctrlKey || !event.altKey || event.shiftKey || event.metaKey) return;
-    const target = TARGETS.find((t) => t.code === event.code);
+    const target = TARGETS.find((t) => Peek.matches(t.binding, event));
     if (!target) return;
     event.preventDefault();
     setEnabled(target, !root.hasAttribute(target.attr));
@@ -165,9 +171,9 @@
   // Shown once per profile, so you can tell the script is loaded and working. The pref is set before
   // the notification so that other windows opening right now don't show it again.
 
-  if (!readBool(WELCOMED_PREF, true)) {
+  if (!Peek.read({ ...PREFS.welcomed, default: true })) {
     try {
-      Services.prefs.setBoolPref(WELCOMED_PREF, true);
+      Peek.write(PREFS.welcomed, true);
       UC_API.Notifications.show({
         label: TEXT.greeting,
         type: "peekafoxy-welcome",
@@ -205,7 +211,7 @@
         id: button.id,
         type: "toolbarbutton",
         label: TEXT[target.name].label,
-        tooltip: TEXT[target.name].tooltip.replace("{key}", shortcutOf(target)),
+        tooltip: tooltipFor(target),
         image: button.image,
         "autohide-attr": attr,
         "autohide-session": session,

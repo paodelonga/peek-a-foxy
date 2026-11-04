@@ -82,7 +82,7 @@ def test_a_failure_in_the_middle_says_which_steps_were_done(profile: Path):
     assert result.exit_code == 1 and "Traceback" not in result.output
     assert (profile / "chrome" / "autohide.css").is_file()  # step 1 really ran
     assert "1 of 3 steps finished" in result.output
-    assert "Copy autohide.css and autohide.uc.js" in result.output  # which one
+    assert "Copy autohide.css, autohide.uc.js" in result.output  # which one
     assert "Running the same command again is safe" in result.output
 
 

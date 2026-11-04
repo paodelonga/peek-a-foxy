@@ -117,6 +117,35 @@ class Browser:
         self.js("gURLBar.blur(); gBrowser.selectedBrowser.focus();")
         self.wait("!gURLBar.focused", message="the URL bar kept the focus")
 
+    def open_settings(self, hash_: str = "") -> None:
+        """Open about:preferences in a new tab of the current window and wait for it to be ready."""
+        self.js(
+            "gBrowser.selectedTab = gBrowser.addTrustedTab('about:preferences' + arguments[0]);",
+            hash_,
+        )
+        self.wait(
+            "gBrowser.selectedBrowser.contentDocument?.getElementById('categories') && "
+            "gBrowser.selectedBrowser.contentDocument.readyState === 'complete'",
+            20,
+            "about:preferences did not open",
+        )
+
+    def settings(self, script: str, *args):
+        """Run ``script`` (a function body) with ``doc`` = the selected about:preferences tab."""
+        return self.js(
+            "const doc = gBrowser.selectedBrowser.contentDocument; const win = doc.defaultView;"
+            + script,
+            *args,
+        )
+
+    def close_settings_tabs(self) -> None:
+        self.js(
+            """for (const tab of [...gBrowser.tabs]) {
+                 if (tab.linkedBrowser.currentURI.spec.startsWith('about:preferences'))
+                   gBrowser.removeTab(tab);
+               }"""
+        )
+
     def switch_to(self, handle: str) -> None:
         self.client.switch_to_window(handle)
 
@@ -160,7 +189,7 @@ def launched(
 ) -> Iterator[Browser]:
     """Install into a fresh profile, start Firefox headless on it, and yield a connected helper.
 
-    ``edit_script`` may rewrite the installed ``autohide.uc.js`` before Firefox starts.
+    ``edit_script`` may rewrite each installed ``*.uc.js`` before Firefox starts.
     """
     profile = root / "profile"
     profile.mkdir()
@@ -169,8 +198,10 @@ def launched(
 
     plan_install(profile, install_dir).execute()  # the real loader, into the copy
     if edit_script is not None:
-        installed = profile / "chrome" / "JS" / "autohide.uc.js"
-        installed.write_text(edit_script(installed.read_text(encoding="utf-8")), encoding="utf-8")
+        for installed in sorted((profile / "chrome" / "JS").glob("*.uc.js")):
+            installed.write_text(
+                edit_script(installed.read_text(encoding="utf-8")), encoding="utf-8"
+            )
 
     process = subprocess.Popen(
         [
@@ -265,4 +296,28 @@ def browser_in_portuguese(
     """A Firefox whose interface language, as far as the script can tell, is pt-BR."""
     root = tmp_path_factory.mktemp("portuguese")
     with launched(firefox_install, root, edit_script=_speaking("pt-BR")) as helper:
+        yield helper
+
+
+# What the settings page asks of Firefox's about:preferences (see requirements() in the script).
+SETTINGS_PAGE_ID = '"mainPrefPane"'
+
+
+def _after_firefox_renames_the_pane_container(source: str) -> str:
+    """Pretend Firefox renamed an element the settings page depends on."""
+    if "@include        about:preferences*" not in source:
+        return source  # the script for the browser window is left alone
+    assert SETTINGS_PAGE_ID in source, f"{SETTINGS_PAGE_ID} is not in the settings script"
+    return source.replace(SETTINGS_PAGE_ID, '"mainPrefPane-renamed"')
+
+
+@pytest.fixture(scope="session")
+def browser_with_a_changed_settings_page(
+    firefox_install: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[Browser]:
+    """A Firefox whose about:preferences no longer has what the settings page looks for."""
+    root = tmp_path_factory.mktemp("changed-settings")
+    with launched(
+        firefox_install, root, edit_script=_after_firefox_renames_the_pane_container
+    ) as helper:
         yield helper
