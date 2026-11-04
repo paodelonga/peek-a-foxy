@@ -351,3 +351,10 @@ def test_microsoft_store_builds_are_recognised(path, kind):
 def test_each_sandbox_is_named():
     assert platform.sandbox_kind(Path("/snap/firefox/current")) == "Snap"
     assert platform.sandbox_kind(Path("/var/lib/flatpak/app/x")) == "Flatpak"
+
+
+def test_is_windows_follows_the_platform(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert platform.is_windows()
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert not platform.is_windows()

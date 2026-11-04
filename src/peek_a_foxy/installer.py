@@ -185,7 +185,7 @@ def _add_loader_steps(plan: Plan, checkout: list[Path], chrome: Path, firefox_di
         return None
 
     plan.add(f"Copy fx-autoconfig's utils into {chrome / 'utils'}", install_utils)
-    plan.add(f"Install the loader into {firefox_dir} (uses sudo if needed)", install_loader)
+    plan.add(f"Install the loader into {firefox_dir} ({loader.privilege_hint()})", install_loader)
 
 
 def plan_uninstall(profile: Path) -> Plan:

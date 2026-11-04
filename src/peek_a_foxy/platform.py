@@ -55,6 +55,10 @@ def system() -> str:
     )
 
 
+def is_windows() -> bool:
+    return sys.platform == "win32"
+
+
 def profiles_root() -> Path:
     """Directory that holds ``profiles.ini`` and the profiles."""
     home = Path.home()

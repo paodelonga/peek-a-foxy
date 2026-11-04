@@ -14,11 +14,11 @@ import shutil
 import stat
 import subprocess
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from peek_a_foxy import platform
+from peek_a_foxy import elevate, platform
 
 DEFAULT_REPO = "https://github.com/MrOtherGuy/fx-autoconfig.git"
 DEFAULT_COMMIT = "dfdab5684faffc112b76ccb1d8cab7f75da0102c"
@@ -142,17 +142,46 @@ def _sudo(*command: str) -> None:
         raise LoaderError(f"could not run 'sudo {' '.join(command)}'") from error
 
 
+def _copy_direct(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, destination)
+    destination.chmod(0o644)
+
+
 def _copy(source: Path, destination: Path) -> None:
     """Copy a file, falling back to sudo when the directory is not writable."""
     try:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, destination)
-        destination.chmod(0o644)
+        _copy_direct(source, destination)
     except PermissionError:
         _sudo("mkdir", "-p", str(destination.parent))
         _sudo("install", "-m", "644", str(source), str(destination))
 
 
-def install_loader(checkout: Path, firefox_dir: Path) -> None:
-    for name in LOADER_FILES:
-        _copy(checkout / "program" / name, firefox_dir / name)
+def privilege_hint() -> str:
+    if platform.is_windows():
+        return "asks for administrator permission if needed"
+    return "uses sudo if needed"
+
+
+def install_loader(
+    checkout: Path,
+    firefox_dir: Path,
+    *,
+    elevator: elevate.Elevator | None = None,
+    is_admin: Callable[[], bool] | None = None,
+) -> None:
+    """Copy the loader files; where the folder is protected, ask for rights (sudo or UAC)."""
+    if not platform.is_windows():
+        for name in LOADER_FILES:
+            _copy(checkout / "program" / name, firefox_dir / name)
+        return
+    try:
+        for name in LOADER_FILES:
+            _copy_direct(checkout / "program" / name, firefox_dir / name)
+    except PermissionError as error:
+        if (is_admin or elevate.is_admin)():
+            raise LoaderError(f"cannot write to {firefox_dir} even as administrator") from error
+        try:
+            elevate.copy_as_administrator(checkout, firefox_dir, elevator)
+        except elevate.ElevationError as failure:
+            raise LoaderError(str(failure)) from failure
