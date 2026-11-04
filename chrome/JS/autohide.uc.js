@@ -21,7 +21,7 @@
   //   button  toolbar button shown in Customize Toolbar
   const TARGETS = [
     {
-      attr: "autohide-tabs", pref: "userchrome.tabs.autohide", defaultOn: true,
+      attr: "autohide-tabs", pref: "userchrome.tabs.autohide", defaultOn: false,
       session: "autohideTabs", code: "KeyT",
       button: { id: "tabs-autohide-button", label: "Tabs autohide",
                 tooltip: "Toggle tab bar autohide for this window (Ctrl+Alt+T)",
