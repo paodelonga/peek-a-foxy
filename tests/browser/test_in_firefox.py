@@ -136,11 +136,10 @@ def test_tab_bar_collapses_to_the_strip_and_opens_to_its_full_height(browser):
     browser.new_window()
     natural = browser.settled_heights()["tabs"]
     press(browser, "KeyT")
-    browser.wait("document.getElementById('TabsToolbar').getBoundingClientRect().height <= 8", 5)
+    browser.wait(f"{browser.TABS_HEIGHT} <= 8", 5, "the tab bar did not collapse")
     browser.js("document.documentElement.setAttribute('tabs-flash', '');")
     browser.wait(
-        f"Math.round(document.getElementById('TabsToolbar').getBoundingClientRect().height)"
-        f" === {natural}",
+        f"{browser.TABS_HEIGHT} === {natural}",
         5,
         "the tab bar did not open to its natural height",
     )
@@ -364,12 +363,12 @@ def test_dragging_a_tab_keeps_the_tab_bar_open_but_not_the_navigation_bar(browse
     press(browser, "KeyT")
     press(browser, "KeyU")
     browser.wait(
-        "document.getElementById('TabsToolbar').getBoundingClientRect().height <= 8"
+        f"{browser.TABS_HEIGHT} <= 8"
         " && document.getElementById('nav-bar').getBoundingClientRect().height <= 8",
         8,
     )
     drag(browser, "#tabbrowser-tabs .tabbrowser-tab")
-    browser.wait("document.getElementById('TabsToolbar').getBoundingClientRect().height > 8", 5)
+    browser.wait(f"{browser.TABS_HEIGHT} > 8", 5, "the tab bar did not stay open")
     assert (
         browser.js("return document.getElementById('nav-bar').getBoundingClientRect().height;") <= 8
     )
