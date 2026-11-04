@@ -12,6 +12,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -56,8 +57,41 @@ def _firefox_dir() -> Path:
     return candidates[0]
 
 
+# The element that collapses when the tab bar hides. Without ``customtitlebar`` on the root (a
+# native title bar) that is #TabsToolbar itself; with it (Firefox draws the title bar: Windows,
+# macOS, Linux with client-side decorations) #TabsToolbar also holds the window buttons, so only
+# its tabs holder collapses. A JS expression, usable inside Browser.js() and Browser.wait().
+TABS_HOLDER = (
+    "(document.documentElement.hasAttribute('customtitlebar')"
+    " ? document.querySelector('#TabsToolbar .toolbar-items')"
+    " : document.getElementById('TabsToolbar'))"
+)
+TABS_HEIGHT = f"Math.round({TABS_HOLDER}.getBoundingClientRect().height)"
+
+
+FIREFOX_BINARY = "firefox.exe" if sys.platform == "win32" else "firefox"
+
+
+def _stop(process: subprocess.Popen) -> None:
+    """End Firefox and its child processes; on Windows terminate() kills only the parent."""
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, check=False
+        )
+    else:
+        process.terminate()
+    try:
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        process.kill()
+
+
 class Browser:
     """Thin helper around a Marionette session in the browser's chrome (privileged) context."""
+
+    #: JS expressions (see TABS_HOLDER), for use inside wait() conditions.
+    TABS_HOLDER = TABS_HOLDER
+    TABS_HEIGHT = TABS_HEIGHT
 
     def __init__(self, client) -> None:
         self.client = client
@@ -162,13 +196,21 @@ class Browser:
                 return current
         raise AssertionError(f"layout never settled: {last}")
 
+    def tabs_height(self) -> int:
+        """Height of whatever collapses with the tab bar (see TABS_HOLDER)."""
+        return self.js(f"return {TABS_HEIGHT};")
+
+    def tabs_collapsed(self) -> bool:
+        """Whether the tab bar is down to the strip (at most 8 px; 0 when only the tabs hide)."""
+        return self.tabs_height() <= 8
+
     def heights(self) -> dict[str, int]:
         return self.js(
-            """const h = id =>
+            f"""const h = id =>
                  Math.round(document.getElementById(id).getBoundingClientRect().height);
-               return {
-                 tabs: h('TabsToolbar'), nav: h('nav-bar'), bookmarks: h('PersonalToolbar'),
-               };"""
+               return {{
+                 tabs: {TABS_HEIGHT}, nav: h('nav-bar'), bookmarks: h('PersonalToolbar'),
+               }};"""
         )
 
 
@@ -205,7 +247,7 @@ def launched(
 
     process = subprocess.Popen(
         [
-            str(install_dir / "firefox"),
+            str(install_dir / FIREFOX_BINARY),
             "--headless",
             "--marionette",
             "--remote-allow-system-access",
@@ -249,11 +291,7 @@ def launched(
         yield helper
         client.delete_session()
     finally:
-        process.terminate()
-        try:
-            process.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            process.kill()
+        _stop(process)
 
 
 @pytest.fixture(scope="session")

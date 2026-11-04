@@ -116,6 +116,7 @@ def main(
     ] = False,
 ) -> None:
     """Peek-a-boo for Foxys: autohide the tab bar and navigation bar per window."""
+    ui.setup_streams()
 
 
 def _interactive(yes: bool) -> bool:
@@ -162,10 +163,9 @@ def _resolve_firefox_dir(firefox_dir: Path | None, skip_loader: bool, yes: bool)
         return None
     if firefox_dir is None:
         firefox_dir = _choose_firefox_dir(yes)
-    if platform.is_sandboxed(firefox_dir):
-        ui.fail(
-            f"Snap and Flatpak builds of Firefox are read-only and not supported ({firefox_dir})"
-        )
+    kind = platform.sandbox_kind(firefox_dir)
+    if kind:
+        ui.fail(f"{kind} builds of Firefox are read-only and not supported ({firefox_dir})")
     return firefox_dir
 
 
@@ -214,7 +214,15 @@ def _show_plan(plan: Plan, title: str) -> None:
 def _confirm() -> None:
     """Ask before changing anything; with nobody to ask (no terminal) refuse instead of assuming."""
     if not _interactive(False):
-        ui.fail("no terminal to ask for confirmation; pass --yes to apply the changes anyway")
+        hint = ""
+        if platform.is_windows():
+            hint = (
+                " (Git Bash does not look like a terminal to Python: "
+                "use --yes, or run it through winpty)"
+            )
+        ui.fail(
+            f"no terminal to ask for confirmation; pass --yes to apply the changes anyway{hint}"
+        )
     if not typer.confirm("Apply these changes?", default=True):
         raise typer.Exit(1)
 
@@ -281,7 +289,7 @@ def done_summary(skipped_loader: bool, loader_conflict: bool) -> tuple[str, str]
         "[bold]Peek-a-Foxy[/].\n\n"
         "No button or shortcut? Clear the startup cache in [bold]about:support[/]. "
         "A Firefox update can remove the loader: run [bold]peek-a-foxy install[/] again.\n\n"
-        "[bold magenta]PEEK-A-BOO![/] \U0001f98a  https://youtu.be/6uJf2IT2Zh8?t=59"
+        f"[bold magenta]PEEK-A-BOO![/] {ui.fox()}https://youtu.be/6uJf2IT2Zh8?t=59"
     )
 
 

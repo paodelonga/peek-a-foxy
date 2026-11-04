@@ -117,15 +117,19 @@ export function parseShortcut(input) {
 
 // The shortcut a keydown event stands for, as text, or null if it is only a modifier or an
 // unsupported key.
+// AltGr is where some layouts (Portuguese ABNT2, German, Czech...) type characters, and Windows reports
+// it as Ctrl+Alt. Such presses are never shortcuts, in the recorder or in the matcher.
+const isAltGraph = (event) => Boolean(event.getModifierState?.("AltGraph"));
+
 export function shortcutFromEvent(event) {
   const key = keyOf(event.code);
-  if (!key) return null;
+  if (!key || isAltGraph(event)) return null;
   const mods = new Set(ORDER.filter((m) => event[`${m.toLowerCase()}Key`]));
   return format(mods, key);
 }
 
 export const matches = (binding, event) =>
-  event.code === binding.code && event.ctrlKey === binding.ctrl && event.altKey === binding.alt &&
+  !isAltGraph(event) && event.code === binding.code && event.ctrlKey === binding.ctrl && event.altKey === binding.alt &&
   event.shiftKey === binding.shift && event.metaKey === binding.meta;
 
 // The binding for a shortcut pref: the user's value if it is valid, else the default.
@@ -174,7 +178,9 @@ export const STRINGS = {
       tabsShortcut: "Toggle the tab bar",
       urlbarShortcut: "Toggle the navigation bar",
       shortcutPrompt: "Click here, then press the new shortcut",
-      shortcutHint: "Use Ctrl, Alt or Meta with a letter, a digit or F1 to F12. Some desktops keep a few shortcuts for themselves (Ctrl+Alt+T opens a terminal on GNOME, Ubuntu and Linux Mint): if one does nothing, pick another.",
+      shortcutHint: "Use Ctrl, Alt or Meta with a letter, a digit or F1 to F12. Your system keeps a few shortcuts for itself: if one does nothing, pick another.",
+      shortcutHintLinux: "For example, Ctrl+Alt+T opens a terminal on GNOME, Ubuntu and Linux Mint.",
+      shortcutHintWindows: "On layouts with an AltGr key (Portuguese ABNT2, German, Czech...), AltGr counts as Ctrl+Alt and types characters, so AltGr presses are not accepted: press the left Ctrl and Alt, or use Ctrl+Shift.",
       reset: "Reset",
       greetingGroup: "Greeting",
       greetingShow: "Show the greeting again",
@@ -217,7 +223,9 @@ export const STRINGS = {
       tabsShortcut: "Alternar a barra de abas",
       urlbarShortcut: "Alternar a barra de navegação",
       shortcutPrompt: "Clique aqui e pressione o novo atalho",
-      shortcutHint: "Use Ctrl, Alt ou Meta com uma letra, um dígito ou F1 a F12. Alguns desktops reservam atalhos para si (o Ctrl+Alt+T abre um terminal no GNOME, no Ubuntu e no Linux Mint): se um não fizer nada, escolha outro.",
+      shortcutHint: "Use Ctrl, Alt ou Meta com uma letra, um dígito ou F1 a F12. O seu sistema reserva alguns atalhos para si: se um não fizer nada, escolha outro.",
+      shortcutHintLinux: "Por exemplo, o Ctrl+Alt+T abre um terminal no GNOME, no Ubuntu e no Linux Mint.",
+      shortcutHintWindows: "Em layouts com a tecla AltGr (ABNT2, alemão, tcheco...), o AltGr vale como Ctrl+Alt e digita caracteres, então combinações com AltGr não são aceitas: use o Ctrl e o Alt da esquerda, ou Ctrl+Shift.",
       reset: "Restaurar",
       greetingGroup: "Saudação",
       greetingShow: "Mostrar a saudação de novo",
@@ -233,6 +241,13 @@ export const STRINGS = {
     },
   },
 };
+
+// The hint under the shortcuts: the same everywhere, plus what is true on this operating system
+// (Services.appinfo.OS is "Linux", "WINNT" or "Darwin").
+export function shortcutHint(settings, os = Services.appinfo.OS) {
+  const extra = { Linux: settings.shortcutHintLinux, WINNT: settings.shortcutHintWindows }[os];
+  return extra ? `${settings.shortcutHint} ${extra}` : settings.shortcutHint;
+}
 
 export const textFor = (locale) =>
   STRINGS[String(locale).split(/[-_]/)[0].toLowerCase()] ?? STRINGS.en;

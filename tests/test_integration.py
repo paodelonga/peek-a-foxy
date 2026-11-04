@@ -34,3 +34,17 @@ def test_github_serves_the_pinned_commit_without_its_history(monkeypatch):
             check=True,
         ).stdout.strip()
     assert count == "1"
+
+
+def test_the_pinned_hashes_of_the_administrator_copy_match_the_real_files(monkeypatch):
+    # Bump elevate.PINNED_SHA256 together with loader.DEFAULT_COMMIT; line endings must be LF.
+    import hashlib
+
+    from peek_a_foxy import elevate
+
+    monkeypatch.delenv("FXAC_REPO", raising=False)
+    monkeypatch.delenv("FXAC_COMMIT", raising=False)
+    with loader.fetch_loader() as checkout:
+        for name, digest in elevate.PINNED_SHA256.items():
+            data = (checkout / "program" / name).read_bytes()
+            assert hashlib.sha256(data).hexdigest() == digest, name

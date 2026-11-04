@@ -213,16 +213,27 @@ def test_the_strip_height_applies_to_every_open_window_at_once(browser):
 
 
 def test_the_strip_height_really_changes_how_far_a_bar_collapses(browser):
+    # The strip only exists with the native title bar; where Firefox draws its own (Windows), take
+    # that attribute off for this test, as the CSS has no strip in that case.
+    had = browser.js("return document.documentElement.hasAttribute('customtitlebar');")
+    browser.js("document.documentElement.removeAttribute('customtitlebar');")
     browser.js("document.documentElement.setAttribute('autohide-tabs', '');")
-    browser.wait("document.getElementById('TabsToolbar').getBoundingClientRect().height <= 8")
-    browser.js("Services.prefs.setIntPref('peekafoxy.strip.px', 20);")
-    browser.wait(
-        "Math.round(document.getElementById('TabsToolbar').getBoundingClientRect().height) === 20",
-        8,
-        "the tab bar did not collapse to the new strip height",
-    )
-    browser.js("Services.prefs.clearUserPref('peekafoxy.strip.px');")
-    browser.wait("document.getElementById('TabsToolbar').getBoundingClientRect().height <= 8", 8)
+    try:
+        browser.wait("document.getElementById('TabsToolbar').getBoundingClientRect().height <= 8")
+        browser.js("Services.prefs.setIntPref('peekafoxy.strip.px', 20);")
+        browser.wait(
+            "Math.round(document.getElementById('TabsToolbar').getBoundingClientRect().height)"
+            " === 20",
+            8,
+            "the tab bar did not collapse to the new strip height",
+        )
+        browser.js("Services.prefs.clearUserPref('peekafoxy.strip.px');")
+        browser.wait(
+            "document.getElementById('TabsToolbar').getBoundingClientRect().height <= 8", 8
+        )
+    finally:
+        if had:
+            browser.js("document.documentElement.setAttribute('customtitlebar', 'true');")
 
 
 def test_without_a_user_value_the_variable_is_left_to_the_stylesheet(browser):
@@ -234,6 +245,8 @@ def test_without_a_user_value_the_variable_is_left_to_the_stylesheet(browser):
 
 
 def test_the_timings_are_applied_as_css_variables(browser):
+    # A CI runner may have animations switched off, which would (rightly) win over the settings.
+    browser.js("Services.prefs.setIntPref('ui.prefersReducedMotion', 0);")
     browser.js(
         "Services.prefs.setIntPref('peekafoxy.show.ms', 250);"
         "Services.prefs.setIntPref('peekafoxy.hide.delay.ms', 900);"
@@ -250,6 +263,7 @@ def test_the_timings_are_applied_as_css_variables(browser):
     assert "250ms" in browser.js(
         "return getComputedStyle(document.documentElement).getPropertyValue('--autohide-show');"
     )
+    browser.js("Services.prefs.clearUserPref('ui.prefersReducedMotion');")
 
 
 def test_a_garbage_value_in_a_number_pref_is_clamped_not_trusted(browser):
@@ -499,3 +513,14 @@ def test_the_reveal_checkboxes_start_on_and_write_real_prefs(browser, name):
     assert browser.js("return Services.prefs.getBoolPref(arguments[0]);", pref) is False
     browser.js("Services.prefs.setBoolPref(arguments[0], true);", pref)
     browser.wait(f"{FIELD % pref}.checked === true", message="the box did not follow the pref")
+
+
+def test_the_shortcut_hint_matches_the_operating_system_running_firefox(browser):
+    browser.open_settings("#peekafoxy")
+    system = browser.js("return Services.appinfo.OS;")
+    hint = browser.settings(
+        "return doc.getElementById('peekafoxy-peekafoxy.urlbar.shortcut')"
+        ".closest('.pf-card').querySelector('.pf-note').textContent;"
+    )
+    assert ("GNOME" in hint) is (system == "Linux")
+    assert ("AltGr" in hint) is (system == "WINNT")

@@ -180,3 +180,47 @@ def test_every_pref_has_a_default_inside_its_limits_and_texts_in_both_languages(
 )
 def test_the_language_picks_the_texts_and_falls_back_to_english(browser, locale, greeting):
     assert browser.js(MODULE + "return P.textFor(arguments[0]).greeting;", locale) == greeting
+
+
+def test_altgr_presses_are_never_shortcuts(browser):
+    result = browser.js(
+        MODULE
+        + """
+        const altgr = {code: "KeyT", ctrlKey: true, altKey: true, shiftKey: false, metaKey: false,
+                       getModifierState: (name) => name === "AltGraph"};
+        const plain = {...altgr, getModifierState: () => false};
+        const binding = P.parseShortcut("Ctrl+Alt+T");
+        return [P.shortcutFromEvent(altgr), P.shortcutFromEvent(plain),
+                P.matches(binding, altgr), P.matches(binding, plain)];"""
+    )
+    assert result == [None, "Ctrl+Alt+T", False, True]
+
+
+def test_the_hint_is_the_same_everywhere_plus_what_is_true_on_this_system(browser):
+    hints = browser.js(
+        MODULE
+        + """const s = P.STRINGS.en.settings;
+           return ["Linux", "WINNT", "Darwin"].map(os => P.shortcutHint(s, os));"""
+    )
+    base = browser.js(MODULE + "return P.STRINGS.en.settings.shortcutHint;")
+    assert all(hint.startswith(base) for hint in hints)
+    assert "GNOME" in hints[0] and "GNOME" not in base
+    assert "AltGr" in hints[1] and "GNOME" not in hints[1]
+    assert hints[2] == base  # nothing special to say on macOS
+
+
+def test_the_hint_texts_exist_in_both_languages_and_name_no_system_in_the_neutral_part(browser):
+    problems = browser.js(
+        MODULE
+        + """
+        const out = [];
+        for (const lang of ["en", "pt"]) {
+          const s = P.STRINGS[lang].settings;
+          for (const key of ["shortcutHint", "shortcutHintLinux", "shortcutHintWindows"])
+            if (!s[key]) out.push(`${lang}.${key} missing`);
+          if (/GNOME|Ubuntu|Windows/.test(s.shortcutHint))
+            out.push(`${lang}: neutral hint names a system`);
+        }
+        return out;"""
+    )
+    assert problems == []
