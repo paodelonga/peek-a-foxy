@@ -42,7 +42,11 @@ jobs:
 
   # Clones the real fx-autoconfig at the pinned commit; guards against upstream rewriting history.
   network:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -55,7 +59,11 @@ jobs:
 
   # Drives a real headless Firefox (needs network: it loads the real fx-autoconfig).
   browser:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

@@ -12,6 +12,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -66,6 +67,23 @@ TABS_HOLDER = (
     " : document.getElementById('TabsToolbar'))"
 )
 TABS_HEIGHT = f"Math.round({TABS_HOLDER}.getBoundingClientRect().height)"
+
+
+FIREFOX_BINARY = "firefox.exe" if sys.platform == "win32" else "firefox"
+
+
+def _stop(process: subprocess.Popen) -> None:
+    """End Firefox and its child processes; on Windows terminate() kills only the parent."""
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, check=False
+        )
+    else:
+        process.terminate()
+    try:
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        process.kill()
 
 
 class Browser:
@@ -229,7 +247,7 @@ def launched(
 
     process = subprocess.Popen(
         [
-            str(install_dir / "firefox"),
+            str(install_dir / FIREFOX_BINARY),
             "--headless",
             "--marionette",
             "--remote-allow-system-access",
@@ -273,11 +291,7 @@ def launched(
         yield helper
         client.delete_session()
     finally:
-        process.terminate()
-        try:
-            process.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            process.kill()
+        _stop(process)
 
 
 @pytest.fixture(scope="session")
