@@ -35,6 +35,7 @@
 - **Autohide da barra de navegação** (urlbar, botões, extensões). Ela abre pela própria faixa de hover, sempre que a barra de endereço recebe foco (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`) e enquanto o dropdown dela ou um popup da toolbar está aberto. A barra de favoritos se esconde e aparece junto com ela, e as barras tentam ficar abertas enquanto algo é arrastado para fora delas (com favoritos isso ainda não é confiável, veja o [roadmap](#roadmap)).
 - **Sai da frente quando precisa.** O modo Personalizar barra de ferramentas e a tela cheia ficam por conta do Firefox: as barras aparecem por inteiro ali.
 - **Opcional e por janela.** Os dois ficam desligados até você ligá-los, e cada janela mantém o seu próprio estado, guardado com a sessão.
+- **Configurações dentro do Firefox.** Uma seção Peek-a-Foxy na página de configurações muda os padrões, o tamanho da faixa, os tempos e os atalhos de todas as janelas abertas ao mesmo tempo ([detalhes](#configurações)).
 - **Um oi quando carrega.** Na primeira vez que o script roda num perfil, o Firefox mostra uma notificação única ("Instaalaadoooo PEEK A BOO!!! >.<"), para você saber que está funcionando. Ela segue o idioma do Firefox: inglês, ou português do Brasil quando o Firefox está em português. O botão dela abre a música da qual o nome é uma homenagem ([veja abaixo](#sobre-o-nome)).
 - **Instalador discreto.** O seu `userChrome.css` não é alterado, uma configuração de autoconfig já existente nunca é sobrescrita, e tudo pode ser removido com um comando.
 
@@ -65,9 +66,11 @@ $ peek-a-foxy install
 Install into ~/.mozilla/firefox/abcd1234.default-release
 ┌───┬────────────────────────────────────────────────────────────────┐
 │ 1 │ Fetch fx-autoconfig (dfdab5684f, verified)                     │
-│ 2 │ Copy autohide.css and autohide.uc.js into …/chrome             │
+│ 2 │ Copy autohide.css, autohide.uc.js, autohide-prefs.uc.js and    │
+│   │ peekafoxy.sys.mjs into …/chrome                                │
 │ 3 │ Add the @import line to …/chrome/userChrome.css                │
-│ 4 │ Enable userChrome.css loading in …/user.js                     │
+│ 4 │ Enable userChrome.css loading and the settings page in         │
+│   │ …/user.js                                                      │
 │ 5 │ Copy fx-autoconfig's utils into …/chrome/utils                 │
 │ 6 │ Install the loader into /usr/lib/firefox (uses sudo if needed) │
 └───┴────────────────────────────────────────────────────────────────┘
@@ -97,10 +100,12 @@ No seu perfil (`~/.mozilla/firefox/<perfil>/`):
 ```text
 chrome/
 ├── autohide.css            ← este projeto
-├── JS/autohide.uc.js       ← este projeto
+├── JS/autohide.uc.js       ← este projeto (o autohide em si)
+├── JS/autohide-prefs.uc.js ← este projeto (a página de configurações)
+├── resources/peekafoxy.sys.mjs ← este projeto (compartilhado pelos dois scripts)
 ├── utils/                  ← fx-autoconfig (a metade do loader que fica no perfil)
 └── userChrome.css          ← seu; uma linha é adicionada no topo, o resto não é tocado
-user.js                     ← uma pref adicionada (abaixo)
+user.js                     ← duas prefs adicionadas (abaixo)
 ```
 
 Uma linha no topo do seu `userChrome.css`:
@@ -109,13 +114,14 @@ Uma linha no topo do seu `userChrome.css`:
 @import url("autohide.css");
 ```
 
-Uma linha no `user.js`, a pref de que o Firefox precisa para carregar o `userChrome.css`:
+Duas linhas no `user.js`: a pref de que o Firefox precisa para carregar o `userChrome.css` e a de que o fx-autoconfig precisa para executar o script da página de configurações dentro do `about:preferences` (por padrão ele só executa scripts na janela do navegador):
 
 ```js
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+user_pref("userChromeJS.persistent_domcontent_callback", true);
 ```
 
-As prefs do autohide *não* são escritas ali de propósito: o Firefox reaplica o `user.js` a cada inicialização, o que desfaria qualquer mudança sua em `about:config`. Em vez disso, o script as registra como prefs booleanas (padrão `false`) toda vez que carrega, então elas aparecem no `about:config` com um botão de alternar, e nada é gravado em disco até você mudar um valor.
+As prefs do autohide *não* são escritas ali de propósito: o Firefox reaplica o `user.js` a cada inicialização, o que desfaria qualquer mudança sua em `about:config`. Em vez disso, o script as registra (com os padrões e os tipos certos) toda vez que carrega, então elas aparecem no `about:config`, e nada é gravado em disco até você mudar um valor.
 
 Na pasta de instalação do Firefox (por exemplo `/usr/lib/firefox/`), o loader do [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig), baixado num commit fixo e verificado (só esse commit, sem o histórico):
 
@@ -157,15 +163,30 @@ peek-a-foxy --install-completion      # depois reinicie o shell
 
 ## Configurações
 
-As três aparecem no `about:config` como booleanas, então você só alterna (não precisa criar nada), e as suas mudanças permanecem. As duas primeiras só determinam o estado inicial de janelas que não têm um estado guardado; janelas existentes mantêm o seu.
+A página de configurações do próprio Firefox tem uma seção **Peek-a-Foxy** (`about:preferences#peekafoxy`, ou *Configurações* no menu). Tudo abaixo vale para todas as janelas abertas ao mesmo tempo, sem reiniciar:
+
+- se as **janelas novas** começam com a barra de abas e a barra de navegação ocultas (as janelas que já estão abertas mantêm o próprio estado);
+- a **altura da faixa de hover**, a **animação de abertura**, o **atraso antes de uma barra se fechar** e **quanto tempo a barra de abas fica aberta** depois de trocar de aba ou abrir uma nova;
+- os **atalhos** que alternam cada barra: clique no campo e pressione o novo (uma letra, um dígito ou F1 a F12, com Ctrl, Alt ou Meta; ele é validado, e as duas barras não podem compartilhar um). Cada configuração tem um botão **Restaurar**;
+- um botão para **mostrar a saudação de novo**.
+
+A página é adicionada por um segundo script, o `autohide-prefs.uc.js`, que precisa que o Firefox execute scripts no `about:preferences` (o instalador define a pref `userChromeJS.persistent_domcontent_callback` para isso; então rode `peek-a-foxy install` de novo depois de atualizar e reinicie o Firefox). Se uma atualização do Firefox mudar a página de configurações de um jeito que o script não espera, ele não adiciona nada e explica o motivo no Console do navegador; as prefs abaixo continuam funcionando no `about:config`.
+
+Cada configuração é uma pref de verdade, listada no `about:config` com o seu tipo, e nada é gravado em disco até você mudar um valor:
 
 | Pref | Padrão | Significado |
 | --- | --- | --- |
 | `peekafoxy.tabs.autohide` | `false` | Abre janelas novas com a barra de abas oculta. |
 | `peekafoxy.urlbar.autohide` | `false` | Abre janelas novas com a barra de navegação oculta. |
-| `peekafoxy.welcomed` | `false` | O Firefox define como `true` depois da saudação única. Volte para `false` para vê-la de novo. |
+| `peekafoxy.strip.px` | `8` | Altura da faixa de hover, em pixels (1 a 40). |
+| `peekafoxy.show.ms` | `120` | Animação de abertura, em milissegundos (0 a 2000). |
+| `peekafoxy.hide.delay.ms` | `300` | Espera antes de uma barra se fechar, em milissegundos (0 a 5000). |
+| `peekafoxy.tabs.flash.ms` | `1500` | Quanto tempo a barra de abas fica aberta depois de trocar de aba ou abrir uma nova (0 a 10000). |
+| `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Atalho que alterna a barra de abas na janela atual. |
+| `peekafoxy.urlbar.shortcut` | `Ctrl+Alt+U` | Atalho que alterna a barra de navegação. |
+| `peekafoxy.welcomed` | `false` | Vira `true` depois da saudação única. Volte para `false` para vê-la de novo. |
 
-Para fixar um valor num arquivo (ele é reaplicado a cada inicialização), coloque a linha no `user.js` da pasta do seu perfil (`~/.mozilla/firefox/<perfil>/user.js`):
+Um número fora do intervalo é ajustado ao limite, e um atalho inválido volta ao padrão. Para fixar um valor num arquivo (ele é reaplicado a cada inicialização), coloque a linha no `user.js` da pasta do seu perfil (`~/.mozilla/firefox/<perfil>/user.js`):
 
 ```js
 // <perfil>/user.js
@@ -173,7 +194,7 @@ user_pref("peekafoxy.tabs.autohide", true);
 user_pref("peekafoxy.urlbar.autohide", true);
 ```
 
-Estes são os padrões. A altura da faixa, as alturas das barras e os tempos de animação são variáveis CSS no topo de [`chrome/autohide.css`](chrome/autohide.css). Para mudá-las, edite a cópia instalada no seu perfil (ou a do repositório, e instale de novo):
+Estes são os padrões da folha de estilo. A altura da faixa e os dois tempos também podem ser definidos nas configurações do Firefox, e o valor definido lá prevalece; as alturas das barras só existem aqui. Para editar a folha de estilo, mude a cópia instalada no seu perfil (ou a do repositório, e instale de novo):
 
 ```css
 /* <perfil>/chrome/autohide.css */
@@ -182,8 +203,10 @@ Estes são os padrões. A altura da faixa, as alturas das barras e os tempos de 
   --autohide-tabs-height: 64px;           /* teto: a barra de abas abre até a altura natural, no máximo isto */
   --autohide-nav-height: 52px;            /* altura aberta da barra de navegação (perto da natural) */
   --autohide-bookmarks-height: 40px;      /* altura aberta da barra de favoritos */
-  --autohide-show: 0.12s ease-out 0s;     /* abrindo: duração, curva, atraso */
-  --autohide-hide: 0.2s ease-in 0.3s;     /* fechando: espera 0,3s antes de recolher */
+  --autohide-show-duration: 0.12s;        /* abrindo: quanto tempo leva */
+  --autohide-hide-delay: 0.3s;            /* fechando: quanto esperar antes de recolher */
+  --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* abrindo: duração, curva, atraso */
+  --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);       /* fechando: duração, curva, atraso */
 }
 ```
 
@@ -229,6 +252,7 @@ CSS puro não detecta troca de aba nem mantém um estado separado por janela, po
 ## Solução de problemas
 
 - **Sem botão e sem atalho:** o loader não rodou. Feche todas as janelas do Firefox, abra de novo e limpe o cache de startup em `about:support`.
+- **Sem a seção Peek-a-Foxy nas configurações:** rode `peek-a-foxy install` de novo (ele define a pref de que a página precisa) e reinicie o Firefox. Se mesmo assim ela não aparecer, o Firefox pode ter mudado a página; veja o motivo no Console do Navegador, filtrando por `peekafoxy settings`.
 - **Nada depois de uma atualização do Firefox:** a atualização substituiu a pasta de instalação; rode `peek-a-foxy install` de novo.
 - **Erros:** abra o Console do Navegador (`Ctrl+Shift+J`) e filtre por `autohide`.
 
@@ -249,7 +273,6 @@ Planejado; contribuições são bem-vindas.
 - [ ] Gerenciadores de janela em mosaico e menus de contexto: alguns WMs em mosaico tomam o ponteiro quando um menu de contexto abre, então a barra de abas pode fechar enquanto o menu está aberto.
 - [ ] Abrir as barras por cima da página em vez de empurrá-la para baixo. Hoje uma barra revelada empurra a página, o que refaz o layout da página a cada quadro da animação.
 - [ ] A barra de favoritos fechando quando um favorito é pressionado e segurado ou arrastado, visto em pelo menos um ambiente (Linux, gerenciador de janelas em mosaico). Os testes automatizados enviam eventos de arrasto sintéticos e não reproduzem isso. Relatos são bem-vindos, com a build do Firefox, o desktop ou gerenciador de janelas e o servidor gráfico (X11 ou Wayland).
-- [ ] Uma interface de configurações para o tamanho da faixa, os atrasos e os atalhos, em vez de editar variáveis CSS.
 
 ## Sobre o nome
 
