@@ -1,4 +1,4 @@
-"""Per-window autohide for Firefox's tab bar and navigation bar."""
+"""Peek-a-boo for Foxys: autohide the tab bar and navigation bar per window."""
 
 from importlib.metadata import PackageNotFoundError, version
 

@@ -24,19 +24,44 @@ from peek_a_foxy.loader import LoaderError
 from peek_a_foxy.profiles import NoProfilesError, Profile, default_profile, read_profiles
 
 app = typer.Typer(
-    help="Per-window autohide for Firefox's tab bar and navigation bar.",
+    help="Peek-a-boo for Foxys: autohide the tab bar and navigation bar per window.",
     no_args_is_help=True,
-    add_completion=False,
+    add_completion=True,  # adds --install-completion / --show-completion for bash, zsh, fish
     rich_markup_mode="rich",
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 console = Console()
 errors = Console(stderr=True)
+
+
+def _complete_profile(incomplete: str) -> list[tuple[str, str]]:
+    """Shell completion for --profile: the profiles listed in profiles.ini."""
+    try:
+        profiles = read_profiles(platform.profiles_root())
+    except (NoProfilesError, platform.UnsupportedPlatformError):
+        return []
+    return [
+        (str(profile.path), profile.name)
+        for profile in profiles
+        if str(profile.path).startswith(incomplete)
+    ]
+
+
+def _complete_firefox_dir(incomplete: str) -> list[str]:
+    """Shell completion for --firefox-dir: the Firefox installations that were detected."""
+    try:
+        candidates = platform.firefox_dir_candidates()
+    except platform.UnsupportedPlatformError:
+        return []
+    return [str(path) for path in candidates if str(path).startswith(incomplete)]
+
 
 ProfileOption = Annotated[
     Path | None,
     typer.Option(
         "--profile",
         help="Firefox profile directory. Default: the default profile from profiles.ini.",
+        autocompletion=_complete_profile,
         exists=True,
         file_okay=False,
         resolve_path=True,
@@ -47,6 +72,7 @@ FirefoxDirOption = Annotated[
     typer.Option(
         "--firefox-dir",
         help="Firefox install directory for the loader. Default: auto-detected.",
+        autocompletion=_complete_firefox_dir,
         exists=True,
         file_okay=False,
         resolve_path=True,
@@ -85,7 +111,7 @@ def main(
         ),
     ] = False,
 ) -> None:
-    """Per-window autohide for Firefox's tab bar and navigation bar."""
+    """Peek-a-boo for Foxys: autohide the tab bar and navigation bar per window."""
 
 
 def _fail(message: str) -> NoReturn:
