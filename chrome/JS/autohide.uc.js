@@ -82,8 +82,7 @@
   // --- one-time greeting ---
   //
   // Shown once per profile, so you can tell the script is loaded and working. The pref is set before
-  // the notification so that other windows opening right now don't show it again. The button's
-  // callback only uses its own argument, like the widget callbacks below.
+  // the notification so that other windows opening right now don't show it again.
   //
   // The text follows Firefox's interface language: Portuguese (pt, pt-BR, pt-PT...) gets the
   // Brazilian Portuguese strings, everything else gets English. To add a language, add an entry to
@@ -107,8 +106,10 @@
         buttons: [
           {
             label: text.button,
-            callback(notification) {
-              notification.ownerGlobal.openWebLinkIn("https://youtu.be/6uJf2IT2Zh8?t=59", "tab");
+            callback() {
+              // The argument Firefox passes here changes between versions, so don't rely on it:
+              // the notification lives in this window, which is the one that should open the tab.
+              window.openWebLinkIn("https://youtu.be/6uJf2IT2Zh8?t=59", "tab");
               return false;
             },
           },
