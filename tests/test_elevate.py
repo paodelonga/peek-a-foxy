@@ -600,3 +600,56 @@ def test_the_real_elevator_gets_quotes_newlines_and_backslashes_at_that_size(tmp
         elevate.windows_elevator([sys.executable, "-I", "-S", "-c", code, str(out), payload]) == 0
     )
     assert out.read_text() == payload
+
+
+# --- the standalone program (PyInstaller): the same helper, run by the program itself ------------
+
+
+@pytest.fixture
+def frozen(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+
+def test_the_frozen_command_runs_the_program_itself_with_the_flag(pinned, frozen, tmp_path):
+    command = elevate.helper_command(tmp_path, [CONFIG, PREFS])
+    assert command[:3] == [sys.executable, elevate.FROZEN_FLAG, str(tmp_path)]
+    assert [base64.b64decode(item) for item in command[3:]] == [CONFIG, PREFS]
+    assert "-c" not in command  # no code on the command line: it is embedded in the program
+
+
+def test_the_frozen_helper_writes_both_files_and_reports_by_return_value(pinned, frozen, tmp_path):
+    folder = firefox(tmp_path)
+    arguments = elevate.helper_command(folder, [CONFIG, PREFS])[2:]
+    assert elevate.run_frozen_helper(arguments) == elevate.OK
+    assert (folder / "config.js").read_bytes() == CONFIG
+    assert (folder / "defaults" / "pref" / "config-prefs.js").read_bytes() == PREFS
+
+
+def test_the_frozen_helper_applies_the_same_checks(pinned, frozen, tmp_path):
+    folder = firefox(tmp_path)
+    arguments = elevate.helper_command(folder, [CONFIG, b"tampered"])[2:]
+    assert elevate.run_frozen_helper(arguments) == elevate.MISMATCH
+    assert not (folder / "config.js").exists()
+    assert elevate.run_frozen_helper([str(folder)]) == elevate.USAGE
+    other = firefox(tmp_path, "Other", product="Thunderbird")
+    arguments = elevate.helper_command(other, [CONFIG, PREFS])[2:]
+    assert elevate.run_frozen_helper(arguments) == elevate.NOT_FIREFOX
+
+
+def test_only_the_standalone_program_honours_the_flag(monkeypatch, tmp_path):
+    from peek_a_foxy import __main__ as entry
+
+    called: list[list[str]] = []
+    monkeypatch.setattr(
+        elevate, "run_frozen_helper", lambda arguments: called.append(arguments) or 0
+    )
+    monkeypatch.setattr(entry, "app", lambda **_: None)
+    monkeypatch.setattr(sys, "argv", ["peek-a-foxy", elevate.FROZEN_FLAG, "x"])
+
+    entry.main()  # not frozen: the flag is ignored and the normal CLI runs
+    assert called == []
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    with pytest.raises(SystemExit) as stop:
+        entry.main()
+    assert stop.value.code == 0 and called == [["x"]]

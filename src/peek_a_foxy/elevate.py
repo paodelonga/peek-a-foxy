@@ -6,6 +6,9 @@ to write travel inside its command line, and it checks them against SHA-256 valu
 package (next to the pinned fx-autoconfig commit) before writing anything. Its only way to report
 is its exit code. A same-user attacker who can rewrite the Python installation can still abuse the
 prompt the user approves; that cannot be removed from here and is stated in the README.
+
+In the standalone ``peek-a-foxy.exe`` there is no Python to start: the elevated process is the same
+program run with ``--elevated-copy``, which executes the very same embedded helper code.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ PINNED_SHA256 = {
     ),
 }
 TIMEOUT_SECONDS = 180
+FROZEN_FLAG = "--elevated-copy"  # how the standalone program is told to run the helper
 
 # How long the command may be. ShellExecuteEx ends up in CreateProcessW, and Microsoft documents for
 # its lpCommandLine: "The maximum length of this string is 32,767 characters, including the Unicode
@@ -134,9 +138,31 @@ def helper_code() -> str:
     return HELPER_CODE.replace("{pinned}", json.dumps(list(PINNED_SHA256.values())))
 
 
+def is_frozen() -> bool:
+    """True inside the standalone program built by PyInstaller."""
+    return bool(getattr(sys, "frozen", False))
+
+
+def run_frozen_helper(arguments: list[str]) -> int:
+    """Entry of the elevated copy in the standalone program: run the embedded helper code.
+
+    ``arguments`` are what follows ``--elevated-copy``: the Firefox folder and the two payloads.
+    """
+    sys.argv = [sys.argv[0], *arguments]
+    try:
+        exec(
+            compile(helper_code(), "<peek-a-foxy elevated copy>", "exec"), {"__name__": "__main__"}
+        )
+    except SystemExit as stop:
+        return stop.code if isinstance(stop.code, int) else USAGE
+    return USAGE  # the helper always exits; reaching this line means it did not run
+
+
 def helper_command(firefox_dir: Path, payloads: list[bytes]) -> list[str]:
-    """Command line of the elevated process: isolated Python, the code, the folder, the bytes."""
+    """Command line of the elevated process: the helper, the folder, the bytes."""
     encoded = [base64.b64encode(data).decode("ascii") for data in payloads]
+    if is_frozen():
+        return [sys.executable, FROZEN_FLAG, str(firefox_dir), *encoded]
     # The base interpreter, not a virtual environment's copy (pipx, uv): a venv lives in the user's
     # profile, where another program could swap python.exe or pyvenv.cfg.
     python = getattr(sys, "_base_executable", None) or sys.executable
