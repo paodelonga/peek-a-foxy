@@ -251,3 +251,14 @@ def test_uninstall_dry_run_changes_nothing(profile: Path):
     result = runner.invoke(app, ["uninstall", "--profile", str(profile), "--dry-run"])
     assert result.exit_code == 0
     assert tree(profile) == before
+
+
+def test_a_long_path_in_an_error_is_not_broken_across_lines(tmp_path: Path):
+    """People copy the path out of an error message, so it must reach them in one piece."""
+    profile = tmp_path / ("a-deliberately-long-directory-name-" * 3) / "profile"
+    (profile / "chrome").mkdir(parents=True)
+    css = profile / "chrome" / "userChrome.css"
+    css.write_bytes(b"\xff\xfe\x00")
+    result = runner.invoke(app, ["install", "--profile", str(profile), "--skip-loader", "--yes"])
+    assert result.exit_code == 1
+    assert str(css) in result.output  # more than 80 columns, still on one line

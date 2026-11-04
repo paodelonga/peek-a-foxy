@@ -115,7 +115,7 @@ def main(
 
 
 def _fail(message: str) -> NoReturn:
-    errors.print(f"[bold red]error:[/] {message}")
+    errors.print(f"[bold red]error:[/] {message}", soft_wrap=True)  # paths must not be broken
     raise typer.Exit(1)
 
 
@@ -243,7 +243,7 @@ def install(
     warnings = _apply(plan, f"Install into {profile_path}", dry_run, yes)
 
     for warning in warnings:
-        console.print(f"[yellow]warning:[/] {warning}")
+        console.print(f"[yellow]warning:[/] {warning}", soft_wrap=True)
     console.print(
         Panel(
             "Close [bold]all[/] Firefox windows and start it again.\n\n"
