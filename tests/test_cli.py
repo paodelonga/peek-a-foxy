@@ -151,24 +151,31 @@ def test_commands_and_options_are_completed():
 
 
 def test_profile_option_completes_from_profiles_ini(tmp_path: Path):
-    (tmp_path / ".mozilla" / "firefox").mkdir(parents=True)
-    (tmp_path / ".mozilla" / "firefox" / "profiles.ini").write_text(
-        "[Profile0]\nName=one\nPath=Profiles/one\n\n[Profile1]\nName=two\nPath=Profiles/two\n"
-    )
+    ini = "[Profile0]\nName=one\nPath=Profiles/one\n\n[Profile1]\nName=two\nPath=Profiles/two\n"
+    # Where Firefox keeps profiles depends on the OS: write both so the test runs everywhere.
+    for root in (
+        tmp_path / ".mozilla" / "firefox",
+        tmp_path / "Library" / "Application Support" / "Firefox",
+    ):
+        root.mkdir(parents=True)
+        (root / "profiles.ini").write_text(ini)
     offered = _complete("peek-a-foxy install --profile ", 3, HOME=str(tmp_path))
     assert any(path.endswith("Profiles/one") for path in offered)
     assert any(path.endswith("Profiles/two") for path in offered)
 
 
 def test_completion_scripts_are_available_for_the_common_shells():
+    # --show-completion detects the parent shell, which is not reliable in CI; the completion
+    # protocol itself can be asked for a given shell.
     for shell in ("bash", "zsh", "fish"):
         result = subprocess.run(
-            [sys.executable, "-m", "peek_a_foxy", "--show-completion", shell],
+            [sys.executable, "-m", "peek_a_foxy"],
+            env={**os.environ, "_PEEK_A_FOXY_COMPLETE": f"source_{shell}"},
             capture_output=True,
             text=True,
         )
         assert result.returncode == 0, result.stderr
-        assert "PEEK_A_FOXY_COMPLETE" in result.stdout or "peek-a-foxy" in result.stdout
+        assert "PEEK_A_FOXY_COMPLETE" in result.stdout, shell
 
 
 def test_completion_helpers_cope_with_missing_data(tmp_path: Path, monkeypatch):
