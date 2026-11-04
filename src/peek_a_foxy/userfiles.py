@@ -15,9 +15,14 @@ LEGACY_CSS_IMPORT = '@import url("tabs-autohide.css");'  # name before the proje
 OWN_IMPORTS = (CSS_IMPORT, LEGACY_CSS_IMPORT)
 
 STYLESHEETS_PREF = "toolkit.legacyUserProfileCustomizations.stylesheets"
-TABS_PREF = "userchrome.tabs.autohide"
-URLBAR_PREF = "userchrome.urlbar.autohide"
+TABS_PREF = "peekafoxy.tabs.autohide"
+URLBAR_PREF = "peekafoxy.urlbar.autohide"
 OWN_PREFS = (TABS_PREF, URLBAR_PREF)
+# Names used before the prefs moved under the project's own prefix, mapped to their replacements.
+LEGACY_PREFS = {
+    "userchrome.tabs.autohide": TABS_PREF,
+    "userchrome.urlbar.autohide": URLBAR_PREF,
+}
 
 
 @dataclass(frozen=True)
@@ -84,6 +89,16 @@ def _pref_pattern(name: str) -> re.Pattern[str]:
 def has_pref(text: str, name: str) -> bool:
     pattern = _pref_pattern(name)
     return any(pattern.match(line) for line in _Document.parse(text).lines)
+
+
+def get_bool_pref(text: str, name: str) -> bool | None:
+    """The boolean value of ``user_pref(name, ...)``, or ``None`` if absent or not a boolean."""
+    pattern = re.compile(rf'^\s*user_pref\(\s*"{re.escape(name)}"\s*,\s*(true|false)\s*\)')
+    for line in _Document.parse(text).lines:
+        match = pattern.match(line)
+        if match:
+            return match.group(1) == "true"
+    return None
 
 
 def remove_pref(text: str, name: str) -> str:

@@ -49,7 +49,7 @@ def test_remove_pref_only_removes_the_named_pref():
 
 def test_crlf_files_keep_their_line_endings():
     text = 'user_pref("a", 1);\r\nuser_pref("b", 2);\r\n'
-    result = uf.set_pref(text, "userchrome.tabs.autohide", False)
+    result = uf.set_pref(text, "peekafoxy.tabs.autohide", False)
     assert result.count("\r\n") == 3 and "\n" not in result.replace("\r\n", "")
     css = uf.with_css_import("body{}\r\n")
     assert css == f"{uf.CSS_IMPORT}\r\nbody{{}}\r\n"
@@ -83,10 +83,10 @@ def test_lines_without_a_trailing_newline_get_the_new_pref_on_its_own_line():
 
 
 def test_commented_out_prefs_do_not_count_as_set():
-    text = '// user_pref("userchrome.tabs.autohide", true);\n'
+    text = '// user_pref("peekafoxy.tabs.autohide", true);\n'
     assert not uf.has_pref(text, uf.TABS_PREF)
     assert uf.set_pref(text, uf.TABS_PREF, False, keep_existing=True).endswith(
-        'user_pref("userchrome.tabs.autohide", false);\n'
+        'user_pref("peekafoxy.tabs.autohide", false);\n'
     )
 
 
@@ -113,3 +113,15 @@ def test_set_pref_rewrites_in_place_and_collapses_duplicates():
         'user_pref("a.b", false);',
         'user_pref("y", 2);',
     ]
+
+
+def test_get_bool_pref():
+    text = (
+        'user_pref("a", true);\nuser_pref("b",false );\nuser_pref("c", "x");\n'
+        '// user_pref("d", true);\n'
+    )
+    assert uf.get_bool_pref(text, "a") is True
+    assert uf.get_bool_pref(text, "b") is False
+    assert uf.get_bool_pref(text, "c") is None  # not a boolean
+    assert uf.get_bool_pref(text, "d") is None  # commented out
+    assert uf.get_bool_pref(text, "missing") is None

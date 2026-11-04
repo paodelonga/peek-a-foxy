@@ -45,7 +45,7 @@ def test_crlf_and_bom_survive_an_install_and_an_uninstall(profile: Path):
     plan_uninstall(profile).execute()
     after = user_js.read_bytes()
     assert after.startswith(original)  # BOM, CRLF and the user's own line are untouched
-    assert b"userchrome." not in after
+    assert b"peekafoxy." not in after
     # The stylesheets pref stays on purpose: the user's other styles may depend on it.
     assert b"toolkit.legacyUserProfileCustomizations.stylesheets" in after
 

@@ -13,10 +13,11 @@ def test_fresh_install_without_loader(profile: Path):
     assert (profile / "chrome" / "autohide.css").is_file()
     assert (profile / "chrome" / "JS" / "autohide.uc.js").is_file()
     assert (profile / "chrome" / "userChrome.css").read_text() == uf.CSS_IMPORT + "\n"
-    user_js = (profile / "user.js").read_text()
-    assert 'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);' in user_js
-    assert 'user_pref("userchrome.tabs.autohide", false);' in user_js  # opt-in by default
-    assert 'user_pref("userchrome.urlbar.autohide", false);' in user_js
+    # Only the pref Firefox needs. The autohide prefs stay out of user.js, which is re-applied on
+    # every start and would undo changes made in about:config; a missing pref means "off".
+    assert (profile / "user.js").read_text() == (
+        'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);\n'
+    )
 
 
 def test_install_with_loader(profile: Path, firefox_dir: Path, fxac_repo: Path):
@@ -35,11 +36,11 @@ def test_install_is_idempotent(profile: Path):
 
 def test_user_content_and_changed_prefs_are_preserved(profile: Path):
     (profile / "chrome" / "userChrome.css").write_text("body { color: red; }\n")
-    (profile / "user.js").write_text('user_pref("userchrome.tabs.autohide", true);\n')
+    (profile / "user.js").write_text('user_pref("peekafoxy.tabs.autohide", true);\n')
     install(profile)
     css = (profile / "chrome" / "userChrome.css").read_text().splitlines()
     assert css == [uf.CSS_IMPORT, "body { color: red; }"]
-    assert 'user_pref("userchrome.tabs.autohide", true);' in (profile / "user.js").read_text()
+    assert 'user_pref("peekafoxy.tabs.autohide", true);' in (profile / "user.js").read_text()
 
 
 def test_migrates_from_the_old_project_name(profile: Path):
@@ -89,9 +90,43 @@ def test_uninstall_removes_only_what_was_installed(profile: Path):
     assert (chrome / "userChrome.css").read_text() == "body{}\n"
     user_js = (profile / "user.js").read_text()
     assert 'user_pref("my.own", 1);' in user_js
-    assert "userchrome." not in user_js
+    assert "peekafoxy." not in user_js
 
 
 def test_uninstall_on_a_clean_profile_does_nothing(profile: Path):
     plan_uninstall(profile).execute()
     assert not (profile / "user.js").exists()
+
+
+# --- pref names moved from userchrome.* to peekafoxy.* ----------------------------------------
+
+
+def test_an_old_on_is_carried_over_and_an_old_off_is_dropped(profile: Path):
+    (profile / "user.js").write_text(
+        'user_pref("userchrome.tabs.autohide", true);\n'
+        'user_pref("userchrome.urlbar.autohide", false);\n'  # only ever the default we wrote
+        'user_pref("my.own", 1);\n'
+    )
+    install(profile)
+    user_js = (profile / "user.js").read_text()
+    assert 'user_pref("peekafoxy.tabs.autohide", true);' in user_js  # the user's choice survives
+    assert "peekafoxy.urlbar.autohide" not in user_js
+    assert "userchrome." not in user_js
+    assert 'user_pref("my.own", 1);' in user_js
+
+
+def test_a_new_pref_already_set_wins_over_an_old_one(profile: Path):
+    (profile / "user.js").write_text(
+        'user_pref("peekafoxy.tabs.autohide", false);\n'
+        'user_pref("userchrome.tabs.autohide", true);\n'
+    )
+    install(profile)
+    user_js = (profile / "user.js").read_text()
+    assert 'user_pref("peekafoxy.tabs.autohide", false);' in user_js
+    assert "userchrome." not in user_js
+
+
+def test_uninstall_also_removes_the_old_pref_names(profile: Path):
+    (profile / "user.js").write_text('user_pref("userchrome.tabs.autohide", true);\n')
+    plan_uninstall(profile).execute()
+    assert "userchrome." not in (profile / "user.js").read_text()

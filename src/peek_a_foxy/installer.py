@@ -127,14 +127,21 @@ def plan_install(profile: Path, firefox_dir: Path | None) -> Plan:
     )
 
     def set_prefs(text: str) -> str:
+        # The only pref Firefox needs from user.js. The autohide prefs are deliberately NOT written
+        # here: user.js is re-applied on every start, which would undo changes made in about:config.
+        # The script treats a missing pref as "off".
         text = userfiles.set_pref(text, userfiles.STYLESHEETS_PREF, True)
-        # Defaults for windows without a saved state; never override a value the user has set.
-        for name in userfiles.OWN_PREFS:
-            text = userfiles.set_pref(text, name, False, keep_existing=True)
+        # Old pref names: keep a deliberate "on" under the new name, drop the old lines. An old
+        # "false" was only the default this tool used to write, so it is not carried over.
+        for old, new in userfiles.LEGACY_PREFS.items():
+            if userfiles.get_bool_pref(text, old) is True:
+                text = userfiles.set_pref(text, new, True, keep_existing=True)
+            text = userfiles.remove_pref(text, old)
         return text
 
     plan.add(
-        f"Set the prefs in {profile / 'user.js'}", lambda: _edit(profile / "user.js", set_prefs)
+        f"Enable userChrome.css loading in {profile / 'user.js'}",
+        lambda: _edit(profile / "user.js", set_prefs),
     )
 
     if firefox_dir is not None:
@@ -185,7 +192,7 @@ def plan_uninstall(profile: Path) -> Plan:
     )
 
     def drop_prefs(text: str) -> str:
-        for name in userfiles.OWN_PREFS:
+        for name in (*userfiles.OWN_PREFS, *userfiles.LEGACY_PREFS):
             text = userfiles.remove_pref(text, name)
         return text
 

@@ -15,7 +15,7 @@ documents = st.builds(
     st.sampled_from(["\n", "\r\n"]),
     st.booleans(),
 )
-pref_names = st.sampled_from(["a.b", "userchrome.tabs.autohide", "x.y.z"])
+pref_names = st.sampled_from(["a.b", "peekafoxy.tabs.autohide", "x.y.z"])
 
 
 def user_lines(text: str) -> list[str]:

@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Peek-a-Foxy: autohide for tabs and urlbar, per window
-// @description    Per-window autohide for the tab bar (button + Ctrl+Alt+T) and the navigation bar (button + Ctrl+Alt+U).
+// @description    Peek-a-boo for Foxys: per-window autohide for the tab bar (button + Ctrl+Alt+T) and the navigation bar (button + Ctrl+Alt+U).
 // @include        main
 // ==/UserScript==
 
@@ -21,14 +21,14 @@
   //   button  toolbar button shown in Customize Toolbar
   const TARGETS = [
     {
-      attr: "autohide-tabs", pref: "userchrome.tabs.autohide", defaultOn: false,
+      attr: "autohide-tabs", pref: "peekafoxy.tabs.autohide", defaultOn: false,
       session: "autohideTabs", code: "KeyT",
       button: { id: "tabs-autohide-button", label: "Tabs autohide",
                 tooltip: "Toggle tab bar autohide for this window (Ctrl+Alt+T)",
                 image: "chrome://browser/skin/tabs.svg" },
     },
     {
-      attr: "autohide-urlbar", pref: "userchrome.urlbar.autohide", defaultOn: false,
+      attr: "autohide-urlbar", pref: "peekafoxy.urlbar.autohide", defaultOn: false,
       session: "autohideUrlbar", code: "KeyU",
       button: { id: "urlbar-autohide-button", label: "Urlbar autohide",
                 tooltip: "Toggle navigation bar autohide for this window (Ctrl+Alt+U)",
@@ -94,8 +94,8 @@
   };
   const greetingFor = (locale) => GREETING[String(locale).split(/[-_]/)[0].toLowerCase()] ?? GREETING.en;
 
-  if (!Services.prefs.getBoolPref("userchrome.peekafoxy.welcomed", false)) {
-    Services.prefs.setBoolPref("userchrome.peekafoxy.welcomed", true);
+  if (!Services.prefs.getBoolPref("peekafoxy.welcomed", false)) {
+    Services.prefs.setBoolPref("peekafoxy.welcomed", true);
     try {
       const text = greetingFor(Services.locale.appLocaleAsBCP47);
       UC_API.Notifications.show({
