@@ -11,6 +11,64 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ### Added
 
+- **Windows support** (Windows 10/11, tested in CI on a real Windows runner and not yet by hand on a
+  desktop; see the README's *Windows notes*):
+  - **Profiles and Firefox are found.** Profiles in `%APPDATA%\Mozilla\Firefox` (falling back to the
+    home folder); installations through the registry (HKLM and HKCU, the 64 and 32 bit views, every
+    brand under `SOFTWARE\Mozilla`, `Install Directory`, `PathToExe`, `App Paths`), the usual
+    `Program Files`, `Program Files (x86)` and local app data folders, and `PATH`. A folder only counts
+    if it has both `omni.ja` and `firefox.exe`, so Thunderbird is never taken. `--firefox-dir` still
+    works for portable copies.
+  - **The Microsoft Store (MSIX) build is refused** like Snap and Flatpak, naming the kind of build.
+  - **An administrator prompt (UAC) only for the loader.** Firefox's folder is read-only for a normal
+    user, so when the direct copy is refused, `config.js` and `defaults\pref\config-prefs.js` are
+    written by a short-lived elevated process; the rest of the command runs as you. An administrator
+    who still cannot write gets an error instead of a second prompt; saying no to the prompt, a
+    timeout or a failed copy each have a clear message. The elevated process is `python -I -S -c`
+    (no module, file or working directory from a writable place is loaded), receives the two files'
+    bytes in its command line, checks them against SHA-256 values pinned in the package next to the
+    fx-autoconfig commit (a network test compares them with the real files), writes only into a folder
+    with `omni.ja`, `firefox.exe` and an `application.ini` saying Firefox, refuses links and
+    junctions, reports through its exit code, and is refused when `FXAC_REPO` or `FXAC_COMMIT`
+    override the pin. Residual risk, stated in the README: it runs `python.exe` with your approval.
+  - **Tab bar and the title bar Firefox draws itself.** On Windows (and on Linux with client-side
+    decorations, and on macOS) Firefox sets `customtitlebar` and puts the window buttons and the drag
+    area inside the tab bar. In that case the autohide hides only the tabs and keeps the window
+    buttons and the drag area, so a slim row stays; with the native title bar nothing changes.
+  - **Settings:** the shortcut hint is neutral plus a sentence for the system running Firefox, and a
+    press with AltGr active (Portuguese ABNT2, German, Czech... report it as Ctrl+Alt) is neither
+    recorded nor matched.
+  - **Console:** output no longer crashes on a legacy code page (what cannot be shown is replaced and
+    the fox only appears where it can), and in Git Bash, which does not look like a terminal to
+    Python, the error explains `--yes` and `winpty`.
+  - `windows-latest` joins the unit tests (Python 3.10 and 3.13), the headless-Firefox suite, the
+    network tests and the weekly Firefox run, including a check of the real title bar layout.
+
+### Changed
+
+- **The loader is fetched with `core.autocrlf=false` and `core.longpaths=true`**, read as UTF-8, and the
+  checkout is removed even when git's object files are read-only. Git for Windows converts line
+  endings by default, which handed Firefox a `config.js` with CRLF. A missing git on Windows points to
+  Git for Windows and `winget`.
+- The step that installs the loader says "asks for administrator permission if needed" on Windows
+  instead of "uses sudo if needed".
+- The README no longer says the shortcuts will become configurable (they have been since 0.2.0).
+
+### Known issues
+
+- The administrator prompt, a Firefox update replacing its folder, Microsoft Store builds, per-user
+  installs, the real title bar and window dragging, hover and menus, native drag, AltGr layouts, the
+  consoles (cmd, PowerShell, Windows Terminal, Git Bash), antivirus and long paths have only been
+  exercised on a headless CI runner, not by hand on a desktop.
+- With the title bar drawn by Firefox, a slim row with the window buttons stays when the tab bar is
+  hidden; turn on Firefox's own title bar to collapse it fully.
+- The runner image's Firefox already uses autoconfig (`mozilla.cfg`); the loader still worked there.
+  Another `general.config.filename` set elsewhere is not detected.
+- Windows still needs Python and Git for Windows. A standalone program with Scoop and winget packages
+  is planned.
+
+### Added
+
 - **Choose what opens the tab bar for a moment.** The Peek-a-Foxy section of Firefox's settings has a
   "Reveal the tab bar when" group with one switch for each trigger, all on by default (the behavior
   until now), applied to every open window at once: switching to another tab
