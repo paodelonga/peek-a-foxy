@@ -1,0 +1,55 @@
+/* Autohide for the tab bar and the navigation bar (urlbar), per window.
+   The attributes autohide-tabs / autohide-urlbar on :root are set by JS/autohide.uc.js
+   (Ctrl+Alt+T / Ctrl+Alt+U, plus a toolbar button for the tabs); their initial values come from the prefs
+   userchrome.tabs.autohide / userchrome.urlbar.autohide.
+   Collapsed to a thin hover strip; revealed on the strip, while focused, or while a related popup is open. */
+
+/* ---- Tab bar: also revealed on tab switch/open ---- */
+:root[autohide-tabs] #TabsToolbar {
+  height: 8px !important;
+  min-height: 0 !important;
+  max-height: 8px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  opacity: 0;
+  transition: max-height 0.12s, height 0.12s, opacity 0.12s;
+}
+:root[autohide-tabs] #TabsToolbar > *,
+:root[autohide-tabs] #TabsToolbar #tabbrowser-tabs {
+  min-height: 0 !important;
+}
+:root[autohide-tabs] #TabsToolbar:hover,
+:root[autohide-tabs] #TabsToolbar:focus-within,
+:root[autohide-tabs][tabs-flash] #TabsToolbar,
+:root[autohide-tabs]:has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar {
+  height: 40px !important;
+  max-height: 40px !important;
+  opacity: 1;
+}
+
+#tabs-autohide-button {
+  list-style-image: url("chrome://browser/skin/tabs.svg");
+}
+
+/* ---- Navigation bar (urlbar) ----
+   Revealed on its strip, while anything inside has focus (Ctrl+L, Ctrl+K, F6, Alt+D focus the urlbar),
+   while the urlbar dropdown is open, or while a toolbar popup (extensions, menus) is open. */
+:root[autohide-urlbar] #nav-bar {
+  max-height: 8px !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  opacity: 0;
+  transition: max-height 0.12s, opacity 0.12s;
+}
+:root[autohide-urlbar] #nav-bar:hover,
+:root[autohide-urlbar] #nav-bar:focus-within,
+:root[autohide-urlbar] #nav-bar:has(toolbarbutton[open]),
+:root[autohide-urlbar]:has(#urlbar[open]) #nav-bar {
+  max-height: 64px !important;
+  opacity: 1;
+}

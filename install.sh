@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs firefox-tabs-autohide into a Firefox profile (Linux).
+# Installs firefox-autohide into a Firefox profile (Linux).
 #
 #   ./install.sh [--profile DIR] [--firefox-dir DIR] [--skip-loader] [--uninstall] [--dry-run]
 #
@@ -9,7 +9,8 @@ set -euo pipefail
 
 FXAC_REPO="https://github.com/MrOtherGuy/fx-autoconfig.git"
 FXAC_COMMIT="dfdab5684faffc112b76ccb1d8cab7f75da0102c"   # pinned; verified after clone
-CSS_IMPORT='@import url("tabs-autohide.css");'
+CSS_IMPORT='@import url("autohide.css");'
+LEGACY_IMPORT='@import url("tabs-autohide.css");'   # name used before the project was renamed
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 profile="" ; fxdir="" ; skip_loader=0 ; uninstall=0 ; dry=0
@@ -61,11 +62,11 @@ chrome="$profile/chrome"
 
 if ((uninstall)); then
   echo "Removing from $profile"
-  run rm -f "$chrome/tabs-autohide.css" "$chrome/JS/tabs_autohide.uc.js"
+  run rm -f "$chrome/autohide.css" "$chrome/JS/autohide.uc.js" "$chrome/tabs-autohide.css" "$chrome/JS/tabs_autohide.uc.js"
   if [[ -f $chrome/userChrome.css ]]; then
-    run sed -i '\|^@import url("tabs-autohide.css");$|d' "$chrome/userChrome.css"
+    run sed -i -e '\|^@import url("autohide.css");$|d' -e '\|^@import url("tabs-autohide.css");$|d' "$chrome/userChrome.css"
   fi
-  run sed -i '/^user_pref("userchrome.tabs.autohide"/d' "$profile/user.js" 2>/dev/null || true
+  run sed -i '/^user_pref("userchrome\.\(tabs\|urlbar\)\.autohide"/d' "$profile/user.js" 2>/dev/null || true
   echo "Left in place: chrome/utils (fx-autoconfig) and the loader in the Firefox dir; they may be used by other scripts."
   exit 0
 fi
@@ -73,8 +74,13 @@ fi
 # --- profile files -----------------------------------------------------------
 echo "Profile: $profile"
 run mkdir -p "$chrome/JS"
-run install -m644 "$SRC/chrome/tabs-autohide.css" "$chrome/tabs-autohide.css"
-run install -m644 "$SRC/chrome/JS/tabs_autohide.uc.js" "$chrome/JS/tabs_autohide.uc.js"
+run install -m644 "$SRC/chrome/autohide.css" "$chrome/autohide.css"
+run install -m644 "$SRC/chrome/JS/autohide.uc.js" "$chrome/JS/autohide.uc.js"
+# Files and import line from before the rename.
+run rm -f "$chrome/tabs-autohide.css" "$chrome/JS/tabs_autohide.uc.js"
+if ((!dry)) && [[ -f $chrome/userChrome.css ]]; then
+  sed -i "\|^${LEGACY_IMPORT}\$|d" "$chrome/userChrome.css"
+fi
 
 # Hook the CSS into userChrome.css without overwriting the user's own rules.
 if ((dry)); then
@@ -87,15 +93,19 @@ elif ! grep -qxF "$CSS_IMPORT" "$chrome/userChrome.css"; then
   mv "$chrome/userChrome.css.new" "$chrome/userChrome.css"
 fi
 
-set_pref() {  # set_pref NAME VALUE  (idempotent, in user.js)
+set_pref() {  # set_pref NAME VALUE [keep]  (idempotent, in user.js; "keep" leaves an existing value alone)
   local f="$profile/user.js"
   if ((dry)); then echo "[dry-run] user_pref(\"$1\", $2) in $f"; return; fi
   touch "$f"
-  grep -q "^user_pref(\"$1\"" "$f" && sed -i "\|^user_pref(\"$1\"|d" "$f"
+  if grep -q "^user_pref(\"$1\"" "$f"; then
+    [[ ${3:-} == keep ]] && return
+    sed -i "\|^user_pref(\"$1\"|d" "$f"
+  fi
   printf 'user_pref("%s", %s);\n' "$1" "$2" >> "$f"
 }
 set_pref toolkit.legacyUserProfileCustomizations.stylesheets true
-set_pref userchrome.tabs.autohide true
+set_pref userchrome.tabs.autohide true keep      # default state for windows without a saved one
+set_pref userchrome.urlbar.autohide false keep
 
 # --- fx-autoconfig -----------------------------------------------------------
 if ((skip_loader)); then
@@ -124,6 +134,6 @@ cat <<EOF
 
 Done. Close ALL Firefox windows and start it again.
 If the button or shortcut is missing, open about:support and click "Clear startup cache...".
-Then add "Tabs autohide" from Customize Toolbar. Ctrl+Alt+T toggles the current window.
+Then add "Tabs autohide" from Customize Toolbar. Ctrl+Alt+T (tabs) and Ctrl+Alt+U (urlbar) toggle the current window.
 Package updates may remove the loader from the Firefox dir; just re-run ./install.sh.
 EOF
