@@ -148,6 +148,8 @@ def test_the_tabs_come_back_while_the_tab_context_menu_is_open(forced):
 
 def test_without_customtitlebar_the_whole_tab_bar_still_collapses_to_the_strip(browser):
     browser.new_window()
+    # On Windows Firefox sets customtitlebar itself; this test is about the other branch.
+    browser.js(f"{ROOT}.removeAttribute('customtitlebar');")
     browser.js(f"{ROOT}.setAttribute('autohide-tabs', '');")
     try:
         browser.wait(
