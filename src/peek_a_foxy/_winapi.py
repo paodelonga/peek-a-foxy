@@ -58,6 +58,8 @@ def run_elevated(
     kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
     kernel32.GetExitCodeProcess.restype = wintypes.BOOL
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel32.TerminateProcess.restype = wintypes.BOOL
 
     info = _ShellExecuteInfo()
     info.cbSize = ctypes.sizeof(info)
@@ -65,14 +67,20 @@ def run_elevated(
     info.lpVerb, info.lpFile, info.lpParameters, info.nShow = "runas", executable, parameters, 0
     if not shell32.ShellExecuteExW(ctypes.byref(info)):
         raise ElevationFailed(ctypes.get_last_error(), "could not start the elevated process")
+    if not info.hProcess:
+        raise ElevationFailed(0, "Windows gave no handle to wait for the elevated process")
     try:
-        if (
-            kernel32.WaitForSingleObject(info.hProcess, int(timeout_seconds * 1000))
-            != WAIT_OBJECT_0
-        ):
+        waited = kernel32.WaitForSingleObject(info.hProcess, int(timeout_seconds * 1000))
+        if waited == WAIT_TIMEOUT:
+            kernel32.TerminateProcess(info.hProcess, 1)  # not left to write after we gave up
             raise ElevationFailed(WAIT_TIMEOUT, "the elevated process did not finish in time")
+        if waited != WAIT_OBJECT_0:
+            raise ElevationFailed(
+                ctypes.get_last_error(), "waiting for the elevated process failed"
+            )
         code = wintypes.DWORD()
-        kernel32.GetExitCodeProcess(info.hProcess, ctypes.byref(code))
+        if not kernel32.GetExitCodeProcess(info.hProcess, ctypes.byref(code)):
+            raise ElevationFailed(ctypes.get_last_error(), "could not read the exit code")
         return int(code.value)
     finally:
         kernel32.CloseHandle(info.hProcess)

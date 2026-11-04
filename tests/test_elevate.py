@@ -286,3 +286,71 @@ def test_the_pin_check_helpers_agree_with_the_real_pins():
     assert set(elevate.PINNED_SHA256) == {"config.js", "defaults/pref/config-prefs.js"}
     assert all(len(digest) == 64 for digest in elevate.PINNED_SHA256.values())
     assert os.name  # the module imports on every platform
+
+
+# --- the helper's file handling, and what the command line looks like -------------------------
+
+
+@needs_symlinks
+def test_a_link_in_place_of_a_folder_on_the_way_stops_everything_before_anything_is_created(
+    pinned, tmp_path
+):
+    folder = firefox(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (folder / "defaults").symlink_to(elsewhere, target_is_directory=True)
+    assert run_helper(folder, [CONFIG, PREFS]) == elevate.LINKED
+    assert list(elsewhere.iterdir()) == []  # not even defaults/pref was created through the link
+
+
+def test_a_leftover_temp_file_is_replaced_not_written_through(pinned, tmp_path):
+    folder = firefox(tmp_path)
+    (folder / "config.js.peek-a-foxy.tmp").write_bytes(b"stale")
+    assert run_helper(folder, [CONFIG, PREFS]) == elevate.OK
+    assert (folder / "config.js").read_bytes() == CONFIG
+    assert not list(folder.rglob("*.peek-a-foxy.tmp"))
+
+
+@needs_symlinks
+def test_a_planted_link_at_the_temp_name_is_not_followed(pinned, tmp_path):
+    folder = firefox(tmp_path)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("precious")
+    (folder / "config.js.peek-a-foxy.tmp").symlink_to(victim)
+    assert run_helper(folder, [CONFIG, PREFS]) == elevate.OK
+    assert victim.read_text() == "precious"
+
+
+def test_the_helper_uses_the_base_interpreter_not_a_virtual_environments(
+    pinned, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        sys, "_base_executable", str(tmp_path / "base" / "python.exe"), raising=False
+    )
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "venv" / "Scripts" / "python.exe"))
+    assert elevate.helper_command(tmp_path, [CONFIG, PREFS])[0].endswith(
+        "base" + os.sep + "python.exe"
+    )
+
+
+def test_without_a_base_interpreter_the_current_one_is_used(pinned, tmp_path, monkeypatch):
+    monkeypatch.delattr(sys, "_base_executable", raising=False)
+    assert elevate.helper_command(tmp_path, [CONFIG, PREFS])[0] == sys.executable
+
+
+def test_the_command_line_stays_far_below_the_windows_limit_even_for_larger_files(pinned, tmp_path):
+    big = [b"x" * 3000, b"y" * 3000]  # the real files are about 430 and 190 bytes
+    line = subprocess.list2cmdline(elevate.helper_command(tmp_path, big))
+    assert len(line) < 16000  # CreateProcess allows 32767 characters
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the real command line through ShellExecuteEx")
+def test_the_real_helper_command_goes_through_the_real_elevator(pinned, tmp_path):
+    """Quotes, newlines and the payloads of the real command line survive ShellExecuteEx."""
+    if not elevate.is_admin():
+        pytest.skip("would show a real UAC prompt")
+    folder = firefox(tmp_path)
+    code = elevate.windows_elevator(elevate.helper_command(folder, [CONFIG, PREFS]))
+    assert code == elevate.OK
+    assert (folder / "config.js").read_bytes() == CONFIG
+    assert (folder / "defaults" / "pref" / "config-prefs.js").read_bytes() == PREFS

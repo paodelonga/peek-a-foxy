@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from support import needs_permissions
+from support import needs_permissions, needs_symlinks
 
 from peek_a_foxy import loader
 from peek_a_foxy.loader import LoaderError, fetch_loader
@@ -226,3 +226,17 @@ def test_missing_git_on_an_unsupported_platform_still_says_so(monkeypatch):
     monkeypatch.setattr(loader.platform, "system", unsupported)
     with pytest.raises(LoaderError, match="git is required"), fetch_loader():
         pass
+
+
+@needs_symlinks
+def test_removing_a_tree_leaves_what_its_links_point_to_alone(tmp_path: Path):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep")
+    outside.chmod(0o644)
+    tree = tmp_path / "checkout"
+    tree.mkdir()
+    (tree / "dangling").symlink_to(tmp_path / "nowhere")
+    (tree / "to-outside").symlink_to(outside)
+    loader.remove_tree(tree)
+    assert not tree.exists()
+    assert outside.read_text() == "keep" and (outside.stat().st_mode & 0o777) == 0o644

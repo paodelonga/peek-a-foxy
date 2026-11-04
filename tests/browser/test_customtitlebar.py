@@ -206,3 +206,30 @@ def test_on_windows_the_window_buttons_stay_whole_while_the_tabs_are_hidden(brow
         assert button["bottom"] <= window["height"], button
     assert toolbar["height"] >= max(b["height"] for b in layout["buttons"]) - 0.5
     assert layout["maxHeight"] != "8px"
+
+
+def test_a_window_without_caption_buttons_keeps_a_row_to_hover(browser):
+    """Some Linux setups draw the title bar with no buttons: the row must not shrink to nothing."""
+    browser.new_window()
+    browser.js(
+        f"{ROOT}.setAttribute('customtitlebar', 'true'); {ROOT}.setAttribute('autohide-tabs', '');"
+    )
+    browser.js(
+        "document.querySelectorAll('.titlebar-buttonbox-container').forEach(e => e.remove());"
+    )
+    try:
+        browser.wait(
+            "getComputedStyle(document.querySelector('#TabsToolbar .toolbar-items'))"
+            ".maxHeight === '0px'",
+            5,
+        )
+        assert (
+            browser.js(
+                "return document.getElementById('TabsToolbar').getBoundingClientRect().height;"
+            )
+            >= 8
+        )
+    finally:
+        browser.js(
+            f"{ROOT}.removeAttribute('autohide-tabs'); {ROOT}.removeAttribute('customtitlebar');"
+        )

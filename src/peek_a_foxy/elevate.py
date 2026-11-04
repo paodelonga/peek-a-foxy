@@ -73,19 +73,32 @@ def main(argv):
         return 11
     if os.path.normcase(os.path.realpath(folder)) != os.path.normcase(folder):
         return 13
+    # Nothing on the way may be a link or a junction: check before anything is created.
+    for part in ("defaults", os.path.join("defaults", "pref")) + NAMES:
+        path = os.path.join(folder, part)
+        same = os.path.normcase(os.path.realpath(path)) == os.path.normcase(path)
+        if os.path.lexists(path) and not same:
+            return 13
+    temporary = None
     try:
         os.makedirs(os.path.join(folder, "defaults", "pref"), exist_ok=True)
         for name, data in zip(NAMES, payloads):
             target = os.path.join(folder, name)
-            if os.path.islink(target) or os.path.realpath(target) != os.path.realpath(
-                os.path.join(os.path.realpath(folder), name)
-            ):
-                return 13
             temporary = target + ".peek-a-foxy.tmp"
-            with open(temporary, "wb") as handle:
+            if os.path.lexists(temporary):
+                os.unlink(temporary)  # never write through whatever someone left under that name
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+            descriptor = os.open(temporary, flags, 0o644)
+            with os.fdopen(descriptor, "wb") as handle:
                 handle.write(data)
             os.replace(temporary, target)
+            temporary = None
     except OSError:
+        if temporary and os.path.lexists(temporary):
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
         return 14
     return 0
 
@@ -107,7 +120,10 @@ def helper_code() -> str:
 def helper_command(firefox_dir: Path, payloads: list[bytes]) -> list[str]:
     """Command line of the elevated process: isolated Python, the code, the folder, the bytes."""
     encoded = [base64.b64encode(data).decode("ascii") for data in payloads]
-    return [sys.executable, "-I", "-S", "-c", helper_code(), str(firefox_dir), *encoded]
+    # The base interpreter, not a virtual environment's copy (pipx, uv): a venv lives in the user's
+    # profile, where another program could swap python.exe or pyvenv.cfg.
+    python = getattr(sys, "_base_executable", None) or sys.executable
+    return [python, "-I", "-S", "-c", helper_code(), str(firefox_dir), *encoded]
 
 
 def windows_elevator(command: list[str]) -> int:  # pragma: no cover - needs Windows and a prompt

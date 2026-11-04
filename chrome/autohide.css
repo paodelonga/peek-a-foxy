@@ -56,7 +56,12 @@
 :root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]) #TabsToolbar #tabbrowser-tabs {
   min-height: 0 !important;
 }
-/* customtitlebar: the toolbar itself is left alone; the tabs holder is what clips and animates */
+/* customtitlebar: the toolbar itself is left alone (apart from never being thinner than the strip,
+   so a window without caption buttons still has something to hover); the tabs holder is what
+   clips and animates */
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar {
+  min-height: var(--autohide-strip);
+}
 :root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar .toolbar-items {
   min-height: 0 !important;
   overflow: hidden !important;

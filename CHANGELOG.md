@@ -24,8 +24,8 @@ is and what controls it, with a *Known issues* section for what is not covered.
     user, so when the direct copy is refused, `config.js` and `defaults\pref\config-prefs.js` are
     written by a short-lived elevated process; the rest of the command runs as you. An administrator
     who still cannot write gets an error instead of a second prompt; saying no to the prompt, a
-    timeout or a failed copy each have a clear message. The elevated process is `python -I -S -c`
-    (no module, file or working directory from a writable place is loaded), receives the two files'
+    timeout or a failed copy each have a clear message. The elevated process is `python -I -S -c`,
+    run with the base interpreter rather than a pipx or uv environment's copy (no module, file or working directory from a writable place is loaded), receives the two files'
     bytes in its command line, checks them against SHA-256 values pinned in the package next to the
     fx-autoconfig commit (a network test compares them with the real files), writes only into a folder
     with `omni.ja`, `firefox.exe` and an `application.ini` saying Firefox, refuses links and
@@ -66,8 +66,6 @@ is and what controls it, with a *Known issues* section for what is not covered.
   Another `general.config.filename` set elsewhere is not detected.
 - Windows still needs Python and Git for Windows. A standalone program with Scoop and winget packages
   is planned.
-
-### Added
 
 - **Choose what opens the tab bar for a moment.** The Peek-a-Foxy section of Firefox's settings has a
   "Reveal the tab bar when" group with one switch for each trigger, all on by default (the behavior

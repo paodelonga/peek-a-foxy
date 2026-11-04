@@ -74,7 +74,9 @@ def remove_tree(path: Path) -> None:
     # Top down: a folder is opened up before it is read.
     for root, directories, files in os.walk(path):
         for name in (*directories, *files):
-            os.chmod(os.path.join(root, name), stat.S_IRWXU)
+            entry = os.path.join(root, name)
+            if not os.path.islink(entry):  # a link's target is not ours to change
+                os.chmod(entry, stat.S_IRWXU)
     shutil.rmtree(path)
 
 
