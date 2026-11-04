@@ -92,7 +92,8 @@ def test_the_profile_picker_shows_odd_names_and_paths_literally(
     other = tmp_path / "Profiles" / "other"
     other.mkdir()
     (tmp_path / "profiles.ini").write_text(
-        f"[Profile0]\nName={name}\nPath=Profiles/{name}\n\n[Profile1]\nName=b\nPath=Profiles/other\n"
+        f"[Profile0]\nName={name}\nPath=Profiles/{name}\n\n[Profile1]\nName=b\nPath=Profiles/other\n",
+        encoding="utf-8",  # Firefox writes UTF-8; the default would be the code page on Windows
     )
     monkeypatch.setattr(cli.platform, "profiles_root", lambda: tmp_path)
     monkeypatch.setattr(cli, "_interactive", lambda yes: True)
