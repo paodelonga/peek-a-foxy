@@ -154,7 +154,7 @@
       group(TEXT.shortcutsGroup,
         shortcutField(PREFS.tabsShortcut, PREFS.urlbarShortcut, TEXT.tabsShortcut),
         shortcutField(PREFS.urlbarShortcut, PREFS.tabsShortcut, TEXT.urlbarShortcut),
-        el("p", { class: "pf-note", text: TEXT.shortcutHint })),
+        el("p", { class: "pf-note", text: Peek.shortcutHint(TEXT) })),
       group(TEXT.greetingGroup, greetingButton()),
     );
   };

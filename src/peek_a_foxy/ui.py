@@ -8,6 +8,7 @@ written in this package's source may contain markup, and they must not contain u
 
 from __future__ import annotations
 
+import sys
 from typing import NoReturn
 
 import typer
@@ -17,6 +18,28 @@ from rich.text import Text
 
 console = Console()
 errors = Console(stderr=True)
+
+
+def can_print(text: str) -> bool:
+    """Whether the console's encoding can show ``text`` (a legacy code page cannot show emoji)."""
+    try:
+        text.encode(console.encoding or "utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def fox() -> str:
+    """The fox, followed by spaces, or nothing where the console cannot show it."""
+    return "\U0001f98a  " if can_print("\U0001f98a") else ""
+
+
+def setup_streams() -> None:
+    """Never crash on a character the console cannot show: print ``?`` instead."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
 
 
 def say(message: str, style: str = "") -> None:

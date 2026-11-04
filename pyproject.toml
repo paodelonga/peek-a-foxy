@@ -15,6 +15,7 @@ keywords = ["firefox", "userchrome", "autohide", "tabs", "urlbar", "fx-autoconfi
 classifiers = [
   "Environment :: Console",
   "Operating System :: POSIX :: Linux",
+  "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python :: 3",
   "Topic :: Desktop Environment",
 ]

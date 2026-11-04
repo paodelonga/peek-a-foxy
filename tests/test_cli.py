@@ -157,12 +157,18 @@ def test_profile_option_completes_from_profiles_ini(tmp_path: Path):
     for root in (
         tmp_path / ".mozilla" / "firefox",
         tmp_path / "Library" / "Application Support" / "Firefox",
+        tmp_path / "AppData" / "Roaming" / "Mozilla" / "Firefox",
     ):
         root.mkdir(parents=True)
         (root / "profiles.ini").write_text(ini)
-    offered = _complete("peek-a-foxy install --profile ", 3, HOME=str(tmp_path))
-    assert any(path.endswith("Profiles/one") for path in offered)
-    assert any(path.endswith("Profiles/two") for path in offered)
+    home = {
+        "HOME": str(tmp_path),
+        "USERPROFILE": str(tmp_path),  # what Path.home() reads on Windows
+        "APPDATA": str(tmp_path / "AppData" / "Roaming"),
+    }
+    offered = _complete("peek-a-foxy install --profile ", 3, **home)
+    tails = {Path(path).parts[-2:] for path in offered}
+    assert ("Profiles", "one") in tails and ("Profiles", "two") in tails
 
 
 def test_completion_scripts_are_available_for_the_common_shells():
@@ -197,7 +203,7 @@ def test_completion_helpers_cope_with_missing_data(tmp_path: Path, monkeypatch):
 def test_firefox_dir_completion_filters_by_prefix(monkeypatch):
     found = [Path("/usr/lib/firefox"), Path("/opt/firefox")]
     monkeypatch.setattr(cli.platform, "firefox_dir_candidates", lambda: found)
-    assert cli._complete_firefox_dir("/usr") == ["/usr/lib/firefox"]
+    assert cli._complete_firefox_dir(str(Path("/usr"))) == [str(found[0])]
 
 
 def test_the_yes_help_says_everything_it_skips():
@@ -230,11 +236,11 @@ def test_an_installation_without_a_competing_one_is_used_without_asking(
 
 def test_a_platform_firefox_cannot_be_found_on_is_a_clean_error(profile: Path, monkeypatch):
     def unsupported():
-        raise cli.platform.UnsupportedPlatformError("only Linux and macOS")
+        raise cli.platform.UnsupportedPlatformError("only some platforms")
 
     monkeypatch.setattr(cli.platform, "firefox_dir_candidates", unsupported)
     result = runner.invoke(app, ["install", "--profile", str(profile), "--yes"])
-    assert result.exit_code == 1 and "only Linux and macOS" in result.output
+    assert result.exit_code == 1 and "only some platforms" in result.output
 
 
 @pytest.mark.parametrize("answer", ["0", "3"])

@@ -24,6 +24,7 @@ def test_the_weekly_run_covers_the_current_release_and_the_beta():
     assert triggers["schedule"] and "workflow_dispatch" in triggers
     job = workflow["jobs"]["browser"]
     assert set(job["strategy"]["matrix"]["firefox"]) == {"latest", "latest-beta"}
+    assert set(job["strategy"]["matrix"]["os"]) == {"ubuntu-latest", "windows-latest"}
     assert job["strategy"]["fail-fast"] is False  # one channel failing must not hide the other
     assert any("-m browser" in step.get("run", "") for step in job["steps"])
 

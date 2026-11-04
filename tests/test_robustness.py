@@ -1,10 +1,10 @@
 """Failure modes and unusual-but-plausible setups; none may corrupt user files or crash."""
 
-import os
 import subprocess
 from pathlib import Path
 
 import pytest
+from support import needs_permissions, needs_symlinks
 from typer.testing import CliRunner
 
 from peek_a_foxy import cli, loader
@@ -22,6 +22,7 @@ def tree(*roots: Path) -> dict[Path, bytes]:
 # --- the user's files ------------------------------------------------------------------------
 
 
+@needs_symlinks
 def test_a_symlinked_userchrome_css_stays_a_symlink(profile: Path, tmp_path: Path):
     dotfiles = tmp_path / "dotfiles"
     dotfiles.mkdir()
@@ -115,7 +116,7 @@ def test_chrome_being_a_file_is_a_clean_error(tmp_path: Path):
     assert result.exit_code == 1 and "Traceback" not in result.output
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
+@needs_permissions
 def test_a_read_only_profile_is_a_clean_error(profile: Path):
     profile.chmod(0o555)
     (profile / "chrome").chmod(0o555)
@@ -150,7 +151,7 @@ def test_a_read_only_firefox_dir_falls_back_to_sudo(monkeypatch, tmp_path):
     ]
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
+@needs_permissions
 @pytest.mark.parametrize(
     "failure",
     [subprocess.CalledProcessError(1, "sudo"), FileNotFoundError("no sudo here")],
@@ -261,9 +262,9 @@ def test_no_firefox_found_is_a_clean_error(profile: Path, monkeypatch):
 
 
 def test_unsupported_platform_is_a_clean_error(monkeypatch):
-    monkeypatch.setattr(cli.platform.sys, "platform", "win32")
+    monkeypatch.setattr(cli.platform.sys, "platform", "freebsd14")
     result = runner.invoke(app, ["install", "--yes"])
-    assert result.exit_code == 1 and "Linux and macOS" in result.output
+    assert result.exit_code == 1 and "Linux, macOS and Windows" in result.output
 
 
 def test_uninstall_dry_run_changes_nothing(profile: Path):

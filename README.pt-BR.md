@@ -8,7 +8,7 @@
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-blue.svg)](LICENSE)
 ![Firefox 121+](https://img.shields.io/badge/Firefox-121%2B-FF7139?logo=firefoxbrowser&logoColor=white)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
-![Plataforma: Linux](https://img.shields.io/badge/plataforma-Linux-lightgrey)
+![Plataforma: Linux e Windows](https://img.shields.io/badge/plataforma-Linux%20%7C%20Windows-lightgrey)
 
 [English](README.md) · Português (Brasil)
 
@@ -23,6 +23,7 @@
 - [Configurações](#configurações)
 - [Como funciona](#como-funciona)
 - [Solução de problemas](#solução-de-problemas)
+- [Notas do Windows](#notas-do-windows)
 - [Desinstalação](#desinstalação)
 - [Roadmap](#roadmap)
 - [Sobre o nome](#sobre-o-nome)
@@ -42,11 +43,12 @@
 ## Requisitos
 
 - Firefox 121 ou mais novo (o CSS usa `:has()`).
-- Linux. Builds Snap e Flatpak do Firefox não são suportados (a pasta de instalação deles é somente leitura).
+- Linux ou Windows 10/11. Builds Snap, Flatpak e da Microsoft Store (MSIX) do Firefox não são suportados (a pasta de instalação deles é somente leitura).
 - Python 3.10 ou mais novo e `git`.
-- `sudo`, só se você não tiver permissão de escrita na pasta de instalação do Firefox.
+- `sudo` (Linux) ou um pedido de administrador (Windows, UAC), só se você não tiver permissão de escrita na pasta de instalação do Firefox. Só a cópia de dois arquivos é elevada; o resto roda como você.
+- No Windows, o [Git for Windows](https://git-scm.com/download/win) (`winget install Git.Git`), que o instalador usa para baixar o loader.
 
-macOS e Windows estão no [roadmap](#roadmap). O código contém caminhos para macOS que nunca foram executados num Mac, então trate o macOS como não suportado por enquanto.
+O **Windows** é testado no CI num runner Windows de verdade (testes unitários, toda a suíte do Firefox headless, o download real do loader), mas ainda não à mão num desktop: veja as [notas do Windows](#notas-do-windows). O código contém caminhos para macOS que nunca foram executados num Mac, então trate o macOS como não suportado por enquanto.
 
 Desenvolvido e usado no Firefox Developer Edition.
 
@@ -150,7 +152,7 @@ Uma atualização do Firefox pode remover o loader da pasta de instalação; rod
 
 Os botões estão em *Personalizar barra de ferramentas* como **Tabs autohide** e **Urlbar autohide** (num Firefox em português: **Ocultar abas automaticamente** e **Ocultar barra de endereço automaticamente**). O botão da urlbar fica dentro da barra que ele oculta, então revele a barra pela faixa de hover para clicar nele; o atalho funciona a qualquer momento.
 
-**O `Ctrl+Alt+T` não funciona no GNOME, Ubuntu e Linux Mint.** Lá ele abre um terminal: o ambiente de desktop pega o atalho antes de o Firefox vê-lo. Use o botão da toolbar, ou abra mão do atalho nesse desktop (o `Ctrl+Alt+U` não é afetado). Tornar os atalhos configuráveis está planejado.
+**O `Ctrl+Alt+T` não funciona no GNOME, Ubuntu e Linux Mint.** Lá ele abre um terminal: o ambiente de desktop pega o atalho antes de o Firefox vê-lo. Use o botão da toolbar, ou abra mão do atalho nesse desktop (o `Ctrl+Alt+U` não é afetado). Você pode mudá-lo nas configurações do Firefox (veja [Configurações](#configurações)).
 
 ### Linha de comando
 
@@ -260,6 +262,17 @@ CSS puro não detecta troca de aba nem mantém um estado separado por janela, po
 - **Nada depois de uma atualização do Firefox:** a atualização substituiu a pasta de instalação; rode `peek-a-foxy install` de novo.
 - **Erros:** abra o Console do Navegador (`Ctrl+Shift+J`) e filtre por `autohide`.
 
+## Notas do Windows
+
+- **Instalação:** com Python, por enquanto: `pipx install git+https://github.com/paodelonga/peek-a-foxy.git` (ou `uv tool install`), depois `peek-a-foxy install`. Um programa independente para o Scoop e o winget está planejado (veja o [roadmap](#roadmap)).
+- **Pedido de administrador.** A pasta do Firefox em `C:\Program Files` é somente leitura para um usuário comum, então o Windows pergunta (UAC) antes de dois arquivos, `config.js` e `defaults\pref\config-prefs.js`, serem copiados para lá. Só essa cópia é elevada. O processo elevado é uma execução nova e isolada do Python base (não da cópia dentro de um ambiente do pipx ou do uv) que recebe os bytes dos dois arquivos e recusa qualquer coisa que não seja o fx-autoconfig fixado. Se você disser não, nada é escrito na pasta do Firefox e o comando avisa. Risco residual: ele roda o `python.exe` com a sua aprovação, então uma instalação do Python que outro programa consiga reescrever pode abusar desse pedido.
+- **Qual Firefox:** achado pelo registro, `Program Files`, `Program Files (x86)`, a pasta local do usuário e o `PATH`; use `--firefox-dir` para uma cópia portátil. A versão da Microsoft Store (MSIX) é recusada.
+- **Atualizações do Firefox** podem substituir a pasta de instalação e remover o loader: rode `peek-a-foxy install` de novo se os botões e a seção nas configurações sumirem.
+- **Antivírus** pode perguntar sobre o `config.js` na pasta do Firefox: é o loader do fx-autoconfig, que o Firefox executa ao iniciar.
+- **Git Bash / mintty** não parece um terminal para o Python, então use `--yes` (ou rode através do `winpty`). `cmd`, PowerShell e Windows Terminal funcionam.
+- **Barra de título.** Quando o Firefox desenha a própria barra de título (o padrão no Windows), o autohide da barra de abas esconde só as abas e mantém os botões da janela e a área de arrastar, então uma faixa fina permanece. Ligue a barra de título do próprio Firefox (Personalizar barra de ferramentas, *Barra de título*) para recolher a barra de abas inteira até a faixa.
+- **Atalhos com AltGr.** Em layouts em que o AltGr digita caracteres (ABNT2, alemão, tcheco...), o AltGr vale como Ctrl+Alt e nunca é tomado como atalho; use o Ctrl e o Alt da esquerda.
+
 ## Desinstalação
 
 ```bash
@@ -272,7 +285,8 @@ Remove os arquivos e as prefs deste projeto. Deixa o `chrome/utils` e o loader n
 
 Planejado; contribuições são bem-vindas.
 
-- [ ] Suporte ao Windows
+- [ ] Um `peek-a-foxy.exe` independente, com pacotes para o [Scoop](https://scoop.sh) e o [winget](https://learn.microsoft.com/windows/package-manager/), para o usuário do Windows não precisar de Python.
+- [ ] Testes à mão no Windows (o pedido de UAC, uma atualização do Firefox, instalações por usuário, a barra de título real e o arrasto da janela, layouts com AltGr).
 - [ ] Compatibilidade com macOS
 - [ ] Gerenciadores de janela em mosaico e menus de contexto: alguns WMs em mosaico tomam o ponteiro quando um menu de contexto abre, então a barra de abas pode fechar enquanto o menu está aberto.
 - [ ] Abrir as barras por cima da página em vez de empurrá-la para baixo. Hoje uma barra revelada empurra a página, o que refaz o layout da página a cada quadro da animação.
