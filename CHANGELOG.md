@@ -9,6 +9,13 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-04
+
+The settings page and the first review round: a Peek-a-Foxy section in Firefox's settings, a safer and
+more honest `peek-a-foxy` command, a stricter loader fetch, and a weekly run against new Firefox
+versions. **After updating, run `peek-a-foxy install` again and restart Firefox:** the settings page
+needs a pref that the installer now sets.
+
 ### Added
 
 - **A Peek-a-Foxy section in Firefox's settings** (`about:preferences#peekafoxy`, added by the new
