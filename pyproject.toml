@@ -26,6 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "hypothesis>=6",
+  "mypy>=1.10",
   "marionette-driver>=3",
   "pytest>=8",
   "pytest-cov>=5",
@@ -57,6 +58,10 @@ markers = [
 [tool.coverage.run]
 source = ["peek_a_foxy"]
 branch = true
+
+[tool.mypy]
+strict = true
+files = ["src"]
 
 [tool.ruff]
 line-length = 100
