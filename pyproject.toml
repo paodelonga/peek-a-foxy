@@ -25,10 +25,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "commitizen>=4",
   "hypothesis>=6",
   "mypy>=1.10",
   "marionette-driver>=3",
   "pytest>=8",
+  "pre-commit>=4",
   "pytest-cov>=5",
   "ruff>=0.6",
 ]
@@ -58,6 +60,16 @@ markers = [
 [tool.coverage.run]
 source = ["peek_a_foxy"]
 branch = true
+
+# Used to check commit messages, to pick the next version from them, and to create the release commit
+# and tag (`cz bump`). The changelog is written by hand (Keep a Changelog), so it is not generated.
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "pep621"
+tag_format = "v$version"
+major_version_zero = true  # before 1.0, a breaking change bumps the minor version
+bump_message = "chore(release): $new_version"
+annotated_tag = true
 
 [tool.mypy]
 strict = true
