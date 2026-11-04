@@ -1,12 +1,11 @@
 // ==UserScript==
 // @name           Autohide (tabs and urlbar, per window)
-// @description    Per-window autohide for the tab bar (button + Ctrl+Alt+T) and the navigation bar (Ctrl+Alt+U).
+// @description    Per-window autohide for the tab bar (button + Ctrl+Alt+T) and the navigation bar (button + Ctrl+Alt+U).
 // @include        main
 // ==/UserScript==
 
 (() => {
   const FLASH_MS = 1500;
-  const BTN_ID = "tabs-autohide-button";
   const root = document.documentElement;
 
   // One entry per autohide target. `attr` is the :root attribute the CSS keys on.
@@ -49,25 +48,33 @@
     setEnabled(t, !root.hasAttribute(t.attr));
   }, true);
 
-  // Toolbar button for the tab bar (it lives in the navbar, so it can't toggle the navbar itself).
-  // The widget is created once and shared by all windows, so its callback must not close over this window.
-  try {
-    UC_API.Utils.createWidget({
-      id: BTN_ID,
-      type: "toolbarbutton",
-      label: "Tabs autohide",
-      tooltip: "Toggle tab bar autohide for this window (Ctrl+Alt+T)",
-      image: "chrome://browser/skin/tabs.svg",
-      callback(ev) {
-        const win = ev.target.ownerDocument.defaultView;
-        const r = win.document.documentElement;
-        const on = !r.hasAttribute("autohide-tabs");
-        r.toggleAttribute("autohide-tabs", on);
-        try { win.SessionStore.setCustomWindowValue(win, "autohideTabs", on ? "1" : "0"); } catch (e) {}
-      },
-    });
-  } catch (e) {
-    // "already exists" is expected for every window after the first.
-    if (!/already exists/.test(String(e))) console.error("[autohide] createWidget failed:", e);
+  // Toolbar buttons. The widgets are created once and shared by all windows, so the callbacks must not
+  // close over this window. The urlbar button lives in the bar it hides: reveal the bar (hover strip) to use it.
+  const BUTTONS = [
+    { id: "tabs-autohide-button", attr: "autohide-tabs", session: "autohideTabs", label: "Tabs autohide",
+      tooltip: "Toggle tab bar autohide for this window (Ctrl+Alt+T)", image: "chrome://browser/skin/tabs.svg" },
+    { id: "urlbar-autohide-button", attr: "autohide-urlbar", session: "autohideUrlbar", label: "Urlbar autohide",
+      tooltip: "Toggle navigation bar autohide for this window (Ctrl+Alt+U)", image: "chrome://global/skin/icons/search-glass.svg" },
+  ];
+  for (const b of BUTTONS) {
+    try {
+      UC_API.Utils.createWidget({
+        id: b.id,
+        type: "toolbarbutton",
+        label: b.label,
+        tooltip: b.tooltip,
+        image: b.image,
+        callback(ev) {
+          const win = ev.target.ownerDocument.defaultView;
+          const r = win.document.documentElement;
+          const on = !r.hasAttribute(b.attr);
+          r.toggleAttribute(b.attr, on);
+          try { win.SessionStore.setCustomWindowValue(win, b.session, on ? "1" : "0"); } catch (e) {}
+        },
+      });
+    } catch (e) {
+      // "already exists" is expected for every window after the first.
+      if (!/already exists/.test(String(e))) console.error(`[autohide] createWidget ${b.id} failed:`, e);
+    }
   }
 })();

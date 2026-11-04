@@ -7,7 +7,7 @@ Auto-hides Firefox's horizontal tab bar and navigation bar (urlbar), **per windo
 - The navigation bar (urlbar, buttons, extensions) can be hidden too. It is revealed by its own hover strip, whenever the urlbar gets focus (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`), and while its dropdown or a toolbar popup is open. Off by default.
 - Toggles act **on the current window only** and the state is saved with the session:
   - tabs: toolbar button or `Ctrl+Alt+T`
-  - urlbar: `Ctrl+Alt+U` (no button, since it would live in the bar that gets hidden)
+  - urlbar: toolbar button or `Ctrl+Alt+U`. The button lives in the bar that gets hidden, so reveal the bar with the hover strip to click it; the shortcut works any time.
 
 Tested on Firefox Developer Edition on Linux. Requires a Firefox with CSS `:has()` (121+).
 
@@ -38,7 +38,7 @@ The installer:
    `defaults/pref/config-prefs.js` into the Firefox dir, using `sudo` only if that dir isn't writable.
 
 Then close **all** Firefox windows and start it again. If the button or shortcut is missing, clear the startup cache from `about:support`.
-Add **Tabs autohide** from *Customize Toolbar*.
+Add **Tabs autohide** and/or **Urlbar autohide** from *Customize Toolbar*.
 
 After a Firefox package update, re-run `./install.sh` if the loader disappears.
 
