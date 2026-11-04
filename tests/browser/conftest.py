@@ -14,6 +14,7 @@ import socket
 import subprocess
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -129,15 +130,20 @@ class Browser:
 
 
 @pytest.fixture(scope="session")
-def browser(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Browser]:
-    source = _firefox_dir()
-    root = tmp_path_factory.mktemp("browser")
-    install_dir = root / "firefox"
-    shutil.copytree(source, install_dir, symlinks=True)
+def firefox_install(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A private copy of Firefox's install directory; the loader gets written into it."""
+    install_dir = tmp_path_factory.mktemp("install") / "firefox"
+    shutil.copytree(_firefox_dir(), install_dir, symlinks=True)
+    return install_dir
+
+
+@contextmanager
+def launched(install_dir: Path, root: Path, extra_user_js: str = "") -> Iterator[Browser]:
+    """Install into a fresh profile, start Firefox headless on it, and yield a connected helper."""
     profile = root / "profile"
     profile.mkdir()
     port = _free_port()
-    (profile / "user.js").write_text(SETTINGS.format(port=port))
+    (profile / "user.js").write_text(SETTINGS.format(port=port) + extra_user_js)
 
     plan_install(profile, install_dir).execute()  # the real loader, into the copy
 
@@ -192,3 +198,19 @@ def browser(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Browser]:
             process.wait(timeout=15)
         except subprocess.TimeoutExpired:
             process.kill()
+
+
+@pytest.fixture(scope="session")
+def browser(firefox_install: Path, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Browser]:
+    with launched(firefox_install, tmp_path_factory.mktemp("browser")) as helper:
+        yield helper
+
+
+@pytest.fixture(scope="session")
+def browser_with_a_bad_pref(
+    firefox_install: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[Browser]:
+    """A Firefox whose user.js sets one of our prefs to a number instead of a boolean."""
+    bad = 'user_pref("peekafoxy.urlbar.autohide", 5);\n'
+    with launched(firefox_install, tmp_path_factory.mktemp("bad-pref"), bad) as helper:
+        yield helper

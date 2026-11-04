@@ -36,6 +36,32 @@
     },
   ];
 
+  // --- prefs ---
+  //
+  // Registered as booleans on Firefox's *default* branch, so they are listed in about:config with the
+  // right type and a toggle button (nobody has to create them by hand, or pick the wrong type). That is
+  // not "pinning" them: nothing is written to user.js or prefs.js until someone changes a value.
+  // Reads never throw: if a pref ended up with another type (say, a number set in user.js), the
+  // default is used.
+
+  const WELCOMED_PREF = "peekafoxy.welcomed";
+  const defaultBranch = Services.prefs.getDefaultBranch("");
+  for (const [name, value] of [...TARGETS.map((t) => [t.pref, t.defaultOn]), [WELCOMED_PREF, false]]) {
+    try {
+      defaultBranch.setBoolPref(name, value);
+    } catch (e) {
+      console.warn(`${LOG} could not register ${name}:`, e);
+    }
+  }
+  const readBool = (name, fallback) => {
+    try {
+      return Services.prefs.getBoolPref(name, fallback);
+    } catch (e) {
+      console.warn(`${LOG} ${name} is not a boolean, using ${fallback}:`, e);
+      return fallback;
+    }
+  };
+
   const setEnabled = (target, on) => {
     root.toggleAttribute(target.attr, on);
     try {
@@ -54,7 +80,7 @@
     } catch (e) {
       // No saved state for a brand new window.
     }
-    setEnabled(target, saved ? saved === "1" : Services.prefs.getBoolPref(target.pref, target.defaultOn));
+    setEnabled(target, saved ? saved === "1" : readBool(target.pref, target.defaultOn));
   }
 
   // --- flash the tab bar when tabs change (shortcuts, links, background tabs) ---
@@ -94,9 +120,9 @@
   };
   const greetingFor = (locale) => GREETING[String(locale).split(/[-_]/)[0].toLowerCase()] ?? GREETING.en;
 
-  if (!Services.prefs.getBoolPref("peekafoxy.welcomed", false)) {
-    Services.prefs.setBoolPref("peekafoxy.welcomed", true);
+  if (!readBool(WELCOMED_PREF, true)) {
     try {
+      Services.prefs.setBoolPref(WELCOMED_PREF, true);
       const text = greetingFor(Services.locale.appLocaleAsBCP47);
       UC_API.Notifications.show({
         label: text.label,

@@ -242,3 +242,28 @@ def test_full_screen_is_left_to_firefox(browser):
         browser.js("window.fullScreen = false;")
         browser.wait("!document.documentElement.hasAttribute('inFullscreen')", 15)
     press(browser, "KeyU")
+
+
+# --- the prefs ------------------------------------------------------------------------------------
+
+
+def test_prefs_are_listed_as_booleans_without_being_written_anywhere(browser):
+    for name in ("peekafoxy.tabs.autohide", "peekafoxy.urlbar.autohide"):
+        info = browser.js(
+            """const p = Services.prefs;
+               return {type: p.getPrefType(arguments[0]) === p.PREF_BOOL,
+                       userValue: p.prefHasUserValue(arguments[0]),
+                       value: p.getBoolPref(arguments[0])};""",
+            name,
+        )
+        assert info == {"type": True, "userValue": False, "value": False}, name
+
+
+def test_a_pref_with_the_wrong_type_does_not_break_the_script(browser_with_a_bad_pref):
+    b = browser_with_a_bad_pref
+    assert b.js("return !!document.getElementById('urlbar-autohide-button');")
+    assert b.initial["attrs"] == []  # fell back to "off"
+    b.new_window()
+    press(b, "KeyU")
+    assert b.js(f"return {HAS};", "autohide-urlbar")  # still fully functional
+    press(b, "KeyU")
