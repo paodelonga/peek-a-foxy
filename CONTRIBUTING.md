@@ -68,6 +68,7 @@ peek-a-foxy --help
 pytest                                  # unit, property-based and CLI tests; no network needed
 pytest --cov --cov-report=term-missing  # with branch coverage (CI requires at least 90%)
 pytest -m network                       # also clones the real fx-autoconfig at the pinned commit
+pytest -m browser                       # drives a real headless Firefox (see below)
 ruff check . && ruff format .           # lint and format
 ```
 
@@ -85,11 +86,17 @@ What the tests cover, and why:
 - **Interactive choices** (`test_cli.py`, `test_robustness.py`): profile and installation pickers,
   declining the confirmation, invalid numbers.
 
-The installer runs against temporary profiles and a local stand-in for the fx-autoconfig repository, so
-nothing touches your real Firefox. The script and the CSS can't be tested without a browser: for changes
-to them, try the result in a real Firefox (install into a throwaway profile with
-`peek-a-foxy install --profile DIR --skip-loader`, or into your own) and say in the pull request
-what you checked.
+- **The script and the CSS in a real Firefox** (`tests/browser/`): a headless Firefox driven over
+  Marionette, with the real fx-autoconfig loaded from a *copy* of your Firefox install (the loader has to
+  be written into it) and a throwaway profile. They check what actually happens to the window: both
+  buttons exist, shortcuts toggle only their own window, the bars collapse to the strip and open to
+  their natural height without clipping, the bookmarks bar follows the navigation bar, Customize Toolbar and full screen are left alone, the greeting
+  shows once and its button opens the song. They need network access and Firefox: point
+  `PEEK_A_FOXY_FIREFOX` at its binary, or the first Firefox found is used.
+
+The installer tests run against temporary profiles and a local stand-in for the fx-autoconfig repository,
+so nothing touches your real Firefox. Hover itself can't be simulated in headless Firefox, so the tests
+reveal the bars through the other reveal conditions (focus, `tabs-flash`); check hover by hand.
 
 When you fix a bug, add the test that would have caught it.
 
@@ -100,7 +107,9 @@ When you fix a bug, add the test that would have caught it.
   (`cli.py`) only asks, prints and calls into the rest.
 - Installer changes are expressed as a *plan* of steps (`installer.py`), so `--dry-run`, the
   confirmation and the tests all see the same list of changes.
-- CSS: sizes and timings go in the variables at the top of `chrome/autohide.css`.
+- CSS: sizes and timings go in the variables at the top of `chrome/autohide.css`. Each bar has a
+  *collapsed* rule and a *revealed* rule that must stay exact opposites (see the comment at the top of
+  the file); adding a way to reveal a bar means adding it to both.
 - JavaScript: widget callbacks must not use anything from the window script's scope (see the
   comment in `chrome/JS/autohide.uc.js`).
 - Keep `README.md` and `README.pt-BR.md` in sync.

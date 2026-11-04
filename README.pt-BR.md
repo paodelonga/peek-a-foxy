@@ -2,7 +2,7 @@
 
 # Peek-a-Foxy 🦊
 
-**Peek-a-boo para o Firefox: a barra de abas e a barra de navegação se escondem e espiam de volta quando você passa o mouse. De forma independente, por janela.**
+**Peek-a-boo para Foxys: oculta automaticamente a barra de abas e a barra de navegação, por janela. Elas se escondem, espiam e então BOOO!, aparecem quando você passa o mouse.**
 
 [![CI](https://github.com/paodelonga/peek-a-foxy/actions/workflows/ci.yml/badge.svg)](https://github.com/paodelonga/peek-a-foxy/actions/workflows/ci.yml)
 [![Licença: MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-blue.svg)](LICENSE)
@@ -32,7 +32,8 @@
 ## Recursos
 
 - **Autohide das abas.** As abas são recolhidas até uma faixa fina de hover. Elas aparecem quando o cursor está na faixa (passar o mouse na barra de endereço não as revela), rapidamente a cada troca de aba (`Ctrl+Tab`, `Ctrl+PageUp/Down`, ...) e quando uma aba nova é aberta (links, abas em segundo plano), e ficam visíveis enquanto uma aba é arrastada ou o menu de contexto delas está aberto.
-- **Autohide da barra de navegação** (urlbar, botões, extensões). Ela abre pela própria faixa de hover, sempre que a barra de endereço recebe foco (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`) e enquanto o dropdown dela ou um popup da toolbar está aberto.
+- **Autohide da barra de navegação** (urlbar, botões, extensões). Ela abre pela própria faixa de hover, sempre que a barra de endereço recebe foco (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`) e enquanto o dropdown dela ou um popup da toolbar está aberto. A barra de favoritos se esconde e aparece junto com ela.
+- **Sai da frente quando precisa.** O modo Personalizar barra de ferramentas e a tela cheia ficam por conta do Firefox: as barras aparecem por inteiro ali.
 - **Opcional e por janela.** Os dois ficam desligados até você ligá-los, e cada janela mantém o seu próprio estado, guardado com a sessão.
 - **Um oi quando carrega.** Na primeira vez que o script roda num perfil, o Firefox mostra uma notificação única ("Instaalaadoooo PEEK A BOO!!! >.<"), para você saber que está funcionando. Ela segue o idioma do Firefox: inglês, ou português do Brasil quando o Firefox está em português. O botão dela abre a música da qual o nome é uma homenagem ([veja abaixo](#sobre-o-nome)).
 - **Instalador discreto.** O seu `userChrome.css` não é alterado, uma configuração de autoconfig já existente nunca é sobrescrita, e tudo pode ser removido com um comando.
@@ -66,7 +67,7 @@ Install into ~/.mozilla/firefox/abcd1234.default-release
 │ 1 │ Fetch fx-autoconfig (dfdab5684f, verified)                     │
 │ 2 │ Copy autohide.css and autohide.uc.js into …/chrome             │
 │ 3 │ Add the @import line to …/chrome/userChrome.css                │
-│ 4 │ Set the prefs in …/user.js                                     │
+│ 4 │ Enable userChrome.css loading in …/user.js                     │
 │ 5 │ Copy fx-autoconfig's utils into …/chrome/utils                 │
 │ 6 │ Install the loader into /usr/lib/firefox (uses sudo if needed) │
 └───┴────────────────────────────────────────────────────────────────┘
@@ -96,7 +97,7 @@ chrome/
 ├── JS/autohide.uc.js       ← este projeto
 ├── utils/                  ← fx-autoconfig (a metade do loader que fica no perfil)
 └── userChrome.css          ← seu; uma linha é adicionada no topo, o resto não é tocado
-user.js                     ← três prefs adicionadas (abaixo)
+user.js                     ← uma pref adicionada (abaixo)
 ```
 
 Uma linha no topo do seu `userChrome.css`:
@@ -105,13 +106,13 @@ Uma linha no topo do seu `userChrome.css`:
 @import url("autohide.css");
 ```
 
-Três linhas no `user.js`. As duas `userchrome.*` só são adicionadas se você ainda não as definiu:
+Uma linha no `user.js`, a pref de que o Firefox precisa para carregar o `userChrome.css`:
 
 ```js
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
-user_pref("userchrome.tabs.autohide", false);
-user_pref("userchrome.urlbar.autohide", false);
 ```
+
+As prefs do autohide *não* são escritas ali de propósito: o Firefox reaplica o `user.js` a cada inicialização, o que desfaria qualquer mudança sua em `about:config`. Uma pref ausente significa "desligado".
 
 Na pasta de instalação do Firefox (por exemplo `/usr/lib/firefox/`), o loader do [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig), clonado num commit fixo e verificado:
 
@@ -140,22 +141,31 @@ Uma atualização do Firefox pode remover o loader da pasta de instalação; rod
 
 Os botões estão em *Personalizar barra de ferramentas* como **Tabs autohide** e **Urlbar autohide**. O botão da urlbar fica dentro da barra que ele oculta, então revele a barra pela faixa de hover para clicar nele; o atalho funciona a qualquer momento.
 
+### Linha de comando
+
+`-h` funciona como `--help`, em todos os comandos. A autocompletação (bash, zsh, fish) completa comandos, opções e, para `--profile`, os perfis do `profiles.ini`:
+
+```bash
+peek-a-foxy install -h
+peek-a-foxy --install-completion      # depois reinicie o shell
+```
+
 ## Configurações
 
-As duas primeiras prefs só determinam o estado inicial de janelas que não têm um estado guardado; janelas existentes mantêm o seu, e o instalador nunca as sobrescreve depois de definidas.
+As três ficam em `about:config`, onde as suas mudanças permanecem. As duas primeiras só determinam o estado inicial de janelas que não têm um estado guardado; janelas existentes mantêm o seu.
 
 | Pref | Padrão | Significado |
 | --- | --- | --- |
-| `userchrome.tabs.autohide` | `false` | Abre janelas novas com a barra de abas oculta. |
-| `userchrome.urlbar.autohide` | `false` | Abre janelas novas com a barra de navegação oculta. |
-| `userchrome.peekafoxy.welcomed` | `false` | O Firefox define como `true` depois da saudação única. Volte para `false` em `about:config` para vê-la de novo. |
+| `peekafoxy.tabs.autohide` | `false` | Abre janelas novas com a barra de abas oculta. |
+| `peekafoxy.urlbar.autohide` | `false` | Abre janelas novas com a barra de navegação oculta. |
+| `peekafoxy.welcomed` | `false` | O Firefox define como `true` depois da saudação única. Volte para `false` para vê-la de novo. |
 
-Altere em `about:config`, ou adicione linhas como estas ao `user.js` na pasta do seu perfil (`~/.mozilla/firefox/<perfil>/user.js`):
+Para fixar um valor num arquivo (ele é reaplicado a cada inicialização), coloque a linha no `user.js` da pasta do seu perfil (`~/.mozilla/firefox/<perfil>/user.js`):
 
 ```js
 // <perfil>/user.js
-user_pref("userchrome.tabs.autohide", true);
-user_pref("userchrome.urlbar.autohide", true);
+user_pref("peekafoxy.tabs.autohide", true);
+user_pref("peekafoxy.urlbar.autohide", true);
 ```
 
 A altura da faixa, as alturas das barras e os tempos de animação são variáveis CSS no topo de [`chrome/autohide.css`](chrome/autohide.css). Para mudá-las, edite a cópia instalada no seu perfil (ou a do repositório, e instale de novo):
@@ -164,7 +174,7 @@ A altura da faixa, as alturas das barras e os tempos de animação são variáve
 /* <perfil>/chrome/autohide.css */
 :root {
   --autohide-strip: 12px;                 /* altura da faixa de hover */
-  --autohide-tabs-height: 40px;           /* altura da barra de abas aberta */
+  --autohide-tabs-height: 64px;           /* teto: a barra de abas abre até a altura natural, no máximo isto */
   --autohide-show: 0.12s ease-out 0s;     /* abrindo: duração, curva, atraso */
   --autohide-hide: 0.2s ease-in 0.6s;     /* fechando: espera 0,6s antes de recolher */
 }
@@ -182,18 +192,18 @@ A altura da faixa, as alturas das barras e os tempos de animação são variáve
    autohide.css   ── recolhe o #TabsToolbar quando esse atributo está presente
 ```
 
-O CSS reage a atributos que o script define por janela. Recolhida, a barra encolhe até uma faixa; hover, foco, uma troca de aba (`tabs-flash`) ou um popup aberto a expandem:
+O CSS reage a atributos que o script define por janela. Recolhida, a barra encolhe até uma faixa; hover, foco, uma troca de aba (`tabs-flash`) ou um popup aberto a abrem até a altura natural. A regra de recolher só vale enquanto nenhuma dessas condições é verdadeira, então o espaçamento e as bordas do próprio Firefox voltam intactos quando a barra abre:
 
 ```css
-:root[autohide-tabs] #TabsToolbar {
-  height: var(--autohide-strip) !important;
-  overflow: hidden !important;
+/* recolhida: sobra só uma faixa */
+:root[autohide-tabs] #TabsToolbar:not(:hover, :focus-within /* , ... */) {
+  max-height: var(--autohide-strip) !important;
   opacity: 0;
 }
-:root[autohide-tabs] #TabsToolbar:hover,
-:root[autohide-tabs] #TabsToolbar:focus-within,
+/* revelada */
+:root[autohide-tabs] #TabsToolbar:is(:hover, :focus-within),
 :root[autohide-tabs][tabs-flash] #TabsToolbar {
-  height: var(--autohide-tabs-height) !important;
+  max-height: var(--autohide-tabs-height) !important;
   opacity: 1;
 }
 ```

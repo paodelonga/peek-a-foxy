@@ -2,7 +2,7 @@
 
 # Peek-a-Foxy 🦊
 
-**Peek-a-boo for Firefox: your tab bar and navigation bar hide, then peek out when you hover. Independently, per window.**
+**Peek-a-boo for Foxys: autohide the tab bar and navigation bar per window. They hide, they peek, then BOOO! out when you hover.**
 
 [![CI](https://github.com/paodelonga/peek-a-foxy/actions/workflows/ci.yml/badge.svg)](https://github.com/paodelonga/peek-a-foxy/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -32,7 +32,8 @@ English · [Português (Brasil)](README.pt-BR.md)
 ## Features
 
 - **Tab bar autohide.** The bar collapses to a thin hover strip. It slides open when the cursor is on the strip (hovering the URL bar does not reveal it), briefly on every tab switch (`Ctrl+Tab`, `Ctrl+PageUp/Down`, ...) and when a new tab opens (links, background tabs), and stays open while a tab is dragged or its context menu is open.
-- **Navigation bar autohide** (urlbar, buttons, extensions). It opens from its own hover strip, whenever the URL bar gets focus (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`), and while its dropdown or a toolbar popup is open.
+- **Navigation bar autohide** (urlbar, buttons, extensions). It opens from its own hover strip, whenever the URL bar gets focus (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`), and while its dropdown or a toolbar popup is open. The bookmarks bar hides and shows together with it.
+- **Stays out of the way.** Customize Toolbar and full screen are left to Firefox: the bars are fully visible there.
 - **Opt-in and per window.** Both are off until you turn them on, and each window keeps its own state, saved with the session.
 - **A hello when it loads.** The first time the script runs in a profile, Firefox shows a one-time notification ("Instaalleeeeed PEEK A BOO!!! >.<"), so you know it is working. It follows Firefox's language: English, or Brazilian Portuguese when Firefox is in Portuguese. Its button opens the song the name is a nod to ([see below](#about-the-name)).
 - **Non-invasive installer.** Your own `userChrome.css` is left alone, an existing autoconfig setup is never overwritten, and everything can be removed with one command.
@@ -66,7 +67,7 @@ Install into ~/.mozilla/firefox/abcd1234.default-release
 │ 1 │ Fetch fx-autoconfig (dfdab5684f, verified)                     │
 │ 2 │ Copy autohide.css and autohide.uc.js into …/chrome             │
 │ 3 │ Add the @import line to …/chrome/userChrome.css                │
-│ 4 │ Set the prefs in …/user.js                                     │
+│ 4 │ Enable userChrome.css loading in …/user.js                     │
 │ 5 │ Copy fx-autoconfig's utils into …/chrome/utils                 │
 │ 6 │ Install the loader into /usr/lib/firefox (uses sudo if needed) │
 └───┴────────────────────────────────────────────────────────────────┘
@@ -96,7 +97,7 @@ chrome/
 ├── JS/autohide.uc.js       ← this project
 ├── utils/                  ← fx-autoconfig (the per-profile half of the loader)
 └── userChrome.css          ← yours; one line is added at the top, the rest is untouched
-user.js                     ← three prefs added (below)
+user.js                     ← one pref added (below)
 ```
 
 One line at the top of your `userChrome.css`:
@@ -105,13 +106,13 @@ One line at the top of your `userChrome.css`:
 @import url("autohide.css");
 ```
 
-Three lines in `user.js`. The two `userchrome.*` ones are only added if you haven't set them:
+One line in `user.js`, the pref Firefox needs in order to load `userChrome.css`:
 
 ```js
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
-user_pref("userchrome.tabs.autohide", false);
-user_pref("userchrome.urlbar.autohide", false);
 ```
+
+The autohide prefs are deliberately *not* written there: Firefox re-applies `user.js` on every start, which would undo any change you make in `about:config`. A missing pref simply means "off".
 
 In Firefox's install directory (for example `/usr/lib/firefox/`), the [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig) loader, cloned at a pinned and verified commit:
 
@@ -140,22 +141,31 @@ A Firefox update can remove the loader from its install directory; run `peek-a-f
 
 The buttons are in *Customize Toolbar* as **Tabs autohide** and **Urlbar autohide**. The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
 
+### Command line
+
+`-h` works like `--help`, on every command. Shell completion (bash, zsh, fish) completes commands, options, and the profiles from `profiles.ini` for `--profile`:
+
+```bash
+peek-a-foxy install -h
+peek-a-foxy --install-completion      # then restart your shell
+```
+
 ## Settings
 
-The first two prefs only define the initial state of windows that have none saved; existing windows keep their own, and the installer never overwrites them once set.
+All three live in `about:config`, where your changes stick. The first two only define the initial state of windows that have none saved; existing windows keep their own.
 
 | Pref | Default | Meaning |
 | --- | --- | --- |
-| `userchrome.tabs.autohide` | `false` | Start new windows with the tab bar hidden. |
-| `userchrome.urlbar.autohide` | `false` | Start new windows with the navigation bar hidden. |
-| `userchrome.peekafoxy.welcomed` | `false` | Set to `true` by Firefox after the one-time greeting. Set it back to `false` in `about:config` to see it again. |
+| `peekafoxy.tabs.autohide` | `false` | Start new windows with the tab bar hidden. |
+| `peekafoxy.urlbar.autohide` | `false` | Start new windows with the navigation bar hidden. |
+| `peekafoxy.welcomed` | `false` | Set to `true` by Firefox after the one-time greeting. Set it back to `false` to see it again. |
 
-Change them in `about:config`, or add lines like these to `user.js` in your profile folder (`~/.mozilla/firefox/<profile>/user.js`):
+To pin a value in a file instead (it is then re-applied on every start), put the line in `user.js` in your profile folder (`~/.mozilla/firefox/<profile>/user.js`):
 
 ```js
 // <profile>/user.js
-user_pref("userchrome.tabs.autohide", true);
-user_pref("userchrome.urlbar.autohide", true);
+user_pref("peekafoxy.tabs.autohide", true);
+user_pref("peekafoxy.urlbar.autohide", true);
 ```
 
 Strip height, bar heights and animation timings are CSS variables at the top of [`chrome/autohide.css`](chrome/autohide.css). To change them, edit the installed copy in your profile (or the repository copy and install again):
@@ -164,7 +174,7 @@ Strip height, bar heights and animation timings are CSS variables at the top of 
 /* <profile>/chrome/autohide.css */
 :root {
   --autohide-strip: 12px;                 /* hover strip height */
-  --autohide-tabs-height: 40px;           /* tab bar height when open */
+  --autohide-tabs-height: 64px;           /* ceiling: the tab bar opens to its natural height, up to this */
   --autohide-show: 0.12s ease-out 0s;     /* opening: duration, easing, delay */
   --autohide-hide: 0.2s ease-in 0.6s;     /* closing: wait 0.6s before collapsing */
 }
@@ -182,18 +192,18 @@ Strip height, bar heights and animation timings are CSS variables at the top of 
    autohide.css   ── collapses #TabsToolbar when that attribute is present
 ```
 
-The CSS keys on attributes that the script sets per window. Collapsed, the bar shrinks to a strip; hover, focus, a tab switch (`tabs-flash`) or an open popup expand it:
+The CSS keys on attributes that the script sets per window. Collapsed, the bar shrinks to a strip; hover, focus, a tab switch (`tabs-flash`) or an open popup open it to its natural height. The collapsed rule only matches while none of those holds, so Firefox's own spacing and borders come back untouched when the bar opens:
 
 ```css
-:root[autohide-tabs] #TabsToolbar {
-  height: var(--autohide-strip) !important;
-  overflow: hidden !important;
+/* collapsed: only a strip is left */
+:root[autohide-tabs] #TabsToolbar:not(:hover, :focus-within /* , ... */) {
+  max-height: var(--autohide-strip) !important;
   opacity: 0;
 }
-:root[autohide-tabs] #TabsToolbar:hover,
-:root[autohide-tabs] #TabsToolbar:focus-within,
+/* revealed */
+:root[autohide-tabs] #TabsToolbar:is(:hover, :focus-within),
 :root[autohide-tabs][tabs-flash] #TabsToolbar {
-  height: var(--autohide-tabs-height) !important;
+  max-height: var(--autohide-tabs-height) !important;
   opacity: 1;
 }
 ```
