@@ -70,6 +70,33 @@ def test_a_second_window_does_not_greet_again(browser):
     assert ours == 0
 
 
+# --- the helpers the other tests stand on ------------------------------------------------------
+
+
+def test_a_new_window_is_handed_over_with_an_unfocused_url_bar(browser):
+    browser.new_window()
+    assert browser.js("return gBrowserInit.delayedStartupFinished;")
+    assert not browser.js("return gURLBar.focused;")
+
+
+def test_a_window_whose_url_bar_took_the_focus_is_settled(browser):
+    browser.new_window()
+    browser.js("gURLBar.focus();")
+    assert browser.js("return gURLBar.focused;")  # what Firefox sometimes does by itself
+    browser.settle_window()
+    assert not browser.js("return gURLBar.focused;")
+
+
+def test_new_windows_are_always_settled(browser, monkeypatch):
+    settled = []
+    real = type(browser).settle_window
+    monkeypatch.setattr(
+        type(browser), "settle_window", lambda self: (settled.append(1), real(self))
+    )
+    browser.new_window()
+    assert settled == [1]
+
+
 # --- toggles are per window ---------------------------------------------------------------------
 
 
@@ -349,3 +376,54 @@ def test_dragging_a_tab_keeps_the_tab_bar_open_but_not_the_navigation_bar(browse
     drag(browser, "#tabbrowser-tabs .tabbrowser-tab", "dragend")
     press(browser, "KeyT")
     press(browser, "KeyU")
+
+
+# --- texts follow Firefox's language ---------------------------------------------------------
+
+BUTTON_TEXTS = """
+  const out = {};
+  for (const id of ["tabs-autohide-button", "urlbar-autohide-button"]) {
+    const node = CustomizableUI.getWidget(id).forWindow(window).node;
+    out[id] = [node.getAttribute("label"), node.getAttribute("tooltiptext")];
+  }
+  return out;
+"""
+
+
+def test_the_buttons_are_in_english_by_default(browser):
+    assert browser.js(BUTTON_TEXTS) == {
+        "tabs-autohide-button": [
+            "Tabs autohide",
+            "Toggle tab bar autohide for this window (Ctrl+Alt+T)",
+        ],
+        "urlbar-autohide-button": [
+            "Urlbar autohide",
+            "Toggle navigation bar autohide for this window (Ctrl+Alt+U)",
+        ],
+    }
+
+
+def test_the_buttons_and_the_greeting_are_in_portuguese_for_a_portuguese_firefox(
+    browser_in_portuguese,
+):
+    texts = browser_in_portuguese.js(BUTTON_TEXTS)
+    assert texts["tabs-autohide-button"] == [
+        "Ocultar abas automaticamente",
+        "Alterna o ocultamento automático da barra de abas nesta janela (Ctrl+Alt+T)",
+    ]
+    assert texts["urlbar-autohide-button"] == [
+        "Ocultar barra de endereço automaticamente",
+        "Alterna o ocultamento automático da barra de navegação nesta janela (Ctrl+Alt+U)",
+    ]
+    notes = [
+        n
+        for n in browser_in_portuguese.initial["notifications"]
+        if n["value"] == "peekafoxy-welcome"
+    ]
+    assert [n["text"] for n in notes] == ["Instaalaadoooo PEEK A BOO!!! >.<"]
+
+
+def test_the_shortcut_in_a_tooltip_is_the_one_that_works(browser):
+    for button, code in (("tabs-autohide-button", "KeyT"), ("urlbar-autohide-button", "KeyU")):
+        tip = browser.js(BUTTON_TEXTS)[button][1]
+        assert f"Ctrl+Alt+{code[-1]}" in tip

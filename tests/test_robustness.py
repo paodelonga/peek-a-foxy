@@ -150,20 +150,41 @@ def test_a_read_only_firefox_dir_falls_back_to_sudo(monkeypatch, tmp_path):
     ]
 
 
-def test_a_failing_sudo_is_a_clean_error(profile: Path, firefox_dir: Path, fxac_repo, monkeypatch):
-    def denied(*args, **kwargs):
-        raise PermissionError("read-only")
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
+@pytest.mark.parametrize(
+    "failure",
+    [subprocess.CalledProcessError(1, "sudo"), FileNotFoundError("no sudo here")],
+    ids=["sudo-refused", "sudo-missing"],
+)
+def test_a_failing_sudo_is_a_clean_error(
+    profile: Path, firefox_dir: Path, fxac_repo, monkeypatch, failure
+):
+    real_run = subprocess.run
 
-    monkeypatch.setattr(loader.shutil, "copyfile", denied)
-    monkeypatch.setattr(
-        loader.subprocess,
-        "run",
-        lambda *a, **k: (_ for _ in ()).throw(subprocess.CalledProcessError(1, "sudo")),
-    )
-    result = runner.invoke(
-        app, ["install", "--profile", str(profile), "--firefox-dir", str(firefox_dir), "--yes"]
-    )
+    def sudo_fails(command, *args, **kwargs):
+        if command[0] == "sudo":
+            raise failure
+        return real_run(command, *args, **kwargs)  # git still has to work
+
+    monkeypatch.setattr(loader.subprocess, "run", sudo_fails)
+    firefox_dir.chmod(0o555)  # not writable: the loader has to ask for sudo
+    try:
+        result = runner.invoke(
+            app, ["install", "--profile", str(profile), "--firefox-dir", str(firefox_dir), "--yes"]
+        )
+    finally:
+        firefox_dir.chmod(0o755)
     assert result.exit_code == 1 and "sudo" in result.output and "Traceback" not in result.output
+    assert not (firefox_dir / "config.js").exists()
+    assert (profile / "chrome" / "autohide.css").is_file()  # the earlier steps did run
+    assert "Running the same command again is safe" in result.output
+
+
+def test_sudo_runs_the_command_it_was_given(monkeypatch):
+    calls: list[list[str]] = []
+    monkeypatch.setattr(loader.subprocess, "run", lambda command, **kw: calls.append(command))
+    loader._sudo("install", "-m", "644", "a", "b")
+    assert calls == [["sudo", "install", "-m", "644", "a", "b"]]
 
 
 def test_a_loader_identical_to_ours_is_not_a_conflict(profile, firefox_dir, fxac_repo):
@@ -262,3 +283,56 @@ def test_a_long_path_in_an_error_is_not_broken_across_lines(tmp_path: Path):
     result = runner.invoke(app, ["install", "--profile", str(profile), "--skip-loader", "--yes"])
     assert result.exit_code == 1
     assert str(css) in result.output  # more than 80 columns, still on one line
+
+
+# --- no terminal and no --yes: nobody can confirm ---------------------------------------------
+
+
+@pytest.mark.parametrize("command", ["install", "uninstall"])
+def test_without_a_terminal_and_without_yes_nothing_is_applied(
+    command: str, profile: Path, monkeypatch
+):
+    monkeypatch.setattr(cli, "_interactive", lambda yes: False)  # piped, cron, CI...
+    plan_install(profile, None).execute()
+    before = tree(profile)
+    args = [command, "--profile", str(profile)]
+    result = runner.invoke(app, args if command == "uninstall" else [*args, "--skip-loader"])
+    assert result.exit_code == 1 and "--yes" in result.output
+    assert "Traceback" not in result.output
+    assert tree(profile) == before
+
+
+def test_a_dry_run_needs_no_terminal_and_no_yes(profile: Path):
+    result = runner.invoke(
+        app, ["install", "--profile", str(profile), "--skip-loader", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert not (profile / "chrome" / "autohide.css").exists()
+
+
+def test_yes_applies_without_a_terminal(profile: Path):
+    result = runner.invoke(app, ["install", "--profile", str(profile), "--skip-loader", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert (profile / "chrome" / "autohide.css").is_file()
+
+
+def test_the_real_cli_without_a_terminal_refuses_too(profile: Path):
+    """End to end, with the real stdin/stdout (not a terminal under pytest) instead of a stub."""
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "peek_a_foxy",
+            "install",
+            "--profile",
+            str(profile),
+            "--skip-loader",
+        ],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
+    assert result.returncode == 1 and "--yes" in result.stderr
+    assert not (profile / "chrome" / "autohide.css").exists()

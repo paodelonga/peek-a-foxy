@@ -14,27 +14,55 @@
   const root = document.documentElement;
 
   // One entry per autohidden bar.
+  //   name    key of the bar's texts in STRINGS
   //   attr    :root attribute that chrome/autohide.css keys on
   //   pref    default state for windows that have no saved state
   //   session key under which the state is stored with the window (SessionStore)
   //   code    KeyboardEvent.code of the Ctrl+Alt shortcut
-  //   button  toolbar button shown in Customize Toolbar
+  //   button  toolbar button shown in Customize Toolbar (its texts are in STRINGS)
   const TARGETS = [
     {
-      attr: "autohide-tabs", pref: "peekafoxy.tabs.autohide", defaultOn: false,
+      name: "tabs", attr: "autohide-tabs", pref: "peekafoxy.tabs.autohide", defaultOn: false,
       session: "autohideTabs", code: "KeyT",
-      button: { id: "tabs-autohide-button", label: "Tabs autohide",
-                tooltip: "Toggle tab bar autohide for this window (Ctrl+Alt+T)",
-                image: "chrome://browser/skin/tabs.svg" },
+      button: { id: "tabs-autohide-button", image: "chrome://browser/skin/tabs.svg" },
     },
     {
-      attr: "autohide-urlbar", pref: "peekafoxy.urlbar.autohide", defaultOn: false,
+      name: "urlbar", attr: "autohide-urlbar", pref: "peekafoxy.urlbar.autohide", defaultOn: false,
       session: "autohideUrlbar", code: "KeyU",
-      button: { id: "urlbar-autohide-button", label: "Urlbar autohide",
-                tooltip: "Toggle navigation bar autohide for this window (Ctrl+Alt+U)",
-                image: "chrome://global/skin/icons/search-glass.svg" },
+      button: { id: "urlbar-autohide-button", image: "chrome://global/skin/icons/search-glass.svg" },
     },
   ];
+
+  // --- texts ---
+  //
+  // Everything the user can read comes from here, in the language of Firefox's interface: Portuguese
+  // (pt, pt-BR, pt-PT...) gets the Brazilian Portuguese strings, everything else gets English. To add
+  // a language, add an entry keyed by its language code (the part before the "-" or "_"). "{key}" in a
+  // tooltip is replaced by the shortcut, so it always matches the code in TARGETS.
+  //
+  // The toolbar buttons are created once, by the first window, so their texts follow the language
+  // Firefox started with.
+
+  const STRINGS = {
+    en: {
+      greeting: "Instaalleeeeed PEEK A BOO!!! >.<",
+      greetingButton: "Peek-a-boo!",
+      tabs: { label: "Tabs autohide", tooltip: "Toggle tab bar autohide for this window ({key})" },
+      urlbar: { label: "Urlbar autohide",
+                tooltip: "Toggle navigation bar autohide for this window ({key})" },
+    },
+    pt: {
+      greeting: "Instaalaadoooo PEEK A BOO!!! >.<",
+      greetingButton: "Peek-a-boo!",
+      tabs: { label: "Ocultar abas automaticamente",
+              tooltip: "Alterna o ocultamento automático da barra de abas nesta janela ({key})" },
+      urlbar: { label: "Ocultar barra de endereço automaticamente",
+                tooltip: "Alterna o ocultamento automático da barra de navegação nesta janela ({key})" },
+    },
+  };
+  const LOCALE = Services.locale.appLocaleAsBCP47;
+  const TEXT = STRINGS[String(LOCALE).split(/[-_]/)[0].toLowerCase()] ?? STRINGS.en;
+  const shortcutOf = (target) => `Ctrl+Alt+${target.code.replace(/^Key/, "")}`;
 
   // --- prefs ---
   //
@@ -136,29 +164,18 @@
   //
   // Shown once per profile, so you can tell the script is loaded and working. The pref is set before
   // the notification so that other windows opening right now don't show it again.
-  //
-  // The text follows Firefox's interface language: Portuguese (pt, pt-BR, pt-PT...) gets the
-  // Brazilian Portuguese strings, everything else gets English. To add a language, add an entry to
-  // GREETING keyed by its language code (the part before the "-" or "_").
-
-  const GREETING = {
-    en: { label: "Instaalleeeeed PEEK A BOO!!! >.<", button: "Peek-a-boo!" },
-    pt: { label: "Instaalaadoooo PEEK A BOO!!! >.<", button: "Peek-a-boo!" },
-  };
-  const greetingFor = (locale) => GREETING[String(locale).split(/[-_]/)[0].toLowerCase()] ?? GREETING.en;
 
   if (!readBool(WELCOMED_PREF, true)) {
     try {
       Services.prefs.setBoolPref(WELCOMED_PREF, true);
-      const text = greetingFor(Services.locale.appLocaleAsBCP47);
       UC_API.Notifications.show({
-        label: text.label,
+        label: TEXT.greeting,
         type: "peekafoxy-welcome",
         priority: "info",
         window,
         buttons: [
           {
-            label: text.button,
+            label: TEXT.greetingButton,
             callback() {
               // The argument Firefox passes here changes between versions, so don't rely on it:
               // the notification lives in this window, which is the one that should open the tab.
@@ -181,13 +198,14 @@
   // extra properties of the description onto the button).
   // The urlbar button sits in the bar it hides; reveal the bar with its hover strip to use it.
 
-  for (const { attr, session, button } of TARGETS) {
+  for (const target of TARGETS) {
+    const { attr, session, button } = target;
     try {
       UC_API.Utils.createWidget({
         id: button.id,
         type: "toolbarbutton",
-        label: button.label,
-        tooltip: button.tooltip,
+        label: TEXT[target.name].label,
+        tooltip: TEXT[target.name].tooltip.replace("{key}", shortcutOf(target)),
         image: button.image,
         "autohide-attr": attr,
         "autohide-session": session,

@@ -45,3 +45,14 @@ def firefox_dir(tmp_path: Path) -> Path:
     path.mkdir()
     (path / "omni.ja").touch()
     return path
+
+
+@pytest.fixture(autouse=True)
+def plain_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No colors, whatever the environment (CI sets FORCE_COLOR): tests compare plain text."""
+    from peek_a_foxy import ui
+
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setenv("NO_COLOR", "1")  # Typer's own output and subprocesses
+    monkeypatch.setattr(ui.console, "_color_system", None)
+    monkeypatch.setattr(ui.errors, "_color_system", None)

@@ -76,6 +76,8 @@ Apply these changes? [Y/n]:
 
 With several profiles or several Firefox installations (release and developer edition, for example) it asks which one to use. It never guesses: with `--yes`, an ambiguous choice is an error and you pass `--profile` / `--firefox-dir`.
 
+Without a terminal (a pipe, cron, CI) there is nobody to confirm, so `install` and `uninstall` refuse to change anything unless you pass `--yes`. `--dry-run` always works.
+
 ```text
 peek-a-foxy install [--profile DIR] [--firefox-dir DIR] [--skip-loader] [--dry-run] [--yes]
 peek-a-foxy uninstall [--profile DIR] [--dry-run] [--yes]
@@ -84,7 +86,8 @@ peek-a-foxy uninstall [--profile DIR] [--dry-run] [--yes]
   --firefox-dir DIR   Firefox install directory for the loader (default: auto-detected)
   --skip-loader       only install the profile files; leave the Firefox install directory alone
   --dry-run           show the plan without changing anything
-  --yes, -y           don't ask for confirmation or choose interactively
+  --yes, -y           don't ask anything: apply without confirming, no profile or Firefox picker
+                      (an unclear choice is an error instead)
 ```
 
 ### What gets installed
@@ -114,7 +117,7 @@ user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 
 The autohide prefs are deliberately *not* written there: Firefox re-applies `user.js` on every start, which would undo any change you make in `about:config`. Instead, the script registers them as boolean prefs (default `false`) every time it loads, so they are listed in `about:config` with a toggle button and nothing is written to disk until you change a value.
 
-In Firefox's install directory (for example `/usr/lib/firefox/`), the [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig) loader, cloned at a pinned and verified commit:
+In Firefox's install directory (for example `/usr/lib/firefox/`), the [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig) loader, fetched at a pinned and verified commit (only that commit, without its history):
 
 ```text
 config.js                       ← loads the profile's chrome/utils
@@ -139,7 +142,9 @@ A Firefox update can remove the loader from its install directory; run `peek-a-f
 | Toggle for the current window | `Ctrl+Alt+T` or toolbar button | `Ctrl+Alt+U` or toolbar button |
 | Reveal temporarily | hover the top strip, switch or open a tab | hover its strip, focus the URL bar |
 
-The buttons are in *Customize Toolbar* as **Tabs autohide** and **Urlbar autohide**. The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
+The buttons are in *Customize Toolbar* as **Tabs autohide** and **Urlbar autohide** (in a Portuguese Firefox: **Ocultar abas automaticamente** and **Ocultar barra de endereço automaticamente**). The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
+
+**`Ctrl+Alt+T` does not work on GNOME, Ubuntu and Linux Mint.** There it opens a terminal: the desktop takes the shortcut before Firefox sees it. Use the toolbar button, or give the shortcut up on that desktop (`Ctrl+Alt+U` is not affected). Making the shortcuts configurable is planned.
 
 ### Command line
 
@@ -168,15 +173,17 @@ user_pref("peekafoxy.tabs.autohide", true);
 user_pref("peekafoxy.urlbar.autohide", true);
 ```
 
-Strip height, bar heights and animation timings are CSS variables at the top of [`chrome/autohide.css`](chrome/autohide.css). To change them, edit the installed copy in your profile (or the repository copy and install again):
+These are the defaults. Strip height, bar heights and animation timings are CSS variables at the top of [`chrome/autohide.css`](chrome/autohide.css). To change them, edit the installed copy in your profile (or the repository copy and install again):
 
 ```css
 /* <profile>/chrome/autohide.css */
 :root {
-  --autohide-strip: 12px;                 /* hover strip height */
+  --autohide-strip: 8px;                  /* hover strip height */
   --autohide-tabs-height: 64px;           /* ceiling: the tab bar opens to its natural height, up to this */
+  --autohide-nav-height: 52px;            /* the navigation bar's open height (close to its natural one) */
+  --autohide-bookmarks-height: 40px;      /* the bookmarks bar's open height */
   --autohide-show: 0.12s ease-out 0s;     /* opening: duration, easing, delay */
-  --autohide-hide: 0.2s ease-in 0.6s;     /* closing: wait 0.6s before collapsing */
+  --autohide-hide: 0.2s ease-in 0.3s;     /* closing: wait 0.3s before collapsing */
 }
 ```
 

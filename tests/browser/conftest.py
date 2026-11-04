@@ -13,7 +13,7 @@ import shutil
 import socket
 import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -101,7 +101,21 @@ class Browser:
         self.wait(
             "typeof gBrowser !== 'undefined' && document.getElementById('tabs-autohide-button')"
         )
+        self.settle_window()
         return new[0]
+
+    def settle_window(self) -> None:
+        """Leave the window the way a test expects it: startup done and nothing focused in a bar.
+
+        Firefox may focus the URL bar of a new blank window while it finishes starting, and a
+        focused URL bar correctly keeps the navigation bar (and the bookmarks bar) open, which would
+        make a test that expects them to collapse fail at random.
+        """
+        self.wait(
+            "gBrowserInit.delayedStartupFinished", message="the window never finished starting"
+        )
+        self.js("gURLBar.blur(); gBrowser.selectedBrowser.focus();")
+        self.wait("!gURLBar.focused", message="the URL bar kept the focus")
 
     def switch_to(self, handle: str) -> None:
         self.client.switch_to_window(handle)
@@ -138,14 +152,25 @@ def firefox_install(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @contextmanager
-def launched(install_dir: Path, root: Path, extra_user_js: str = "") -> Iterator[Browser]:
-    """Install into a fresh profile, start Firefox headless on it, and yield a connected helper."""
+def launched(
+    install_dir: Path,
+    root: Path,
+    extra_user_js: str = "",
+    edit_script: Callable[[str], str] | None = None,
+) -> Iterator[Browser]:
+    """Install into a fresh profile, start Firefox headless on it, and yield a connected helper.
+
+    ``edit_script`` may rewrite the installed ``autohide.uc.js`` before Firefox starts.
+    """
     profile = root / "profile"
     profile.mkdir()
     port = _free_port()
     (profile / "user.js").write_text(SETTINGS.format(port=port) + extra_user_js)
 
     plan_install(profile, install_dir).execute()  # the real loader, into the copy
+    if edit_script is not None:
+        installed = profile / "chrome" / "JS" / "autohide.uc.js"
+        installed.write_text(edit_script(installed.read_text(encoding="utf-8")), encoding="utf-8")
 
     process = subprocess.Popen(
         [
@@ -213,4 +238,31 @@ def browser_with_a_bad_pref(
     """A Firefox whose user.js sets one of our prefs to a number instead of a boolean."""
     bad = 'user_pref("peekafoxy.urlbar.autohide", 5);\n'
     with launched(firefox_install, tmp_path_factory.mktemp("bad-pref"), bad) as helper:
+        yield helper
+
+
+LOCALE_LINE = "Services.locale.appLocaleAsBCP47"
+
+
+def _speaking(locale: str) -> Callable[[str], str]:
+    """Make the script believe Firefox's interface language is ``locale``.
+
+    A stock Firefox only has en-US, so the language the script sees can't be changed from outside;
+    this replaces the one expression that asks for it and fails loudly if that expression moves.
+    """
+
+    def edit(source: str) -> str:
+        assert source.count(LOCALE_LINE) == 1, f"{LOCALE_LINE} is not in the script exactly once"
+        return source.replace(LOCALE_LINE, f'"{locale}"')
+
+    return edit
+
+
+@pytest.fixture(scope="session")
+def browser_in_portuguese(
+    firefox_install: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[Browser]:
+    """A Firefox whose interface language, as far as the script can tell, is pt-BR."""
+    root = tmp_path_factory.mktemp("portuguese")
+    with launched(firefox_install, root, edit_script=_speaking("pt-BR")) as helper:
         yield helper
