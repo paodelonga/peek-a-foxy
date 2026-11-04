@@ -52,6 +52,25 @@ docs: add a Portuguese README
 
 One logical change per commit.
 
+## Releasing
+
+Releases are cut from `main` by the maintainer:
+
+1. On `devel/devel`: set the new `version` in `pyproject.toml` and move the `[Unreleased]` entries of
+   `CHANGELOG.md` under the new version and date.
+2. Open a pull request from `devel/devel` into `main` and merge it once CI is green.
+3. Tag the merge commit `vX.Y.Z` (annotated: `git tag -a vX.Y.Z -m "vX.Y.Z"`) and push the tag.
+4. Create the GitHub release from the tag, with the changelog entry as its notes.
+
+The commit types decide the number: a `feat` is a minor bump, a `fix` a patch, and a `!` or a
+`BREAKING CHANGE:` footer a major bump (a minor one while the version is below 1.0).
+
+## Reporting problems and asking for things
+
+Use the issue forms: bug reports ask for the details that matter here (Firefox build, desktop or
+window manager, display server). Security problems go through the private advisory form instead; see
+[SECURITY.md](SECURITY.md).
+
 ## Development setup
 
 Python 3.10 or newer.
