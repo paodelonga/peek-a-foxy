@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]   # macOS ships bash 3.2 and BSD tools
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run installer tests
+        run: tests/test-install.sh
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint shell scripts
+        run: shellcheck install.sh tests/test-install.sh

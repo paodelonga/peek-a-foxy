@@ -9,13 +9,17 @@
 :root {
   --autohide-show: 0.12s ease-out 0s;
   --autohide-hide: 0.2s ease-in 0.3s;
+  /* Collapsed hover strip and expanded bar heights. */
+  --autohide-strip: 8px;
+  --autohide-tabs-height: 40px;
+  --autohide-nav-height: 52px;  /* close to the navbar's natural height, so the animation has no dead time */
 }
 
 /* ---- Tab bar: also revealed on tab switch/open ---- */
 :root[autohide-tabs] #TabsToolbar {
-  height: 8px !important;
+  height: var(--autohide-strip) !important;
   min-height: 0 !important;
-  max-height: 8px !important;
+  max-height: var(--autohide-strip) !important;
   padding: 0 !important;
   margin: 0 !important;
   border: 0 !important;
@@ -33,8 +37,8 @@
 :root[autohide-tabs]:has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar,
 /* Hover is not updated during a drag session, so keep the bar open while a tab is being dragged. */
 :root[autohide-tabs] #TabsToolbar:has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget]) {
-  height: 40px !important;
-  max-height: 40px !important;
+  height: var(--autohide-tabs-height) !important;
+  max-height: var(--autohide-tabs-height) !important;
   opacity: 1;
   transition: max-height var(--autohide-show), height var(--autohide-show), opacity var(--autohide-show);
 }
@@ -47,7 +51,7 @@
    Revealed on its strip, while anything inside has focus (Ctrl+L, Ctrl+K, F6, Alt+D focus the urlbar),
    while the urlbar dropdown is open, or while a toolbar popup (extensions, menus) is open. */
 :root[autohide-urlbar] #nav-bar {
-  max-height: 8px !important;
+  max-height: var(--autohide-strip) !important;
   min-height: 0 !important;
   padding: 0 !important;
   margin: 0 !important;
@@ -60,8 +64,7 @@
 :root[autohide-urlbar] #nav-bar:focus-within,
 :root[autohide-urlbar] #nav-bar:has(toolbarbutton[open]),
 :root[autohide-urlbar]:has(#urlbar[open]) #nav-bar {
-  /* Close to the bar's natural height, so the animation has no dead time at its end. */
-  max-height: 52px !important;
+  max-height: var(--autohide-nav-height) !important;
   opacity: 1;
   transition: max-height var(--autohide-show), opacity var(--autohide-show);
 }
