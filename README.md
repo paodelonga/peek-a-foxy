@@ -32,7 +32,7 @@ English · [Português (Brasil)](README.pt-BR.md)
 ## Features
 
 - **Tab bar autohide.** The bar collapses to a thin hover strip. It slides open when the cursor is on the strip (hovering the URL bar does not reveal it), briefly on every tab switch (`Ctrl+Tab`, `Ctrl+PageUp/Down`, ...) and when a new tab opens (links, background tabs), and stays open while a tab is dragged or its context menu is open.
-- **Navigation bar autohide** (urlbar, buttons, extensions). It opens from its own hover strip, whenever the URL bar gets focus (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`), and while its dropdown or a toolbar popup is open. The bookmarks bar hides and shows together with it.
+- **Navigation bar autohide** (urlbar, buttons, extensions). It opens from its own hover strip, whenever the URL bar gets focus (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`), and while its dropdown or a toolbar popup is open. The bookmarks bar hides and shows together with it, and the bars try to stay open while something is dragged out of them (for bookmarks this is not reliable yet, see the [roadmap](#roadmap)).
 - **Stays out of the way.** Customize Toolbar and full screen are left to Firefox: the bars are fully visible there.
 - **Opt-in and per window.** Both are off until you turn them on, and each window keeps its own state, saved with the session.
 - **A hello when it loads.** The first time the script runs in a profile, Firefox shows a one-time notification ("Instaalleeeeed PEEK A BOO!!! >.<"), so you know it is working. It follows Firefox's language: English, or Brazilian Portuguese when Firefox is in Portuguese. Its button opens the song the name is a nod to ([see below](#about-the-name)).
@@ -112,7 +112,7 @@ One line in `user.js`, the pref Firefox needs in order to load `userChrome.css`:
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 ```
 
-The autohide prefs are deliberately *not* written there: Firefox re-applies `user.js` on every start, which would undo any change you make in `about:config`. A missing pref simply means "off".
+The autohide prefs are deliberately *not* written there: Firefox re-applies `user.js` on every start, which would undo any change you make in `about:config`. Instead, the script registers them as boolean prefs (default `false`) every time it loads, so they are listed in `about:config` with a toggle button and nothing is written to disk until you change a value.
 
 In Firefox's install directory (for example `/usr/lib/firefox/`), the [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig) loader, cloned at a pinned and verified commit:
 
@@ -152,7 +152,7 @@ peek-a-foxy --install-completion      # then restart your shell
 
 ## Settings
 
-All three live in `about:config`, where your changes stick. The first two only define the initial state of windows that have none saved; existing windows keep their own.
+All three are listed in `about:config` as booleans, so you only flip them (no need to create anything), and your changes stick. The first two only define the initial state of windows that have none saved; existing windows keep their own.
 
 | Pref | Default | Meaning |
 | --- | --- | --- |
@@ -241,6 +241,7 @@ Planned; contributions are welcome.
 - [ ] macOS compatibility
 - [ ] Tiling window managers and context menus: some tiling WMs steal the pointer when a context menu opens, so the tab bar may close while the menu is open.
 - [ ] Open the bars over the page instead of pushing it down. Today a revealed bar pushes the page down, which reflows the page on every animation frame.
+- [ ] The bookmarks bar closing when a bookmark is pressed and held or dragged, seen on at least one setup (Linux, tiling window manager). The automated tests send synthetic drag events and do not reproduce it. Reports are welcome, with your Firefox build, desktop or window manager, and display server (X11 or Wayland).
 - [ ] A settings UI for strip size, delays and shortcuts, instead of editing CSS variables.
 
 ## About the name

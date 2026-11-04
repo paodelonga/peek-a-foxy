@@ -32,7 +32,7 @@
 ## Recursos
 
 - **Autohide das abas.** As abas são recolhidas até uma faixa fina de hover. Elas aparecem quando o cursor está na faixa (passar o mouse na barra de endereço não as revela), rapidamente a cada troca de aba (`Ctrl+Tab`, `Ctrl+PageUp/Down`, ...) e quando uma aba nova é aberta (links, abas em segundo plano), e ficam visíveis enquanto uma aba é arrastada ou o menu de contexto delas está aberto.
-- **Autohide da barra de navegação** (urlbar, botões, extensões). Ela abre pela própria faixa de hover, sempre que a barra de endereço recebe foco (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`) e enquanto o dropdown dela ou um popup da toolbar está aberto. A barra de favoritos se esconde e aparece junto com ela.
+- **Autohide da barra de navegação** (urlbar, botões, extensões). Ela abre pela própria faixa de hover, sempre que a barra de endereço recebe foco (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`) e enquanto o dropdown dela ou um popup da toolbar está aberto. A barra de favoritos se esconde e aparece junto com ela, e as barras tentam ficar abertas enquanto algo é arrastado para fora delas (com favoritos isso ainda não é confiável, veja o [roadmap](#roadmap)).
 - **Sai da frente quando precisa.** O modo Personalizar barra de ferramentas e a tela cheia ficam por conta do Firefox: as barras aparecem por inteiro ali.
 - **Opcional e por janela.** Os dois ficam desligados até você ligá-los, e cada janela mantém o seu próprio estado, guardado com a sessão.
 - **Um oi quando carrega.** Na primeira vez que o script roda num perfil, o Firefox mostra uma notificação única ("Instaalaadoooo PEEK A BOO!!! >.<"), para você saber que está funcionando. Ela segue o idioma do Firefox: inglês, ou português do Brasil quando o Firefox está em português. O botão dela abre a música da qual o nome é uma homenagem ([veja abaixo](#sobre-o-nome)).
@@ -112,7 +112,7 @@ Uma linha no `user.js`, a pref de que o Firefox precisa para carregar o `userChr
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 ```
 
-As prefs do autohide *não* são escritas ali de propósito: o Firefox reaplica o `user.js` a cada inicialização, o que desfaria qualquer mudança sua em `about:config`. Uma pref ausente significa "desligado".
+As prefs do autohide *não* são escritas ali de propósito: o Firefox reaplica o `user.js` a cada inicialização, o que desfaria qualquer mudança sua em `about:config`. Em vez disso, o script as registra como prefs booleanas (padrão `false`) toda vez que carrega, então elas aparecem no `about:config` com um botão de alternar, e nada é gravado em disco até você mudar um valor.
 
 Na pasta de instalação do Firefox (por exemplo `/usr/lib/firefox/`), o loader do [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig), clonado num commit fixo e verificado:
 
@@ -152,7 +152,7 @@ peek-a-foxy --install-completion      # depois reinicie o shell
 
 ## Configurações
 
-As três ficam em `about:config`, onde as suas mudanças permanecem. As duas primeiras só determinam o estado inicial de janelas que não têm um estado guardado; janelas existentes mantêm o seu.
+As três aparecem no `about:config` como booleanas, então você só alterna (não precisa criar nada), e as suas mudanças permanecem. As duas primeiras só determinam o estado inicial de janelas que não têm um estado guardado; janelas existentes mantêm o seu.
 
 | Pref | Padrão | Significado |
 | --- | --- | --- |
@@ -241,6 +241,7 @@ Planejado; contribuições são bem-vindas.
 - [ ] Compatibilidade com macOS
 - [ ] Gerenciadores de janela em mosaico e menus de contexto: alguns WMs em mosaico tomam o ponteiro quando um menu de contexto abre, então a barra de abas pode fechar enquanto o menu está aberto.
 - [ ] Abrir as barras por cima da página em vez de empurrá-la para baixo. Hoje uma barra revelada empurra a página, o que refaz o layout da página a cada quadro da animação.
+- [ ] A barra de favoritos fechando quando um favorito é pressionado e segurado ou arrastado, visto em pelo menos um ambiente (Linux, gerenciador de janelas em mosaico). Os testes automatizados enviam eventos de arrasto sintéticos e não reproduzem isso. Relatos são bem-vindos, com a build do Firefox, o desktop ou gerenciador de janelas e o servidor gráfico (X11 ou Wayland).
 - [ ] Uma interface de configurações para o tamanho da faixa, os atrasos e os atalhos, em vez de editar variáveis CSS.
 
 ## Sobre o nome

@@ -90,7 +90,7 @@ What the tests cover, and why:
   Marionette, with the real fx-autoconfig loaded from a *copy* of your Firefox install (the loader has to
   be written into it) and a throwaway profile. They check what actually happens to the window: both
   buttons exist, shortcuts toggle only their own window, the bars collapse to the strip and open to
-  their natural height without clipping, the bookmarks bar follows the navigation bar, Customize Toolbar and full screen are left alone, the greeting
+  their natural height without clipping, the bookmarks bar follows the navigation bar, a bar stays open while something is dragged out of it, the prefs are registered as booleans, Customize Toolbar and full screen are left alone, the greeting
   shows once and its button opens the song. They need network access and Firefox: point
   `PEEK_A_FOXY_FIREFOX` at its binary, or the first Firefox found is used.
 
