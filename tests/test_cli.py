@@ -236,11 +236,11 @@ def test_an_installation_without_a_competing_one_is_used_without_asking(
 
 def test_a_platform_firefox_cannot_be_found_on_is_a_clean_error(profile: Path, monkeypatch):
     def unsupported():
-        raise cli.platform.UnsupportedPlatformError("only Linux and macOS")
+        raise cli.platform.UnsupportedPlatformError("only some platforms")
 
     monkeypatch.setattr(cli.platform, "firefox_dir_candidates", unsupported)
     result = runner.invoke(app, ["install", "--profile", str(profile), "--yes"])
-    assert result.exit_code == 1 and "only Linux and macOS" in result.output
+    assert result.exit_code == 1 and "only some platforms" in result.output
 
 
 @pytest.mark.parametrize("answer", ["0", "3"])

@@ -162,10 +162,9 @@ def _resolve_firefox_dir(firefox_dir: Path | None, skip_loader: bool, yes: bool)
         return None
     if firefox_dir is None:
         firefox_dir = _choose_firefox_dir(yes)
-    if platform.is_sandboxed(firefox_dir):
-        ui.fail(
-            f"Snap and Flatpak builds of Firefox are read-only and not supported ({firefox_dir})"
-        )
+    kind = platform.sandbox_kind(firefox_dir)
+    if kind:
+        ui.fail(f"{kind} builds of Firefox are read-only and not supported ({firefox_dir})")
     return firefox_dir
 
 

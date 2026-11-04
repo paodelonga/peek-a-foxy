@@ -262,9 +262,9 @@ def test_no_firefox_found_is_a_clean_error(profile: Path, monkeypatch):
 
 
 def test_unsupported_platform_is_a_clean_error(monkeypatch):
-    monkeypatch.setattr(cli.platform.sys, "platform", "win32")
+    monkeypatch.setattr(cli.platform.sys, "platform", "freebsd14")
     result = runner.invoke(app, ["install", "--yes"])
-    assert result.exit_code == 1 and "Linux and macOS" in result.output
+    assert result.exit_code == 1 and "Linux, macOS and Windows" in result.output
 
 
 def test_uninstall_dry_run_changes_nothing(profile: Path):
