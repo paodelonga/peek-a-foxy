@@ -76,6 +76,8 @@ Apply these changes? [Y/n]:
 
 Com vários perfis ou várias instalações do Firefox (release e developer edition, por exemplo), ele pergunta qual usar. Nunca adivinha: com `--yes`, uma escolha ambígua é um erro e você informa `--profile` / `--firefox-dir`.
 
+Sem terminal (um pipe, cron, CI) não há ninguém para confirmar, então `install` e `uninstall` se recusam a alterar qualquer coisa sem `--yes`. O `--dry-run` sempre funciona.
+
 ```text
 peek-a-foxy install [--profile DIR] [--firefox-dir DIR] [--skip-loader] [--dry-run] [--yes]
 peek-a-foxy uninstall [--profile DIR] [--dry-run] [--yes]
@@ -84,7 +86,8 @@ peek-a-foxy uninstall [--profile DIR] [--dry-run] [--yes]
   --firefox-dir DIR   pasta de instalação do Firefox para o loader (padrão: detectada automaticamente)
   --skip-loader       instala só os arquivos do perfil; não mexe na pasta de instalação do Firefox
   --dry-run           mostra o plano sem alterar nada
-  --yes, -y           não pergunta confirmação nem escolhe interativamente
+  --yes, -y           não pergunta nada: aplica sem confirmar, sem escolher perfil ou Firefox
+                      (uma escolha ambígua vira erro)
 ```
 
 ### O que é instalado
@@ -114,7 +117,7 @@ user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 
 As prefs do autohide *não* são escritas ali de propósito: o Firefox reaplica o `user.js` a cada inicialização, o que desfaria qualquer mudança sua em `about:config`. Em vez disso, o script as registra como prefs booleanas (padrão `false`) toda vez que carrega, então elas aparecem no `about:config` com um botão de alternar, e nada é gravado em disco até você mudar um valor.
 
-Na pasta de instalação do Firefox (por exemplo `/usr/lib/firefox/`), o loader do [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig), clonado num commit fixo e verificado:
+Na pasta de instalação do Firefox (por exemplo `/usr/lib/firefox/`), o loader do [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig), baixado num commit fixo e verificado (só esse commit, sem o histórico):
 
 ```text
 config.js                       ← carrega o chrome/utils do perfil
@@ -139,7 +142,9 @@ Uma atualização do Firefox pode remover o loader da pasta de instalação; rod
 | Alternar na janela atual | `Ctrl+Alt+T` ou botão da toolbar | `Ctrl+Alt+U` ou botão da toolbar |
 | Revelar temporariamente | passar o mouse na faixa do topo, trocar ou abrir uma aba | passar o mouse na faixa dela, focar a barra de endereço |
 
-Os botões estão em *Personalizar barra de ferramentas* como **Tabs autohide** e **Urlbar autohide**. O botão da urlbar fica dentro da barra que ele oculta, então revele a barra pela faixa de hover para clicar nele; o atalho funciona a qualquer momento.
+Os botões estão em *Personalizar barra de ferramentas* como **Tabs autohide** e **Urlbar autohide** (num Firefox em português: **Ocultar abas automaticamente** e **Ocultar barra de endereço automaticamente**). O botão da urlbar fica dentro da barra que ele oculta, então revele a barra pela faixa de hover para clicar nele; o atalho funciona a qualquer momento.
+
+**O `Ctrl+Alt+T` não funciona no GNOME, Ubuntu e Linux Mint.** Lá ele abre um terminal: o ambiente de desktop pega o atalho antes de o Firefox vê-lo. Use o botão da toolbar, ou abra mão do atalho nesse desktop (o `Ctrl+Alt+U` não é afetado). Tornar os atalhos configuráveis está planejado.
 
 ### Linha de comando
 
@@ -168,15 +173,17 @@ user_pref("peekafoxy.tabs.autohide", true);
 user_pref("peekafoxy.urlbar.autohide", true);
 ```
 
-A altura da faixa, as alturas das barras e os tempos de animação são variáveis CSS no topo de [`chrome/autohide.css`](chrome/autohide.css). Para mudá-las, edite a cópia instalada no seu perfil (ou a do repositório, e instale de novo):
+Estes são os padrões. A altura da faixa, as alturas das barras e os tempos de animação são variáveis CSS no topo de [`chrome/autohide.css`](chrome/autohide.css). Para mudá-las, edite a cópia instalada no seu perfil (ou a do repositório, e instale de novo):
 
 ```css
 /* <perfil>/chrome/autohide.css */
 :root {
-  --autohide-strip: 12px;                 /* altura da faixa de hover */
+  --autohide-strip: 8px;                  /* altura da faixa de hover */
   --autohide-tabs-height: 64px;           /* teto: a barra de abas abre até a altura natural, no máximo isto */
+  --autohide-nav-height: 52px;            /* altura aberta da barra de navegação (perto da natural) */
+  --autohide-bookmarks-height: 40px;      /* altura aberta da barra de favoritos */
   --autohide-show: 0.12s ease-out 0s;     /* abrindo: duração, curva, atraso */
-  --autohide-hide: 0.2s ease-in 0.6s;     /* fechando: espera 0,6s antes de recolher */
+  --autohide-hide: 0.2s ease-in 0.3s;     /* fechando: espera 0,3s antes de recolher */
 }
 ```
 

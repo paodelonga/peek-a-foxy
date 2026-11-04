@@ -9,6 +9,72 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ## [Unreleased]
 
+### Added
+
+- **A closing panel that tells the truth.** After `peek-a-foxy install` the panel now depends on what
+  happened: with `--skip-loader` it says the loader was not installed and that the script only runs if
+  fx-autoconfig is already set up in that Firefox; when another `config.js` was found in Firefox's
+  install directory and kept (as before, with a warning), it says that too. Only a complete install
+  says "Done".
+- **A failed install says what it left behind.** When a step fails, the error is followed by how many
+  steps had finished and which, that the failed step may have changed part of its files, and that
+  running the same command again is safe because every step can be repeated. If nothing had finished,
+  it says so.
+- **Toolbar button names and tooltips follow Firefox's language**, like the greeting already did:
+  Portuguese (`pt`, `pt-BR`, `pt-PT`, ...) gets **Ocultar abas automaticamente** and **Ocultar barra de
+  endereço automaticamente** with Portuguese tooltips; every other language keeps the English texts.
+  The buttons are created once per Firefox session, by the first window, so they follow the language
+  Firefox started with.
+- **A weekly run of the browser tests** against the current Firefox release and the Beta
+  (`.github/workflows/firefox-weekly.yml`, also startable by hand), so a Firefox change that breaks the
+  script is noticed before users notice it.
+- `CONTRIBUTING.md` explains how to move to a newer pinned fx-autoconfig commit.
+
+### Changed
+
+- **`install` and `uninstall` no longer apply anything without a terminal or `--yes`.** Before, with
+  stdin or stdout not a terminal (a pipe, cron, CI) and no `--yes`, the confirmation was silently
+  skipped and the changes were applied. Now the command shows the plan and stops with an error that
+  names `--yes`. With `--yes`, and with `--dry-run`, nothing changes.
+- **The `--yes` help** now says everything it skips: the confirmation, the profile picker and the
+  Firefox installation picker (an unclear choice is an error instead).
+- **The loader is fetched, not cloned.** Only the pinned commit is downloaded (`git fetch --depth 1`),
+  without the repository's history, and then checked against the pinned hash as before. If a server
+  refuses to serve a single commit, it falls back to a full clone.
+- `FXAC_COMMIT` (a test override) must be a full 40-digit hash; a branch, a tag, an abbreviated hash or
+  anything starting with `-` is refused with a clear error, even for `--dry-run`. The repository and the
+  commit are passed to git after `--`, so they can never be read as git options.
+
+### Fixed
+
+- **Paths and git messages that look like Rich markup** (a profile directory called `[bold red]p` or
+  `[/x]`, for example) were garbled in the plan, the pickers, warnings and errors, and `[/x]` crashed
+  the command with a `MarkupError`. All user text is now printed as typed.
+- Tests: `test_dragging_a_bookmark_keeps_the_bookmarks_bar_open` could fail at random when Firefox
+  focused the URL bar of the new window (which correctly keeps the bars open); the test helper now waits
+  for the window to finish starting and takes the focus off the URL bar.
+- Tests: the failing-`sudo` test failed earlier than it meant to (on an unrelated step), so it did not
+  exercise `sudo`; it now makes Firefox's directory read-only and covers both a refused and a missing
+  `sudo`.
+- A stale comment in the installer claimed the script treats a missing pref as "off"; the script
+  registers the defaults itself.
+
+### Documentation
+
+- The README's CSS example now shows the real defaults (8 px strip, 0.3 s hide delay; it said 12 px and
+  0.6 s) and all six variables (`--autohide-nav-height` and `--autohide-bookmarks-height` were missing),
+  in English and Portuguese. A test compares the example with `autohide.css`.
+- Both READMEs say that `Ctrl+Alt+T` opens a terminal on GNOME, Ubuntu and Linux Mint and never reaches
+  Firefox there, and point to the toolbar button.
+
+### Internal
+
+- Terminal output moved to `ui.py`; every user-supplied string goes through it as plain text.
+- New tests: odd paths everywhere user text is shown, no-terminal behavior, the closing panel, partial
+  failures, loader sources and shallow fetches (including against the real GitHub), the pref names and
+  shortcuts shared by Python and the script, the localized button texts in a real Firefox, and the
+  workflow files. Branch coverage went from 96% to 100%.
+
 ## [0.1.0] - 2026-11-04
 
 The first public release.

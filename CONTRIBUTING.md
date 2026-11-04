@@ -71,6 +71,22 @@ The commit types decide the number: a `feat` is a minor bump, a `fix` a patch, a
 `BREAKING CHANGE:` footer a major bump (a minor one while the version is below 1.0).
 The first release, `v0.1.0`, was made by hand with the same steps, since there was no earlier tag.
 
+## Updating the pinned fx-autoconfig
+
+The loader is fetched at one fixed commit (`DEFAULT_COMMIT` in `src/peek_a_foxy/loader.py`), never at a
+branch or a tag, so what gets installed can't change under users. To move to a newer fx-autoconfig:
+
+1. Read what changed upstream between the current commit and the new one
+   (`https://github.com/MrOtherGuy/fx-autoconfig/compare/<old>...<new>`), paying attention to
+   `program/config.js`, `program/defaults/pref/config-prefs.js` and `profile/chrome/utils/`: these are
+   the files this project installs.
+2. Put the new **full 40-digit hash** in `DEFAULT_COMMIT`. Abbreviated hashes, branches and tags are
+   refused on purpose.
+3. Run `pytest -m network` (the commit exists upstream, has the expected files, and GitHub serves it
+   without its history) and `pytest -m browser` (the script still loads and works with it).
+4. Update the short hash in the sample plan of `README.md` / `README.pt-BR.md` and add a `Changed` entry to
+   `CHANGELOG.md`.
+
 ## Reporting problems and asking for things
 
 Use the issue forms: bug reports ask for the details that matter here (Firefox build, desktop or
@@ -116,6 +132,11 @@ What the tests cover, and why:
 - **Interactive choices** (`test_cli.py`, `test_robustness.py`): profile and installation pickers,
   declining the confirmation, invalid numbers.
 
+- **What the user reads** (`test_markup.py`, `test_reports.py`): paths and git output that look like Rich
+  markup (`[/x]`, `[bold red]`) are printed as typed; the closing panel says what actually happened
+  (`--skip-loader`, a loader that was already there); a failed step says which steps had finished.
+- **The Python side and the script agree** (`test_contract.py`): the pref names and the shortcuts are
+  compared with the ones in `autohide.uc.js`, so renaming one side fails a test.
 - **The script and the CSS in a real Firefox** (`tests/browser/`): a headless Firefox driven over
   Marionette, with the real fx-autoconfig loaded from a *copy* of your Firefox install (the loader has to
   be written into it) and a throwaway profile. They check what actually happens to the window: both
@@ -123,6 +144,10 @@ What the tests cover, and why:
   their natural height without clipping, the bookmarks bar follows the navigation bar, a bar stays open while something is dragged out of it, the prefs are registered as booleans, Customize Toolbar and full screen are left alone, the greeting
   shows once and its button opens the song. They need network access and Firefox: point
   `PEEK_A_FOXY_FIREFOX` at its binary, or the first Firefox found is used.
+
+Firefox changes its own interface without notice, so the browser tests also run every week against
+the current release and the Beta (`.github/workflows/firefox-weekly.yml`, or start it by hand from the
+Actions tab). A red run there means the script or the CSS needs attention before users notice.
 
 The installer tests run against temporary profiles and a local stand-in for the fx-autoconfig repository,
 so nothing touches your real Firefox. Hover itself can't be simulated in headless Firefox, so the tests
