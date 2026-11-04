@@ -397,7 +397,13 @@ def test_the_page_is_in_portuguese_for_a_portuguese_firefox(browser_in_portugues
            };"""
     )
     assert texts == {
-        "group": ["Novas janelas", "Tamanho e tempos", "Atalhos", "Saudação"],
+        "group": [
+            "Novas janelas",
+            "Revelar a barra de abas quando",
+            "Tamanho e tempos",
+            "Atalhos",
+            "Saudação",
+        ],
         "start": "Ocultar a barra de abas automaticamente em novas janelas",
         "reset": "Restaurar",
     }
@@ -453,6 +459,9 @@ def test_prefs_are_real_and_listed_with_their_types(browser):
         "peekafoxy.show.ms": "int",
         "peekafoxy.hide.delay.ms": "int",
         "peekafoxy.tabs.flash.ms": "int",
+        "peekafoxy.tabs.reveal.switch": "bool",
+        "peekafoxy.tabs.reveal.new": "bool",
+        "peekafoxy.tabs.reveal.link": "bool",
         "peekafoxy.tabs.shortcut": "string",
         "peekafoxy.urlbar.shortcut": "string",
         "peekafoxy.welcomed": "bool",
@@ -478,3 +487,15 @@ def test_reduced_motion_still_wins_over_the_timing_settings(browser):
         assert computed == ["0s", "0s 700ms"]  # instant to open, only the closing delay is kept
     finally:
         browser.js("Services.prefs.clearUserPref('ui.prefersReducedMotion');")
+
+
+@pytest.mark.parametrize("name", ["switch", "new", "link"])
+def test_the_reveal_checkboxes_start_on_and_write_real_prefs(browser, name):
+    pref = f"peekafoxy.tabs.reveal.{name}"
+    browser.open_settings("#peekafoxy")
+    box = f"doc.getElementById('peekafoxy-{pref}')"
+    assert browser.settings(f"return {box}.checked;") is True
+    browser.settings(f"{box}.checked = false; {box}.dispatchEvent(new win.Event('change'));")
+    assert browser.js("return Services.prefs.getBoolPref(arguments[0]);", pref) is False
+    browser.js("Services.prefs.setBoolPref(arguments[0], true);", pref)
+    browser.wait(f"{FIELD % pref}.checked === true", message="the box did not follow the pref")

@@ -166,7 +166,8 @@ peek-a-foxy --install-completion      # then restart your shell
 Firefox's own settings page has a **Peek-a-Foxy** section (`about:preferences#peekafoxy`, or *Settings* in the menu). Everything below is applied to every open window at once, with no restart:
 
 - whether **new windows** start with the tab bar and the navigation bar hidden (windows that are already open keep their own state);
-- the **hover strip height**, the **opening animation**, the **delay before a bar closes**, and **how long the tab bar stays open** after a tab switch or a new tab;
+- **what opens the tab bar for a moment**, each on its own switch: switching to another tab, opening a new tab (`Ctrl+T`, the `+` button), and a tab that opens straight to an address (a link you click, a bookmark, a page opening a window); plus **how long it stays open** afterwards. Hovering its strip always opens it. Firefox does not say how a tab was opened, so "straight to an address" means any tab that is going to load something other than the new-tab page or your home page;
+- the **hover strip height**, the **opening animation** and the **delay before a bar closes**;
 - the **shortcuts** that toggle each bar: click the field and press the new one (a letter, a digit or F1 to F12, with Ctrl, Alt or Meta; it is checked, and the two bars cannot share one). Each setting has a **Reset** button;
 - a button to **show the greeting again**.
 
@@ -181,7 +182,10 @@ Every setting is a real pref, listed in `about:config` with its type, and nothin
 | `peekafoxy.strip.px` | `8` | Hover strip height, in pixels (1 to 40). |
 | `peekafoxy.show.ms` | `120` | Opening animation, in milliseconds (0 to 2000). |
 | `peekafoxy.hide.delay.ms` | `300` | Wait before a bar closes, in milliseconds (0 to 5000). |
-| `peekafoxy.tabs.flash.ms` | `1500` | How long the tab bar stays open after a tab switch or a new tab (0 to 10000). |
+| `peekafoxy.tabs.reveal.switch` | `true` | Open the tab bar for a moment when you switch to another tab. |
+| `peekafoxy.tabs.reveal.new` | `true` | Same, when you open a new tab (the new-tab page or your home page). |
+| `peekafoxy.tabs.reveal.link` | `true` | Same, when a tab opens straight to any other address (a link, a bookmark, `window.open`...). |
+| `peekafoxy.tabs.flash.ms` | `1500` | How long the tab bar stays open after one of those (0 to 10000). |
 | `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Shortcut that toggles the tab bar in the current window. |
 | `peekafoxy.urlbar.shortcut` | `Ctrl+Alt+U` | Shortcut that toggles the navigation bar. |
 | `peekafoxy.welcomed` | `false` | Set to `true` after the one-time greeting. Set it back to `false` to see it again. |
