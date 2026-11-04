@@ -1,0 +1,18 @@
+# Groups the notes GitHub generates for a release by the labels of the merged pull requests.
+changelog:
+  exclude:
+    authors:
+      - dependabot[bot]
+  categories:
+    - title: Features
+      labels:
+        - enhancement
+    - title: Bug fixes
+      labels:
+        - bug
+    - title: Documentation
+      labels:
+        - documentation
+    - title: Other changes
+      labels:
+        - "*"
