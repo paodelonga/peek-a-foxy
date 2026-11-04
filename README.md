@@ -252,7 +252,7 @@ Planned; contributions are welcome.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch workflow, commit style and how to run the tests.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch workflow, commit style and how to run the tests. Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go through the [security policy](SECURITY.md).
 
 ## License and credits
 
