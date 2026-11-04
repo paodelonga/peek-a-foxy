@@ -1,0 +1,94 @@
+name: Standalone program
+
+# Builds peek-a-foxy.exe with PyInstaller, smoke-tests it, and on a published release attaches the
+# program, its SHA-256, install.ps1 and the filled-in Scoop and winget manifests to that release.
+on:
+  pull_request:
+    paths:
+      - "packaging/**"
+      - "src/**"
+      - "chrome/**"
+      - "pyproject.toml"
+      - ".github/workflows/exe.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: python -m pip install . pyinstaller==6.22.3
+      - name: Build
+        run: >
+          pyinstaller --onefile --name peek-a-foxy --noconfirm
+          --add-data "chrome;peek_a_foxy/assets"
+          packaging/entry.py
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $exe = "dist\peek-a-foxy.exe"
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version failed" }
+          # The elevated copy of the standalone program must refuse bad input with USAGE (10).
+          & $exe --elevated-copy "$env:RUNNER_TEMP" not-base64 not-base64
+          if ($LASTEXITCODE -ne 10) { throw "--elevated-copy returned $LASTEXITCODE, expected 10" }
+          # The embedded Firefox files are found: install them into a throwaway profile.
+          $profile = Join-Path $env:RUNNER_TEMP "profile"
+          New-Item -ItemType Directory -Path $profile | Out-Null
+          & $exe install --profile $profile --skip-loader --yes
+          if ($LASTEXITCODE -ne 0) { throw "install failed" }
+          if (-not (Test-Path "$profile\chrome\JS\autohide.uc.js")) { throw "autohide.uc.js was not installed" }
+      - name: install.ps1 parses
+        shell: pwsh
+        run: |
+          $errors = $null
+          [void][Management.Automation.Language.Parser]::ParseFile("$PWD\packaging\install.ps1", [ref]$null, [ref]$errors)
+          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 dist\peek-a-foxy.exe).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText("$PWD\dist\peek-a-foxy.exe.sha256", "$hash  peek-a-foxy.exe`n")
+          "SHA256=$hash" >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: peek-a-foxy-windows
+          path: |
+            dist/peek-a-foxy.exe
+            dist/peek-a-foxy.exe.sha256
+
+  publish:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: peek-a-foxy-windows
+          path: dist
+      - name: Fill the manifests
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          hash="$(cut -d' ' -f1 dist/peek-a-foxy.exe.sha256)"
+          python packaging/render_manifests.py "$version" "$hash" dist/manifests
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release upload "$GITHUB_REF_NAME" --clobber
+          dist/peek-a-foxy.exe dist/peek-a-foxy.exe.sha256 packaging/install.ps1
+          dist/manifests/peek-a-foxy.json dist/manifests/paodelonga.PeekAFoxy.yaml
+          dist/manifests/paodelonga.PeekAFoxy.installer.yaml
+          dist/manifests/paodelonga.PeekAFoxy.locale.en-US.yaml
