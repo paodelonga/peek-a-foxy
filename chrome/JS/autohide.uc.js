@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name           Autohide (tabs and urlbar, per window)
+// @name           Peek-a-Foxy: autohide for tabs and urlbar, per window
 // @description    Per-window autohide for the tab bar (button + Ctrl+Alt+T) and the navigation bar (button + Ctrl+Alt+U).
 // @include        main
 // ==/UserScript==
@@ -78,6 +78,46 @@
     event.preventDefault();
     setEnabled(target, !root.hasAttribute(target.attr));
   }, true);
+
+  // --- one-time greeting ---
+  //
+  // Shown once per profile, so you can tell the script is loaded and working. The pref is set before
+  // the notification so that other windows opening right now don't show it again. The button's
+  // callback only uses its own argument, like the widget callbacks below.
+  //
+  // The text follows Firefox's interface language: Portuguese (pt, pt-BR, pt-PT...) gets the
+  // Brazilian Portuguese strings, everything else gets English. To add a language, add an entry to
+  // GREETING keyed by its language code (the part before the "-" or "_").
+
+  const GREETING = {
+    en: { label: "Instaalleeeeed PEEK A BOO!!! >.<", button: "Peek-a-boo!" },
+    pt: { label: "Instaalaadoooo PEEK A BOO!!! >.<", button: "Peek-a-boo!" },
+  };
+  const greetingFor = (locale) => GREETING[String(locale).split(/[-_]/)[0].toLowerCase()] ?? GREETING.en;
+
+  if (!Services.prefs.getBoolPref("userchrome.peekafoxy.welcomed", false)) {
+    Services.prefs.setBoolPref("userchrome.peekafoxy.welcomed", true);
+    try {
+      const text = greetingFor(Services.locale.appLocaleAsBCP47);
+      UC_API.Notifications.show({
+        label: text.label,
+        type: "peekafoxy-welcome",
+        priority: "info",
+        window,
+        buttons: [
+          {
+            label: text.button,
+            callback(notification) {
+              notification.ownerGlobal.openWebLinkIn("https://youtu.be/6uJf2IT2Zh8?t=59", "tab");
+              return false;
+            },
+          },
+        ],
+      });
+    } catch (e) {
+      console.error(`${LOG} greeting failed:`, e);
+    }
+  }
 
   // --- toolbar buttons ---
   //
