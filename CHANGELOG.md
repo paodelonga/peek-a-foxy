@@ -6,6 +6,8 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-04
+
 ### Added
 
 - Per-window autohide for Firefox's tab bar and navigation bar, with a hover strip, the shortcuts
@@ -21,3 +23,6 @@ All notable changes are listed here. The format follows
 
 - The bookmarks bar can still close when a bookmark is pressed and held or dragged, on at least one
   setup (Linux, tiling window manager). See the roadmap in the README.
+
+[Unreleased]: https://github.com/paodelonga/peek-a-foxy/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/paodelonga/peek-a-foxy/releases/tag/v0.1.0
