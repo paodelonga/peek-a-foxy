@@ -60,7 +60,7 @@
    so a window without caption buttons still has something to hover); the tabs holder is what
    clips and animates */
 :root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar {
-  min-height: var(--autohide-strip);
+  min-height: var(--autohide-strip) !important;
 }
 :root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar .toolbar-items {
   min-height: 0 !important;
