@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Firefox 121+](https://img.shields.io/badge/Firefox-121%2B-FF7139?logo=firefoxbrowser&logoColor=white)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
-![Platform: Linux](https://img.shields.io/badge/platform-Linux-lightgrey)
+![Platform: Linux and Windows](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)
 
 English · [Português (Brasil)](README.pt-BR.md)
 
@@ -23,6 +23,7 @@ English · [Português (Brasil)](README.pt-BR.md)
 - [Settings](#settings)
 - [How it works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
+- [Windows notes](#windows-notes)
 - [Uninstall](#uninstall)
 - [Roadmap](#roadmap)
 - [About the name](#about-the-name)
@@ -42,11 +43,12 @@ English · [Português (Brasil)](README.pt-BR.md)
 ## Requirements
 
 - Firefox 121 or newer (the CSS uses `:has()`).
-- Linux. Snap and Flatpak builds of Firefox are not supported (their install directory is read-only).
+- Linux or Windows 10/11. Snap, Flatpak and Microsoft Store (MSIX) builds of Firefox are not supported (their install directory is read-only).
 - Python 3.10 or newer and `git`.
-- `sudo`, only if the Firefox install directory isn't writable by you.
+- `sudo` (Linux) or an administrator prompt (Windows, UAC), only if the Firefox install directory isn't writable by you. Only the copy of two files is elevated; everything else runs as you.
+- On Windows, [Git for Windows](https://git-scm.com/download/win) (`winget install Git.Git`), which the installer uses to fetch the loader.
 
-macOS and Windows are on the [roadmap](#roadmap). The code contains macOS paths that have never been run on a Mac, so treat macOS as unsupported for now.
+**Windows** is tested in CI on a real Windows runner (unit tests, the whole headless-Firefox suite, the real loader download), but not yet by hand on a desktop: see [Windows notes](#windows-notes). The code contains macOS paths that have never been run on a Mac, so treat macOS as unsupported for now.
 
 Developed and used on Firefox Developer Edition.
 
@@ -150,7 +152,7 @@ A Firefox update can remove the loader from its install directory; run `peek-a-f
 
 The buttons are in *Customize Toolbar* as **Tabs autohide** and **Urlbar autohide** (in a Portuguese Firefox: **Ocultar abas automaticamente** and **Ocultar barra de endereço automaticamente**). The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
 
-**`Ctrl+Alt+T` does not work on GNOME, Ubuntu and Linux Mint.** There it opens a terminal: the desktop takes the shortcut before Firefox sees it. Use the toolbar button, or give the shortcut up on that desktop (`Ctrl+Alt+U` is not affected). Making the shortcuts configurable is planned.
+**`Ctrl+Alt+T` does not work on GNOME, Ubuntu and Linux Mint.** There it opens a terminal: the desktop takes the shortcut before Firefox sees it. Use the toolbar button, or give the shortcut up on that desktop (`Ctrl+Alt+U` is not affected). You can change it in Firefox's settings (see [Settings](#settings)).
 
 ### Command line
 
@@ -260,6 +262,17 @@ Pure CSS cannot detect tab switches or keep a separate state per window, hence t
 - **Nothing after a Firefox update:** the update replaced the install directory; run `peek-a-foxy install` again.
 - **Errors:** open the Browser Console (`Ctrl+Shift+J`) and filter for `autohide`.
 
+## Windows notes
+
+- **Install:** with Python for now: `pipx install git+https://github.com/paodelonga/peek-a-foxy.git` (or `uv tool install`), then `peek-a-foxy install`. A standalone program for Scoop and winget is planned (see the [roadmap](#roadmap)).
+- **Administrator prompt.** Firefox's folder under `C:\Program Files` is read-only for a normal user, so Windows asks (UAC) before two files, `config.js` and `defaults\pref\config-prefs.js`, are copied there. Only that copy is elevated. The elevated process is a fresh, isolated Python that receives the two files' bytes and refuses anything that does not match the pinned fx-autoconfig. If you say no, nothing is written to Firefox's folder and the command says so. Residual risk: it runs `python.exe` with your approval, so a Python installation that something else can rewrite can abuse that prompt.
+- **Which Firefox:** found through the registry, `Program Files`, `Program Files (x86)`, your local app data and `PATH`; pass `--firefox-dir` for a portable copy. The Microsoft Store (MSIX) build is refused.
+- **Firefox updates** can replace its install folder and remove the loader: run `peek-a-foxy install` again if the buttons and the settings section disappear.
+- **Antivirus** may ask about `config.js` in Firefox's folder: it is the fx-autoconfig loader, which Firefox runs on start.
+- **Git Bash / mintty** does not look like a terminal to Python, so use `--yes` (or run through `winpty`). `cmd`, PowerShell and Windows Terminal are fine.
+- **Title bar.** When Firefox draws its own title bar (the Windows default), the tab bar's autohide hides only the tabs and keeps the window buttons and the drag area, so a slim row stays. Turn on Firefox's own title bar (Customize Toolbar, *Title Bar*) to collapse the whole tab bar to the strip.
+- **Shortcuts with AltGr.** On layouts where AltGr types characters (ABNT2, German, Czech...), AltGr counts as Ctrl+Alt and is never taken as a shortcut; use the left Ctrl and Alt.
+
 ## Uninstall
 
 ```bash
@@ -272,7 +285,8 @@ Removes this project's files and prefs. It leaves `chrome/utils` and the loader 
 
 Planned; contributions are welcome.
 
-- [ ] Windows support
+- [ ] A standalone `peek-a-foxy.exe` with [Scoop](https://scoop.sh) and [winget](https://learn.microsoft.com/windows/package-manager/) packages, so Windows users need no Python.
+- [ ] Hands-on testing on Windows (the UAC prompt, a Firefox update, per-user installs, the real title bar and window dragging, AltGr layouts).
 - [ ] macOS compatibility
 - [ ] Tiling window managers and context menus: some tiling WMs steal the pointer when a context menu opens, so the tab bar may close while the menu is open.
 - [ ] Open the bars over the page instead of pushing it down. Today a revealed bar pushes the page down, which reflows the page on every animation frame.
