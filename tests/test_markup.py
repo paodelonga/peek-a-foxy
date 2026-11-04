@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import pytest
+from support import WINDOWS
 from typer.testing import CliRunner
 
 from peek_a_foxy import cli
@@ -15,15 +16,19 @@ runner = CliRunner()
 
 # Directory names that Rich would read as markup: a style, a closing tag with no opening one, an
 # emoji code, a link, an unbalanced bracket, and a plain backslash before a bracket.
-ODD_NAMES = [
+_NAMES = [
     "[bold red]p",
     "[/x]",
     "[red]a[/red]",
     ":fox_face:",
     "[link=http://x]y",
+    "[link=x]y",
+    "[b]ção ü",
     "a[",
     "x\\[b]",
 ]
+# A colon cannot be part of a file name on Windows.
+ODD_NAMES = [name for name in _NAMES if not (WINDOWS and ":" in name)]
 
 
 @pytest.fixture(autouse=True)
@@ -135,7 +140,7 @@ def test_git_output_with_brackets_is_shown_literally(
     profile = odd_profile(tmp_path, "p")
     firefox = tmp_path / "ff"
     firefox.mkdir(parents=True)
-    monkeypatch.setenv("FXAC_REPO", str(tmp_path / "no-such-[/bold]-repo"))
+    monkeypatch.setenv("FXAC_REPO", "no-such-[/bold]-repo")  # git repeats it in its error
     result = runner.invoke(
         app, ["install", "--profile", str(profile), "--firefox-dir", str(firefox), "--yes"]
     )
@@ -143,6 +148,7 @@ def test_git_output_with_brackets_is_shown_literally(
     assert "no-such-[/bold]-repo" in result.output and "Traceback" not in result.output
 
 
+@pytest.mark.skipif(WINDOWS, reason="Typer shows Windows paths with doubled backslashes")
 @pytest.mark.parametrize("option", ["--profile", "--firefox-dir"])
 @pytest.mark.parametrize("name", ["[/x]nope", "[bold red]nope"])
 def test_typers_own_errors_show_odd_paths_literally(tmp_path: Path, option: str, name: str):

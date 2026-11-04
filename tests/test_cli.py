@@ -167,8 +167,8 @@ def test_profile_option_completes_from_profiles_ini(tmp_path: Path):
         "APPDATA": str(tmp_path / "AppData" / "Roaming"),
     }
     offered = _complete("peek-a-foxy install --profile ", 3, **home)
-    assert any(path.endswith("Profiles/one") for path in offered)
-    assert any(path.endswith("Profiles/two") for path in offered)
+    tails = {Path(path).parts[-2:] for path in offered}
+    assert ("Profiles", "one") in tails and ("Profiles", "two") in tails
 
 
 def test_completion_scripts_are_available_for_the_common_shells():
@@ -203,7 +203,7 @@ def test_completion_helpers_cope_with_missing_data(tmp_path: Path, monkeypatch):
 def test_firefox_dir_completion_filters_by_prefix(monkeypatch):
     found = [Path("/usr/lib/firefox"), Path("/opt/firefox")]
     monkeypatch.setattr(cli.platform, "firefox_dir_candidates", lambda: found)
-    assert cli._complete_firefox_dir("/usr") == ["/usr/lib/firefox"]
+    assert cli._complete_firefox_dir(str(Path("/usr"))) == [str(found[0])]
 
 
 def test_the_yes_help_says_everything_it_skips():
