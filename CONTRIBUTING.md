@@ -137,6 +137,12 @@ What the tests cover, and why:
   (`--skip-loader`, a loader that was already there); a failed step says which steps had finished.
 - **The Python side and the script agree** (`test_contract.py`): the pref names and the shortcuts are
   compared with the ones in `autohide.uc.js`, so renaming one side fails a test.
+- **The settings page** (`tests/browser/test_settings.py`, `test_shortcut_format.py`): the category
+  and its navigation next to Firefox's own, each control and its refusals, the live effect in several
+  windows, the shortcut format and the texts, the Portuguese page, and a Firefox whose page changed (the
+  script must add nothing and say why). Firefox's own markup is the thing most likely to change under
+  this page: if one of these fails after a Firefox update, read `requirements()` in
+  `chrome/JS/autohide-prefs.uc.js` first.
 - **The script and the CSS in a real Firefox** (`tests/browser/`): a headless Firefox driven over
   Marionette, with the real fx-autoconfig loaded from a *copy* of your Firefox install (the loader has to
   be written into it) and a throwaway profile. They check what actually happens to the window: both
@@ -166,5 +172,7 @@ When you fix a bug, add the test that would have caught it.
   *collapsed* rule and a *revealed* rule that must stay exact opposites (see the comment at the top of
   the file); adding a way to reveal a bar means adding it to both.
 - JavaScript: widget callbacks must not use anything from the window script's scope (see the
-  comment in `chrome/JS/autohide.uc.js`).
+  comment in `chrome/JS/autohide.uc.js`). Prefs, limits, the shortcut format and every user-visible
+  text live in `chrome/resources/peekafoxy.sys.mjs`, shared by both scripts; a new pref goes there and
+  in `OWN_PREFS` (`userfiles.py`), and a test checks that the two lists agree.
 - Keep `README.md` and `README.pt-BR.md` in sync.

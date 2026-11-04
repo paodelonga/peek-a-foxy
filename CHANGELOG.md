@@ -11,6 +11,33 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ### Added
 
+- **A Peek-a-Foxy section in Firefox's settings** (`about:preferences#peekafoxy`, added by the new
+  script `JS/autohide-prefs.uc.js`). It sets, for every open window at once and without a restart:
+  - whether new windows start with the tab bar and the navigation bar hidden (windows that are already
+    open keep their own state);
+  - the hover strip height (1 to 40 px, default 8), the opening animation (0 to 2000 ms, default 120),
+    the delay before a bar closes (0 to 5000 ms, default 300) and how long the tab bar stays open after a
+    tab switch or a new tab (0 to 10000 ms, default 1500);
+  - the shortcut of each bar: click the field and press the new one. A shortcut is a letter, a digit or
+    F1 to F12 with Ctrl, Alt, Shift or Meta, and needs at least one of Ctrl, Alt or Meta; the two bars
+    cannot share one; some keys are refused with a message. This also answers the `Ctrl+Alt+T` clash
+    with the terminal launcher on GNOME, Ubuntu and Linux Mint: the default is unchanged, and it can now
+    be changed;
+  - a button to show the greeting again, and a **Reset** button on every number and shortcut.
+  The page is in English or Brazilian Portuguese, following Firefox's language. Out-of-range numbers
+  are refused with a message (and clamped if a pref is edited in `about:config`); an invalid shortcut
+  in a pref falls back to the default.
+- **Six new prefs**, all real prefs listed in `about:config` with their type and none written to disk
+  until changed: `peekafoxy.strip.px`, `peekafoxy.show.ms`, `peekafoxy.hide.delay.ms`,
+  `peekafoxy.tabs.flash.ms`, `peekafoxy.tabs.shortcut` and `peekafoxy.urlbar.shortcut`.
+- **It fails soft.** The page hooks into three places of Firefox's own settings page (the category list,
+  the pane container and the category registry). If a Firefox update changes any of them, the script
+  adds nothing, undoes anything it had added, and names what is missing in the Browser Console
+  (filter for `peekafoxy settings`). The prefs keep working in `about:config`.
+- A new shared module, `resources/peekafoxy.sys.mjs`, holds the prefs, their limits, the shortcut
+  format and all texts for both scripts.
+- The closing panel of `install` points to the new settings.
+
 - **A closing panel that tells the truth.** After `peek-a-foxy install` the panel now depends on what
   happened: with `--skip-loader` it says the loader was not installed and that the script only runs if
   fx-autoconfig is already set up in that Firefox; when another `config.js` was found in Firefox's
@@ -32,6 +59,18 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ### Changed
 
+- **`install` also sets `userChromeJS.persistent_domcontent_callback` in `user.js`.** fx-autoconfig only
+  runs scripts in the browser window unless this is set, and the settings page lives in a tab. It is
+  read when Firefox starts, so restart Firefox, and run `peek-a-foxy install` again after updating to
+  get the settings page. `uninstall` leaves it, like the stylesheets pref, because other scripts may
+  use it. `uninstall` now removes the two new files (`JS/autohide-prefs.uc.js` and
+  `resources/peekafoxy.sys.mjs`) and every `peekafoxy.*` line from `user.js`.
+- **The stylesheet has two more variables**, `--autohide-show-duration` (0.12s) and
+  `--autohide-hide-delay` (0.3s), which the settings set; `--autohide-show` and `--autohide-hide` are
+  built from them. A value from the settings wins over the stylesheet's only while its pref has a user
+  value, so edits to `autohide.css` keep working when nothing was changed in the settings. With
+  `prefers-reduced-motion`, bars still open instantly and keep only the closing delay, whatever the
+  settings say.
 - **`install` and `uninstall` no longer apply anything without a terminal or `--yes`.** Before, with
   stdin or stdout not a terminal (a pipe, cron, CI) and no `--yes`, the confirmation was silently
   skipped and the changes were applied. Now the command shows the plan and stops with an error that
@@ -69,11 +108,23 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ### Internal
 
+- Browser tests for the settings page (the category and its navigation, every control, live effect in
+  several windows, shortcuts and their refusals, both languages, and a Firefox whose page changed), for
+  the shortcut format and the texts, and for the installer's new files and prefs.
 - Terminal output moved to `ui.py`; every user-supplied string goes through it as plain text.
 - New tests: odd paths everywhere user text is shown, no-terminal behavior, the closing panel, partial
   failures, loader sources and shallow fetches (including against the real GitHub), the pref names and
   shortcuts shared by Python and the script, the localized button texts in a real Firefox, and the
   workflow files. Branch coverage went from 96% to 100%.
+
+### Known issues
+
+- The settings page was built and tested against the settings page of Firefox 157 (the one with the
+  `moz-page-nav` category list). An older layout is not supported and gets no section (the console says
+  what is missing); the prefs still work in `about:config`.
+- The settings page is not found by the search box at the top of Firefox's settings.
+- The toolbar buttons are created once per Firefox session, by the first window, so their names follow
+  the language Firefox started with; their tooltips follow the shortcuts live.
 
 ## [0.1.0] - 2026-11-04
 

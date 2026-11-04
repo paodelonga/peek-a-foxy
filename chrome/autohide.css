@@ -18,10 +18,14 @@
    showing the toolbars, and in Customize Toolbar the bars must be fully visible to be rearranged. */
 
 /* Timing: reveal fast, hide slowly. The hide delay keeps the bar from flickering when the cursor
-   briefly leaves it (e.g. drifting off the strip) and gives a moment to reach it again. */
+   briefly leaves it (e.g. drifting off the strip) and gives a moment to reach it again.
+   The strip, --autohide-show-duration and --autohide-hide-delay can also be set in Firefox's settings
+   (Peek-a-Foxy); a value set there wins over the one here. */
 :root {
-  --autohide-show: 0.12s ease-out 0s;
-  --autohide-hide: 0.2s ease-in 0.3s;
+  --autohide-show-duration: 0.12s;
+  --autohide-hide-delay: 0.3s;
+  --autohide-show: var(--autohide-show-duration) ease-out 0s;
+  --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);
   /* Collapsed hover strip and expanded bar heights. */
   --autohide-strip: 8px;
   --autohide-tabs-height: 64px;  /* ceiling: the bar opens to its natural height, up to this */
@@ -152,7 +156,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   :root {
+    /* The settings only change the two component variables, so this still wins over them. */
     --autohide-show: 0s;
-    --autohide-hide: 0s 0.3s;
+    --autohide-hide: 0s var(--autohide-hide-delay);
   }
 }
