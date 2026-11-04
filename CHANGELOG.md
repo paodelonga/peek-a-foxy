@@ -9,6 +9,21 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ## [Unreleased]
 
+### Added
+
+- **Choose what opens the tab bar for a moment.** The Peek-a-Foxy section of Firefox's settings has a
+  "Reveal the tab bar when" group with one switch for each trigger, all on by default (the behavior
+  until now), applied to every open window at once: switching to another tab
+  (`peekafoxy.tabs.reveal.switch`), opening a new tab with `Ctrl+T` or the `+` button
+  (`peekafoxy.tabs.reveal.new`), and a tab that opens straight to an address, such as a link you click,
+  a bookmark or a page opening a window (`peekafoxy.tabs.reveal.link`). The reveal time stays
+  `peekafoxy.tabs.flash.ms`, and hovering the strip always opens the bar.
+  - Firefox does not report how a tab was opened, so the two kinds of new tab are told apart by what the
+    tab is about to load: the new-tab page, your home page or nothing counts as a tab you opened; any
+    other address counts as a link. A bookmark opened in a new tab therefore follows the "link" switch.
+  - A tab that is opened and selected fires two events; the "new tab" or "link" switch decides, so
+    turning one off is not undone by the tab switch that comes with it.
+
 ## [0.2.0] - 2026-11-04
 
 The settings page and the first review round: a Peek-a-Foxy section in Firefox's settings, a safer and
