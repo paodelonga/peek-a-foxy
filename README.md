@@ -150,7 +150,7 @@ A Firefox update can remove the loader from its install directory; run `peek-a-f
 | Toggle for the current window | `Ctrl+Alt+T` or toolbar button | `Ctrl+Alt+U` or toolbar button |
 | Reveal temporarily | hover the top strip, switch or open a tab | hover its strip, focus the URL bar |
 
-The buttons are in *Customize Toolbar* as **Tabs autohide** and **Urlbar autohide** (in a Portuguese Firefox: **Ocultar abas automaticamente** and **Ocultar barra de endereço automaticamente**). The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
+The buttons are in *Customize Toolbar* as **Auto-hide the tab bar** and **Auto-hide the navigation bar** (in a Portuguese Firefox: **Ocultar a barra de abas automaticamente** and **Ocultar a barra de navegação automaticamente**). The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
 
 **`Ctrl+Alt+T` does not work on GNOME, Ubuntu and Linux Mint.** There it opens a terminal: the desktop takes the shortcut before Firefox sees it. Use the toolbar button, or give the shortcut up on that desktop (`Ctrl+Alt+U` is not affected). You can change it in Firefox's settings (see [Settings](#settings)).
 

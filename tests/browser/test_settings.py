@@ -75,7 +75,7 @@ def test_the_category_is_listed_and_opens_its_pane_from_the_address(browser):
     )
     assert shown == {
         "current": "panePeekafoxy",
-        "label": "Peek-a-Foxy",
+        "label": "Peek a Foxy 🦊",
         "hash": "#peekafoxy",
         "visible": ["panePeekafoxy"],
     }
@@ -334,10 +334,10 @@ def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
 @pytest.mark.parametrize(
     ("key", "code", "mods", "message"),
     [
-        ("g", "KeyG", "", "Include Ctrl, Alt or Meta."),
-        ("g", "KeyG", "s", "Include Ctrl, Alt or Meta."),
-        ("Enter", "Enter", "ca", "That key cannot be used."),
-        ("ArrowUp", "ArrowUp", "ca", "That key cannot be used."),
+        ("g", "KeyG", "", "Add Ctrl, Alt or Meta."),
+        ("g", "KeyG", "s", "Add Ctrl, Alt or Meta."),
+        ("Enter", "Enter", "ca", "That key can't be used."),
+        ("ArrowUp", "ArrowUp", "ca", "That key can't be used."),
         ("u", "KeyU", "ca", "The other bar already uses this shortcut."),
     ],
 )
@@ -373,29 +373,6 @@ def test_the_two_bars_can_swap_their_shortcuts(browser):
     assert not browser.js(f"return {HAS};", "autohide-tabs")
 
 
-# --- the greeting --------------------------------------------------------------------------------
-
-
-def test_show_the_greeting_again_resets_the_pref_for_the_next_window(browser):
-    assert browser.js("return Services.prefs.getBoolPref('peekafoxy.welcomed');") is True
-    browser.open_settings("#peekafoxy")
-    browser.settings("doc.getElementById('peekafoxy-greeting').click();")
-    assert browser.js("return Services.prefs.getBoolPref('peekafoxy.welcomed');") is False
-    assert "next window" in browser.settings(
-        "return doc.getElementById('peekafoxy-greeting').parentNode"
-        ".querySelector('.pf-note').textContent;"
-    )
-    browser.close_settings_tabs()
-    browser.new_window()
-    browser.wait(
-        "[...window.gNotificationBox.allNotifications]"
-        ".some(n => n.getAttribute('value') === 'peekafoxy-welcome')",
-        message="the greeting did not come back",
-    )
-    browser.js("window.close();")
-    browser.switch_to(browser.first_window)
-
-
 # --- languages and a Firefox that changed --------------------------------------------------------
 
 
@@ -413,14 +390,13 @@ def test_the_page_is_in_portuguese_for_a_portuguese_firefox(browser_in_portugues
     assert texts == {
         "group": [
             "Novas janelas",
-            "Revelar a barra de abas quando",
+            "Mostrar a barra de abas ao:",
             "Tamanho e tempos",
             "Atalhos",
-            "Saudação",
             "Suporte",
         ],
-        "start": "Ocultar a barra de abas automaticamente em novas janelas",
-        "reset": "Restaurar",
+        "start": "Ocultar a barra de abas em novas janelas",
+        "reset": "Restaurar padrão",
     }
     message = browser.settings(
         """const input = doc.getElementById('peekafoxy-peekafoxy.strip.px');

@@ -150,7 +150,7 @@ Uma atualização do Firefox pode remover o loader da pasta de instalação; rod
 | Alternar na janela atual | `Ctrl+Alt+T` ou botão da toolbar | `Ctrl+Alt+U` ou botão da toolbar |
 | Revelar temporariamente | passar o mouse na faixa do topo, trocar ou abrir uma aba | passar o mouse na faixa dela, focar a barra de endereço |
 
-Os botões estão em *Personalizar barra de ferramentas* como **Tabs autohide** e **Urlbar autohide** (num Firefox em português: **Ocultar abas automaticamente** e **Ocultar barra de endereço automaticamente**). O botão da urlbar fica dentro da barra que ele oculta, então revele a barra pela faixa de hover para clicar nele; o atalho funciona a qualquer momento.
+Os botões estão em *Personalizar barra de ferramentas* como **Auto-hide the tab bar** e **Auto-hide the navigation bar** (num Firefox em português: **Ocultar a barra de abas automaticamente** e **Ocultar a barra de navegação automaticamente**). O botão da urlbar fica dentro da barra que ele oculta, então revele a barra pela faixa de hover para clicar nele; o atalho funciona a qualquer momento.
 
 **O `Ctrl+Alt+T` não funciona no GNOME, Ubuntu e Linux Mint.** Lá ele abre um terminal: o ambiente de desktop pega o atalho antes de o Firefox vê-lo. Use o botão da toolbar, ou abra mão do atalho nesse desktop (o `Ctrl+Alt+U` não é afetado). Você pode mudá-lo nas configurações do Firefox (veja [Configurações](#configurações)).
 
