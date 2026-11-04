@@ -26,3 +26,29 @@ def test_installed_files_match_the_repository_sources():
     assert (chrome / "autohide.css").read_bytes() == (
         assets.assets_dir() / "autohide.css"
     ).read_bytes()
+
+
+def test_an_installed_package_uses_the_assets_it_carries(monkeypatch, tmp_path):
+    packaged = tmp_path / "pkg"
+    (packaged / "assets").mkdir(parents=True)
+    (packaged / "assets" / assets.CSS_NAME).write_text("/* wheel */")
+    monkeypatch.setattr(assets.resources, "files", lambda name: packaged)
+    assert assets.assets_dir() == packaged / "assets"
+
+
+def test_the_version_falls_back_when_the_package_is_not_installed(monkeypatch):
+    import importlib
+    import importlib.metadata
+
+    import peek_a_foxy
+
+    def not_installed(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib.metadata, "version", not_installed)
+    try:
+        importlib.reload(peek_a_foxy)
+        assert peek_a_foxy.__version__ == "0.0.0+unknown"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(peek_a_foxy)

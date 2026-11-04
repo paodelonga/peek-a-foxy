@@ -35,6 +35,7 @@ English · [Português (Brasil)](README.pt-BR.md)
 - **Navigation bar autohide** (urlbar, buttons, extensions). It opens from its own hover strip, whenever the URL bar gets focus (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`), and while its dropdown or a toolbar popup is open. The bookmarks bar hides and shows together with it, and the bars try to stay open while something is dragged out of them (for bookmarks this is not reliable yet, see the [roadmap](#roadmap)).
 - **Stays out of the way.** Customize Toolbar and full screen are left to Firefox: the bars are fully visible there.
 - **Opt-in and per window.** Both are off until you turn them on, and each window keeps its own state, saved with the session.
+- **Settings inside Firefox.** A Peek-a-Foxy section in the settings page changes the defaults, the strip size, the timings and the shortcuts for every open window at once ([details](#settings)).
 - **A hello when it loads.** The first time the script runs in a profile, Firefox shows a one-time notification ("Instaalleeeeed PEEK A BOO!!! >.<"), so you know it is working. It follows Firefox's language: English, or Brazilian Portuguese when Firefox is in Portuguese. Its button opens the song the name is a nod to ([see below](#about-the-name)).
 - **Non-invasive installer.** Your own `userChrome.css` is left alone, an existing autoconfig setup is never overwritten, and everything can be removed with one command.
 
@@ -65,9 +66,11 @@ $ peek-a-foxy install
 Install into ~/.mozilla/firefox/abcd1234.default-release
 ┌───┬────────────────────────────────────────────────────────────────┐
 │ 1 │ Fetch fx-autoconfig (dfdab5684f, verified)                     │
-│ 2 │ Copy autohide.css and autohide.uc.js into …/chrome             │
+│ 2 │ Copy autohide.css, autohide.uc.js, autohide-prefs.uc.js and    │
+│   │ peekafoxy.sys.mjs into …/chrome                                │
 │ 3 │ Add the @import line to …/chrome/userChrome.css                │
-│ 4 │ Enable userChrome.css loading in …/user.js                     │
+│ 4 │ Enable userChrome.css loading and the settings page in         │
+│   │ …/user.js                                                      │
 │ 5 │ Copy fx-autoconfig's utils into …/chrome/utils                 │
 │ 6 │ Install the loader into /usr/lib/firefox (uses sudo if needed) │
 └───┴────────────────────────────────────────────────────────────────┘
@@ -75,6 +78,8 @@ Apply these changes? [Y/n]:
 ```
 
 With several profiles or several Firefox installations (release and developer edition, for example) it asks which one to use. It never guesses: with `--yes`, an ambiguous choice is an error and you pass `--profile` / `--firefox-dir`.
+
+Without a terminal (a pipe, cron, CI) there is nobody to confirm, so `install` and `uninstall` refuse to change anything unless you pass `--yes`. `--dry-run` always works.
 
 ```text
 peek-a-foxy install [--profile DIR] [--firefox-dir DIR] [--skip-loader] [--dry-run] [--yes]
@@ -84,7 +89,8 @@ peek-a-foxy uninstall [--profile DIR] [--dry-run] [--yes]
   --firefox-dir DIR   Firefox install directory for the loader (default: auto-detected)
   --skip-loader       only install the profile files; leave the Firefox install directory alone
   --dry-run           show the plan without changing anything
-  --yes, -y           don't ask for confirmation or choose interactively
+  --yes, -y           don't ask anything: apply without confirming, no profile or Firefox picker
+                      (an unclear choice is an error instead)
 ```
 
 ### What gets installed
@@ -94,10 +100,12 @@ In your profile (`~/.mozilla/firefox/<profile>/`):
 ```text
 chrome/
 ├── autohide.css            ← this project
-├── JS/autohide.uc.js       ← this project
+├── JS/autohide.uc.js       ← this project (the autohide itself)
+├── JS/autohide-prefs.uc.js ← this project (the settings page)
+├── resources/peekafoxy.sys.mjs ← this project (shared by both scripts)
 ├── utils/                  ← fx-autoconfig (the per-profile half of the loader)
 └── userChrome.css          ← yours; one line is added at the top, the rest is untouched
-user.js                     ← one pref added (below)
+user.js                     ← two prefs added (below)
 ```
 
 One line at the top of your `userChrome.css`:
@@ -106,15 +114,16 @@ One line at the top of your `userChrome.css`:
 @import url("autohide.css");
 ```
 
-One line in `user.js`, the pref Firefox needs in order to load `userChrome.css`:
+Two lines in `user.js`: the pref Firefox needs in order to load `userChrome.css`, and the one fx-autoconfig needs to run the settings page's script inside `about:preferences` (by default it only runs scripts in the browser window):
 
 ```js
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+user_pref("userChromeJS.persistent_domcontent_callback", true);
 ```
 
-The autohide prefs are deliberately *not* written there: Firefox re-applies `user.js` on every start, which would undo any change you make in `about:config`. Instead, the script registers them as boolean prefs (default `false`) every time it loads, so they are listed in `about:config` with a toggle button and nothing is written to disk until you change a value.
+The autohide prefs are deliberately *not* written there: Firefox re-applies `user.js` on every start, which would undo any change you make in `about:config`. Instead, the script registers them (with their defaults and right types) every time it loads, so they are listed in `about:config` and nothing is written to disk until you change a value.
 
-In Firefox's install directory (for example `/usr/lib/firefox/`), the [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig) loader, cloned at a pinned and verified commit:
+In Firefox's install directory (for example `/usr/lib/firefox/`), the [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig) loader, fetched at a pinned and verified commit (only that commit, without its history):
 
 ```text
 config.js                       ← loads the profile's chrome/utils
@@ -139,7 +148,9 @@ A Firefox update can remove the loader from its install directory; run `peek-a-f
 | Toggle for the current window | `Ctrl+Alt+T` or toolbar button | `Ctrl+Alt+U` or toolbar button |
 | Reveal temporarily | hover the top strip, switch or open a tab | hover its strip, focus the URL bar |
 
-The buttons are in *Customize Toolbar* as **Tabs autohide** and **Urlbar autohide**. The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
+The buttons are in *Customize Toolbar* as **Tabs autohide** and **Urlbar autohide** (in a Portuguese Firefox: **Ocultar abas automaticamente** and **Ocultar barra de endereço automaticamente**). The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
+
+**`Ctrl+Alt+T` does not work on GNOME, Ubuntu and Linux Mint.** There it opens a terminal: the desktop takes the shortcut before Firefox sees it. Use the toolbar button, or give the shortcut up on that desktop (`Ctrl+Alt+U` is not affected). Making the shortcuts configurable is planned.
 
 ### Command line
 
@@ -152,15 +163,30 @@ peek-a-foxy --install-completion      # then restart your shell
 
 ## Settings
 
-All three are listed in `about:config` as booleans, so you only flip them (no need to create anything), and your changes stick. The first two only define the initial state of windows that have none saved; existing windows keep their own.
+Firefox's own settings page has a **Peek-a-Foxy** section (`about:preferences#peekafoxy`, or *Settings* in the menu). Everything below is applied to every open window at once, with no restart:
+
+- whether **new windows** start with the tab bar and the navigation bar hidden (windows that are already open keep their own state);
+- the **hover strip height**, the **opening animation**, the **delay before a bar closes**, and **how long the tab bar stays open** after a tab switch or a new tab;
+- the **shortcuts** that toggle each bar: click the field and press the new one (a letter, a digit or F1 to F12, with Ctrl, Alt or Meta; it is checked, and the two bars cannot share one). Each setting has a **Reset** button;
+- a button to **show the greeting again**.
+
+The page is added by a second script, `autohide-prefs.uc.js`, which needs Firefox to run scripts in `about:preferences` (the installer sets the `userChromeJS.persistent_domcontent_callback` pref for that, so run `peek-a-foxy install` again after updating, then restart Firefox). If a Firefox update changes the settings page in a way the script does not expect, it adds nothing and says why in the Browser Console; the prefs below still work in `about:config`.
+
+Every setting is a real pref, listed in `about:config` with its type, and nothing is written to disk until you change a value:
 
 | Pref | Default | Meaning |
 | --- | --- | --- |
 | `peekafoxy.tabs.autohide` | `false` | Start new windows with the tab bar hidden. |
 | `peekafoxy.urlbar.autohide` | `false` | Start new windows with the navigation bar hidden. |
-| `peekafoxy.welcomed` | `false` | Set to `true` by Firefox after the one-time greeting. Set it back to `false` to see it again. |
+| `peekafoxy.strip.px` | `8` | Hover strip height, in pixels (1 to 40). |
+| `peekafoxy.show.ms` | `120` | Opening animation, in milliseconds (0 to 2000). |
+| `peekafoxy.hide.delay.ms` | `300` | Wait before a bar closes, in milliseconds (0 to 5000). |
+| `peekafoxy.tabs.flash.ms` | `1500` | How long the tab bar stays open after a tab switch or a new tab (0 to 10000). |
+| `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Shortcut that toggles the tab bar in the current window. |
+| `peekafoxy.urlbar.shortcut` | `Ctrl+Alt+U` | Shortcut that toggles the navigation bar. |
+| `peekafoxy.welcomed` | `false` | Set to `true` after the one-time greeting. Set it back to `false` to see it again. |
 
-To pin a value in a file instead (it is then re-applied on every start), put the line in `user.js` in your profile folder (`~/.mozilla/firefox/<profile>/user.js`):
+A number outside its range is clamped, and a shortcut that is not valid falls back to the default. To pin a value in a file instead (it is then re-applied on every start), put the line in `user.js` in your profile folder (`~/.mozilla/firefox/<profile>/user.js`):
 
 ```js
 // <profile>/user.js
@@ -168,15 +194,19 @@ user_pref("peekafoxy.tabs.autohide", true);
 user_pref("peekafoxy.urlbar.autohide", true);
 ```
 
-Strip height, bar heights and animation timings are CSS variables at the top of [`chrome/autohide.css`](chrome/autohide.css). To change them, edit the installed copy in your profile (or the repository copy and install again):
+These are the defaults in the stylesheet. The strip height and the two timings can also be set in Firefox's settings, and a value set there wins; the bar heights are only here. To edit the stylesheet, change the installed copy in your profile (or the repository copy and install again):
 
 ```css
 /* <profile>/chrome/autohide.css */
 :root {
-  --autohide-strip: 12px;                 /* hover strip height */
+  --autohide-strip: 8px;                  /* hover strip height */
   --autohide-tabs-height: 64px;           /* ceiling: the tab bar opens to its natural height, up to this */
-  --autohide-show: 0.12s ease-out 0s;     /* opening: duration, easing, delay */
-  --autohide-hide: 0.2s ease-in 0.6s;     /* closing: wait 0.6s before collapsing */
+  --autohide-nav-height: 52px;            /* the navigation bar's open height (close to its natural one) */
+  --autohide-bookmarks-height: 40px;      /* the bookmarks bar's open height */
+  --autohide-show-duration: 0.12s;        /* opening: how long it takes */
+  --autohide-hide-delay: 0.3s;            /* closing: how long to wait before collapsing */
+  --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* opening: duration, easing, delay */
+  --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);       /* closing: duration, easing, delay */
 }
 ```
 
@@ -222,6 +252,7 @@ Pure CSS cannot detect tab switches or keep a separate state per window, hence t
 ## Troubleshooting
 
 - **No button, no shortcut:** the loader did not run. Close every Firefox window, start it again, then clear the startup cache from `about:support`.
+- **No Peek-a-Foxy section in the settings:** run `peek-a-foxy install` again (it sets the pref the page needs) and restart Firefox. If it is still missing, Firefox may have changed the page; the reason is in the Browser Console, filtered by `peekafoxy settings`.
 - **Nothing after a Firefox update:** the update replaced the install directory; run `peek-a-foxy install` again.
 - **Errors:** open the Browser Console (`Ctrl+Shift+J`) and filter for `autohide`.
 
@@ -242,7 +273,6 @@ Planned; contributions are welcome.
 - [ ] Tiling window managers and context menus: some tiling WMs steal the pointer when a context menu opens, so the tab bar may close while the menu is open.
 - [ ] Open the bars over the page instead of pushing it down. Today a revealed bar pushes the page down, which reflows the page on every animation frame.
 - [ ] The bookmarks bar closing when a bookmark is pressed and held or dragged, seen on at least one setup (Linux, tiling window manager). The automated tests send synthetic drag events and do not reproduce it. Reports are welcome, with your Firefox build, desktop or window manager, and display server (X11 or Wayland).
-- [ ] A settings UI for strip size, delays and shortcuts, instead of editing CSS variables.
 
 ## About the name
 

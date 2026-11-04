@@ -1,13 +1,15 @@
 """The fx-autoconfig loader, which lets Firefox run the ``*.uc.js`` script.
 
-It is cloned at a pinned commit and the checkout is verified, so a moved branch or tag cannot change
-what gets installed. ``FXAC_REPO`` / ``FXAC_COMMIT`` can override the source (used by the tests).
+It is fetched at a pinned commit and the checkout is verified, so a moved branch or tag cannot
+change what gets installed. ``FXAC_REPO`` / ``FXAC_COMMIT`` can override the source (used by the
+tests).
 """
 
 from __future__ import annotations
 
 import filecmp
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -31,7 +33,15 @@ def repo_url() -> str:
 
 
 def pinned_commit() -> str:
-    return os.environ.get("FXAC_COMMIT", DEFAULT_COMMIT)
+    """The commit to install, as a lowercase 40-digit hash; anything else is refused.
+
+    A branch, tag or abbreviated hash could move or become ambiguous, and a value starting with
+    ``-`` must never reach git as an option.
+    """
+    commit = os.environ.get("FXAC_COMMIT", DEFAULT_COMMIT)
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+        raise LoaderError(f"FXAC_COMMIT must be a full 40-digit commit hash, not {commit!r}")
+    return commit.lower()
 
 
 def _git(*args: str, cwd: Path | None = None) -> str:
@@ -42,16 +52,27 @@ def _git(*args: str, cwd: Path | None = None) -> str:
     return result.stdout.strip()
 
 
+def _fetch_commit(repo: str, commit: str, checkout: Path) -> None:
+    """Fetch just ``commit`` (no history); fall back to a full clone if the server refuses that."""
+    checkout.mkdir()
+    try:
+        _git("init", "--quiet", cwd=checkout)
+        _git("fetch", "--quiet", "--depth", "1", "--", repo, commit, cwd=checkout)
+    except LoaderError:
+        shutil.rmtree(checkout)
+        _git("clone", "--quiet", "--", repo, str(checkout))
+    _git("checkout", "--quiet", "--detach", commit, cwd=checkout)
+
+
 @contextmanager
 def fetch_loader() -> Iterator[Path]:
-    """Clone fx-autoconfig into a temporary directory and yield the verified checkout."""
+    """Fetch fx-autoconfig into a temporary directory and yield the verified checkout."""
     if shutil.which("git") is None:
         raise LoaderError("git is required to fetch fx-autoconfig (or use --skip-loader)")
     commit = pinned_commit()
     with tempfile.TemporaryDirectory(prefix="peek-a-foxy-") as tmp:
         checkout = Path(tmp) / "fx-autoconfig"
-        _git("clone", "--quiet", repo_url(), str(checkout))
-        _git("checkout", "--quiet", commit, cwd=checkout)
+        _fetch_commit(repo_url(), commit, checkout)
         if _git("rev-parse", "HEAD", cwd=checkout) != commit:
             raise LoaderError("fx-autoconfig checkout does not match the pinned commit")
         yield checkout
