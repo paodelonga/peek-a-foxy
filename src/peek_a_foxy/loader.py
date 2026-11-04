@@ -11,11 +11,14 @@ import filecmp
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+
+from peek_a_foxy import platform
 
 DEFAULT_REPO = "https://github.com/MrOtherGuy/fx-autoconfig.git"
 DEFAULT_COMMIT = "dfdab5684faffc112b76ccb1d8cab7f75da0102c"
@@ -44,12 +47,35 @@ def pinned_commit() -> str:
     return commit.lower()
 
 
+# Git for Windows converts line endings by default (core.autocrlf=true), which would hand Firefox a
+# config.js with CRLF, and long paths in a checkout can fail without core.longpaths. Both are set on
+# every call, whatever the user's git configuration says.
+GIT_SETTINGS = ("-c", "core.autocrlf=false", "-c", "core.longpaths=true")
+
+
 def _git(*args: str, cwd: Path | None = None) -> str:
     try:
-        result = subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+        result = subprocess.run(
+            ["git", *GIT_SETTINGS, *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",  # not the console's code page: git writes UTF-8
+            errors="replace",
+        )
     except subprocess.CalledProcessError as error:
         raise LoaderError(f"git {' '.join(args)} failed: {error.stderr.strip()}") from error
     return result.stdout.strip()
+
+
+def remove_tree(path: Path) -> None:
+    """Delete a directory tree, read-only files included (Windows refuses to delete them)."""
+    # Top down: a folder is opened up before it is read.
+    for root, directories, files in os.walk(path):
+        for name in (*directories, *files):
+            os.chmod(os.path.join(root, name), stat.S_IRWXU)
+    shutil.rmtree(path)
 
 
 def _fetch_commit(repo: str, commit: str, checkout: Path) -> None:
@@ -59,18 +85,32 @@ def _fetch_commit(repo: str, commit: str, checkout: Path) -> None:
         _git("init", "--quiet", cwd=checkout)
         _git("fetch", "--quiet", "--depth", "1", "--", repo, commit, cwd=checkout)
     except LoaderError:
-        shutil.rmtree(checkout)
+        remove_tree(checkout)
         _git("clone", "--quiet", "--", repo, str(checkout))
     _git("checkout", "--quiet", "--detach", commit, cwd=checkout)
+
+
+def _git_missing() -> str:
+    hint = "(or use --skip-loader)"
+    try:
+        windows = platform.system() == "windows"
+    except platform.UnsupportedPlatformError:
+        windows = False
+    if windows:
+        return (
+            "git is required to fetch fx-autoconfig: install Git for Windows "
+            f"(https://git-scm.com/download/win, or `winget install Git.Git`) {hint}"
+        )
+    return f"git is required to fetch fx-autoconfig {hint}"
 
 
 @contextmanager
 def fetch_loader() -> Iterator[Path]:
     """Fetch fx-autoconfig into a temporary directory and yield the verified checkout."""
     if shutil.which("git") is None:
-        raise LoaderError("git is required to fetch fx-autoconfig (or use --skip-loader)")
+        raise LoaderError(_git_missing())
     commit = pinned_commit()
-    with tempfile.TemporaryDirectory(prefix="peek-a-foxy-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="peek-a-foxy-", ignore_cleanup_errors=True) as tmp:
         checkout = Path(tmp) / "fx-autoconfig"
         _fetch_commit(repo_url(), commit, checkout)
         if _git("rev-parse", "HEAD", cwd=checkout) != commit:

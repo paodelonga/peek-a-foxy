@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from support import needs_permissions
 
 from peek_a_foxy import loader
 from peek_a_foxy.loader import LoaderError, fetch_loader
@@ -140,3 +141,88 @@ def test_the_temporary_checkout_is_removed(fxac_repo: Path):
     with fetch_loader() as checkout:
         assert checkout.is_dir()
     assert not checkout.exists()
+
+
+# --- Windows' habits: line endings, encodings, read-only files, no git ------------------------
+
+
+def test_the_checkout_keeps_lf_even_when_git_is_set_to_convert_line_endings(
+    fxac_repo: Path, tmp_path: Path, monkeypatch
+):
+    """Git for Windows ships core.autocrlf=true: config.js would reach Firefox with CRLF."""
+    config = tmp_path / "gitconfig"
+    config.write_text("[core]\n\tautocrlf = true\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    with fetch_loader() as checkout:
+        assert b"\r" not in (checkout / "program" / "config.js").read_bytes()
+    # and the setting really is what is protecting us, not a coincidence of the fixture
+    plain = tmp_path / "plain"
+    subprocess.run(
+        ["git", "clone", "-q", str(fxac_repo), str(plain)], check=True, capture_output=True
+    )
+    assert b"\r\n" in (plain / "program" / "config.js").read_bytes()
+
+
+def test_every_git_call_overrides_line_ending_conversion_and_long_paths(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="x\n", stderr="")
+
+    monkeypatch.setattr(loader.subprocess, "run", fake_run)
+    loader._git("status")
+    assert calls[0][:5] == ["git", "-c", "core.autocrlf=false", "-c", "core.longpaths=true"]
+    assert calls[0][5:] == ["status"]
+
+
+def test_git_messages_with_non_ascii_text_are_read_as_utf8(monkeypatch, tmp_path):
+    monkeypatch.setenv("FXAC_REPO", str(tmp_path / "repositório-inexistente-ção"))
+    with pytest.raises(LoaderError, match="repositório-inexistente-ção"), fetch_loader():
+        pass
+
+
+@needs_permissions
+def test_a_tree_with_read_only_folders_and_files_can_be_removed(tmp_path: Path):
+    tree = tmp_path / "checkout"
+    (tree / "objects" / "00").mkdir(parents=True)
+    victim = tree / "objects" / "00" / "abc"
+    victim.write_text("x")
+    victim.chmod(0o444)
+    (tree / "objects" / "00").chmod(0o555)
+    (tree / "objects").chmod(0o555)
+    loader.remove_tree(tree)
+    assert not tree.exists()
+
+
+def test_a_tree_with_read_only_files_can_be_removed_on_every_platform(tmp_path: Path):
+    tree = tmp_path / "checkout"
+    (tree / "objects").mkdir(parents=True)
+    victim = tree / "objects" / "abc"
+    victim.write_text("x")
+    victim.chmod(0o444)  # on Windows this is the flag that makes a delete fail
+    loader.remove_tree(tree)
+    assert not tree.exists()
+
+
+@pytest.mark.parametrize(
+    ("system", "needle"), [("windows", "Git for Windows"), ("linux", "git is")]
+)
+def test_missing_git_is_explained_for_the_platform(monkeypatch, system, needle):
+    monkeypatch.setattr(loader.shutil, "which", lambda name: None)
+    monkeypatch.setattr(loader.platform, "system", lambda: system)
+    with pytest.raises(LoaderError, match=needle) as caught, fetch_loader():
+        pass
+    assert "--skip-loader" in str(caught.value)
+    assert ("winget" in str(caught.value)) is (system == "windows")
+
+
+def test_missing_git_on_an_unsupported_platform_still_says_so(monkeypatch):
+    def unsupported():
+        raise loader.platform.UnsupportedPlatformError("nope")
+
+    monkeypatch.setattr(loader.shutil, "which", lambda name: None)
+    monkeypatch.setattr(loader.platform, "system", unsupported)
+    with pytest.raises(LoaderError, match="git is required"), fetch_loader():
+        pass
