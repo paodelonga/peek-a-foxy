@@ -1,8 +1,19 @@
 /* Autohide for the tab bar and the navigation bar (urlbar), per window.
    The attributes autohide-tabs / autohide-urlbar on :root are set by JS/autohide.uc.js
-   (Ctrl+Alt+T / Ctrl+Alt+U, plus a toolbar button for the tabs); their initial values come from the prefs
-   userchrome.tabs.autohide / userchrome.urlbar.autohide.
-   Collapsed to a thin hover strip; revealed on the strip, while focused, or while a related popup is open. */
+   (Ctrl+Alt+T / Ctrl+Alt+U, plus a toolbar button for each); their initial values come from the prefs
+   peekafoxy.tabs.autohide / peekafoxy.urlbar.autohide.
+   Collapsed to a thin hover strip; revealed on the strip, while focused, or while a related popup is open.
+
+   How each bar is written below:
+     1. a base rule: what stays true in both states (it never clips more than it should, and the
+        transition runs in both directions);
+     2. a COLLAPSED rule: matches only when none of the reveal conditions holds, so the bar's own
+        padding, margin and border (Firefox's styling) are untouched while it is revealed;
+     3. a REVEALED rule: the reveal conditions, which only set the open height.
+   Rules 2 and 3 must stay exact opposites; when you add a way to reveal a bar, add it to both.
+
+   Every rule is guarded with :not([inFullscreen], [customizing]): full screen has Firefox's own way of
+   showing the toolbars, and in Customize Toolbar the bars must be fully visible to be rearranged. */
 
 /* Timing: reveal fast, hide slowly. The hide delay keeps the bar from flickering when the cursor
    briefly leaves it (e.g. drifting off the strip) and gives a moment to reach it again. */
@@ -11,36 +22,48 @@
   --autohide-hide: 0.2s ease-in 0.3s;
   /* Collapsed hover strip and expanded bar heights. */
   --autohide-strip: 8px;
-  --autohide-tabs-height: 40px;
+  --autohide-tabs-height: 64px;  /* ceiling: the bar opens to its natural height, up to this */
   --autohide-nav-height: 52px;  /* close to the navbar's natural height, so the animation has no dead time */
+  --autohide-bookmarks-height: 40px;
 }
 
 /* ---- Tab bar: also revealed on tab switch/open ---- */
-:root[autohide-tabs] #TabsToolbar {
-  height: var(--autohide-strip) !important;
+
+/* 1. base */
+:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar {
   min-height: 0 !important;
+  overflow: hidden !important;
+  transition:
+    max-height var(--autohide-hide), opacity var(--autohide-hide), padding var(--autohide-hide),
+    margin var(--autohide-hide), border-width var(--autohide-hide);
+}
+:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar > *,
+:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar #tabbrowser-tabs {
+  min-height: 0 !important;
+}
+
+/* 2. collapsed: none of the reveal conditions below holds */
+:root[autohide-tabs]:not([inFullscreen], [customizing]):not([tabs-flash]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
+  #TabsToolbar:not(:hover, :focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])) {
   max-height: var(--autohide-strip) !important;
   padding: 0 !important;
   margin: 0 !important;
-  border: 0 !important;
-  overflow: hidden !important;
+  border-width: 0 !important;
   opacity: 0;
-  transition: max-height var(--autohide-hide), height var(--autohide-hide), opacity var(--autohide-hide);
 }
-:root[autohide-tabs] #TabsToolbar > *,
-:root[autohide-tabs] #TabsToolbar #tabbrowser-tabs {
-  min-height: 0 !important;
-}
-:root[autohide-tabs] #TabsToolbar:hover,
-:root[autohide-tabs] #TabsToolbar:focus-within,
-:root[autohide-tabs][tabs-flash] #TabsToolbar,
-:root[autohide-tabs]:has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar,
+
+/* 3. revealed */
+:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar:hover,
+:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar:focus-within,
+:root[autohide-tabs]:not([inFullscreen], [customizing])[tabs-flash] #TabsToolbar,
+:root[autohide-tabs]:not([inFullscreen], [customizing]):has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar,
 /* Hover is not updated during a drag session, so keep the bar open while a tab is being dragged. */
-:root[autohide-tabs] #TabsToolbar:has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget]) {
-  height: var(--autohide-tabs-height) !important;
+:root[autohide-tabs]:not([inFullscreen], [customizing]) #TabsToolbar:has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget]) {
   max-height: var(--autohide-tabs-height) !important;
   opacity: 1;
-  transition: max-height var(--autohide-show), height var(--autohide-show), opacity var(--autohide-show);
+  transition:
+    max-height var(--autohide-show), opacity var(--autohide-show), padding var(--autohide-show),
+    margin var(--autohide-show), border-width var(--autohide-show);
 }
 
 #tabs-autohide-button {
@@ -49,24 +72,77 @@
 
 /* ---- Navigation bar (urlbar) ----
    Revealed on its strip, while anything inside has focus (Ctrl+L, Ctrl+K, F6, Alt+D focus the urlbar),
-   while the urlbar dropdown is open, or while a toolbar popup (extensions, menus) is open. */
-:root[autohide-urlbar] #nav-bar {
-  max-height: var(--autohide-strip) !important;
+   while the urlbar dropdown is open, while a toolbar popup (extensions, menus) is open, or while the
+   bookmarks bar below it is hovered. */
+
+/* 1. base */
+:root[autohide-urlbar]:not([inFullscreen], [customizing]) #nav-bar {
   min-height: 0 !important;
+  overflow: hidden !important;
+  transition:
+    max-height var(--autohide-hide), opacity var(--autohide-hide), padding var(--autohide-hide),
+    margin var(--autohide-hide), border-width var(--autohide-hide);
+}
+
+/* 2. collapsed */
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):not(:has(#urlbar[open]))
+  #navigator-toolbox:not(:has(#PersonalToolbar:is(:hover, :focus-within)))
+  #nav-bar:not(:hover, :focus-within, :has(toolbarbutton[open])) {
+  max-height: var(--autohide-strip) !important;
   padding: 0 !important;
   margin: 0 !important;
-  border: 0 !important;
-  overflow: hidden !important;
+  border-width: 0 !important;
   opacity: 0;
-  transition: max-height var(--autohide-hide), opacity var(--autohide-hide);
 }
-:root[autohide-urlbar] #nav-bar:hover,
-:root[autohide-urlbar] #nav-bar:focus-within,
-:root[autohide-urlbar] #nav-bar:has(toolbarbutton[open]),
-:root[autohide-urlbar]:has(#urlbar[open]) #nav-bar {
+
+/* 3. revealed */
+:root[autohide-urlbar]:not([inFullscreen], [customizing]) #nav-bar:hover,
+:root[autohide-urlbar]:not([inFullscreen], [customizing]) #nav-bar:focus-within,
+:root[autohide-urlbar]:not([inFullscreen], [customizing]) #nav-bar:has(toolbarbutton[open]),
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):has(#urlbar[open]) #nav-bar,
+:root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#PersonalToolbar:is(:hover, :focus-within)) #nav-bar {
   max-height: var(--autohide-nav-height) !important;
   opacity: 1;
-  transition: max-height var(--autohide-show), opacity var(--autohide-show);
+  transition:
+    max-height var(--autohide-show), opacity var(--autohide-show), padding var(--autohide-show),
+    margin var(--autohide-show), border-width var(--autohide-show);
+}
+
+/* ---- Bookmarks bar ----
+   It belongs to the navigation bar's group: hidden with it, and shown together with it. It has no
+   hover strip of its own (the navigation bar's strip is the trigger); once it is open, hovering it
+   keeps the whole group open. A bookmarks bar the user has turned off stays off. */
+
+/* 1. base */
+:root[autohide-urlbar]:not([inFullscreen], [customizing]) #PersonalToolbar {
+  min-height: 0 !important;
+  overflow: hidden !important;
+  transition:
+    max-height var(--autohide-hide), opacity var(--autohide-hide), padding var(--autohide-hide),
+    margin var(--autohide-hide), border-width var(--autohide-hide);
+}
+
+/* 2. collapsed */
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):not(:has(#urlbar[open]))
+  #navigator-toolbox:not(:has(#nav-bar:is(:hover, :focus-within), #nav-bar toolbarbutton[open]))
+  #PersonalToolbar:not(:hover, :focus-within) {
+  max-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-width: 0 !important;
+  opacity: 0;
+}
+
+/* 3. revealed */
+:root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#nav-bar:is(:hover, :focus-within)) #PersonalToolbar,
+:root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#nav-bar toolbarbutton[open]) #PersonalToolbar,
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):has(#urlbar[open]) #PersonalToolbar,
+:root[autohide-urlbar]:not([inFullscreen], [customizing]) #PersonalToolbar:is(:hover, :focus-within) {
+  max-height: var(--autohide-bookmarks-height) !important;
+  opacity: 1;
+  transition:
+    max-height var(--autohide-show), opacity var(--autohide-show), padding var(--autohide-show),
+    margin var(--autohide-show), border-width var(--autohide-show);
 }
 
 @media (prefers-reduced-motion: reduce) {
