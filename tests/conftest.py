@@ -56,3 +56,9 @@ def plain_output(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NO_COLOR", "1")  # Typer's own output and subprocesses
     monkeypatch.setattr(ui.console, "_color_system", None)
     monkeypatch.setattr(ui.errors, "_color_system", None)
+
+
+@pytest.fixture(autouse=True)
+def no_log_file_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never write to the real log folder; the tests of the log itself turn it back on."""
+    monkeypatch.setenv("PEEK_A_FOXY_LOG", "off")

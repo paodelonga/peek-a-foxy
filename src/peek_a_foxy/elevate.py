@@ -12,14 +12,18 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 
 from peek_a_foxy import errors
 from peek_a_foxy.errors import ElevationError
+
+log = logging.getLogger(__name__)  # only the parent process logs; HELPER_CODE imports nothing
 
 # SHA-256 of the files at DEFAULT_COMMIT of fx-autoconfig, with LF line endings. A test fetches the
 # real commit and compares: bump them together with the commit.
@@ -166,7 +170,17 @@ def copy_as_administrator(
         )
     payloads = [(checkout / "program" / name).read_bytes() for name in PINNED_SHA256]
     run = elevator or windows_elevator
-    code = run(helper_command(firefox_dir, payloads))
+    command = helper_command(firefox_dir, payloads)
+    # The command carries the code and the file contents: log only what it is made of.
+    log.info(
+        "asking for administrator rights to copy %d file(s) into %s (%d bytes of payload)",
+        len(payloads),
+        firefox_dir,
+        sum(len(data) for data in payloads),
+    )
+    started = time.monotonic()
+    code = run(command)
+    log.info("the elevated process exited with %d after %.2f s", code, time.monotonic() - started)
     if code != OK:
         reason = MESSAGES.get(code, f"the elevated process failed (exit code {code})")
         raise ElevationError(

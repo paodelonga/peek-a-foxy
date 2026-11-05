@@ -8,18 +8,22 @@ tests).
 from __future__ import annotations
 
 import filecmp
+import logging
 import os
 import re
 import shutil
 import stat
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 from peek_a_foxy import elevate, errors, platform
 from peek_a_foxy.errors import LoaderError
+
+log = logging.getLogger(__name__)
 
 DEFAULT_REPO = "https://github.com/MrOtherGuy/fx-autoconfig.git"
 DEFAULT_COMMIT = "dfdab5684faffc112b76ccb1d8cab7f75da0102c"
@@ -54,6 +58,8 @@ GIT_SETTINGS = ("-c", "core.autocrlf=false", "-c", "core.longpaths=true")
 
 
 def _git(*args: str, cwd: Path | None = None) -> str:
+    log.debug("running: git %s", " ".join(args))
+    started = time.monotonic()
     try:
         result = subprocess.run(
             ["git", *GIT_SETTINGS, *args],
@@ -65,11 +71,18 @@ def _git(*args: str, cwd: Path | None = None) -> str:
             errors="replace",
         )
     except subprocess.CalledProcessError as error:
+        log.error(
+            "git %s exited with %d after %.2f s",
+            args[0],
+            error.returncode,
+            time.monotonic() - started,
+        )
         raise LoaderError(
             errors.GIT_FAILED,
             f"git {' '.join(args)} failed: {error.stderr.strip()}",
             detail=f"git {' '.join(args)} exited with code {error.returncode}",
         ) from error
+    log.debug("git %s exited with 0 in %.2f s", args[0], time.monotonic() - started)
     return result.stdout.strip()
 
 
@@ -91,6 +104,7 @@ def _fetch_commit(repo: str, commit: str, checkout: Path) -> None:
         _git("init", "--quiet", cwd=checkout)
         _git("fetch", "--quiet", "--depth", "1", "--", repo, commit, cwd=checkout)
     except LoaderError:
+        log.info("the shallow fetch failed; cloning the whole repository instead")
         remove_tree(checkout)
         _git("clone", "--quiet", "--", repo, str(checkout))
     _git("checkout", "--quiet", "--detach", commit, cwd=checkout)
@@ -145,9 +159,11 @@ def install_utils(checkout: Path, chrome_dir: Path) -> None:
 
 
 def _sudo(*command: str) -> None:
+    log.info("running: sudo %s", " ".join(command))
     try:
         subprocess.run(["sudo", *command], check=True)
     except (subprocess.CalledProcessError, FileNotFoundError) as error:
+        log.error("sudo failed: %r", error)
         raise LoaderError(
             errors.SUDO_FAILED,
             f"could not run 'sudo {' '.join(command)}'",

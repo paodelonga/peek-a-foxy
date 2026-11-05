@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import configparser
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from peek_a_foxy import errors
 from peek_a_foxy.errors import DiscoveryError
+
+log = logging.getLogger(__name__)
 
 NoProfilesError = DiscoveryError  # the name this error had before codes: ``profiles.ini`` problems
 
@@ -58,6 +61,7 @@ def read_profiles(root: Path) -> list[Profile]:
 
     if not profiles:
         raise DiscoveryError(errors.NO_PROFILE_LISTED, f"{ini} lists no profile")
+    log.debug("profiles.ini: %d profile(s) in %s", len(profiles), ini)
     return profiles
 
 

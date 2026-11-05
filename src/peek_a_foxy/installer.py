@@ -6,7 +6,9 @@ confirmation and then execute it, and the tests can run it against throwaway pro
 
 from __future__ import annotations
 
+import logging
 import shutil
+import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, ExitStack
 from dataclasses import dataclass, field
@@ -18,6 +20,7 @@ from peek_a_foxy.assets import FILES, assets_dir
 from peek_a_foxy.errors import UserFileError
 
 T = TypeVar("T")
+log = logging.getLogger(__name__)
 
 LEGACY_FILES = (
     "tabs-autohide.css",
@@ -55,9 +58,26 @@ class Plan:
             for number, step in enumerate(self.steps, start=1):
                 if on_step:
                     on_step(number, len(self.steps), step)
-                warning = step.run()
+                log.info("step %d/%d: %s", number, len(self.steps), step.description)
+                started = time.monotonic()
+                try:
+                    warning = step.run()
+                except BaseException as error:
+                    log.error(
+                        "step %d/%d failed after %.2f s: %s: %s",
+                        number,
+                        len(self.steps),
+                        time.monotonic() - started,
+                        type(error).__name__,
+                        error,
+                    )
+                    raise
+                log.info(
+                    "step %d/%d done in %.2f s", number, len(self.steps), time.monotonic() - started
+                )
                 self.completed.append(step)
                 if warning:
+                    log.warning("step %d/%d: %s", number, len(self.steps), warning)
                     warnings.append(warning)
         finally:
             self._cleanup.close()
@@ -71,6 +91,7 @@ def _read(path: Path) -> tuple[str, bool]:
     """Return the text of ``path`` (empty if missing) and whether it starts with a UTF-8 BOM."""
     if not path.is_file():
         return "", False
+    log.debug("reading %s", path)
     raw = path.read_bytes()
     try:
         return raw.decode("utf-8-sig"), raw.startswith(UTF8_BOM)
@@ -81,6 +102,7 @@ def _read(path: Path) -> tuple[str, bool]:
 
 
 def _write(path: Path, text: str, bom: bool) -> None:
+    log.info("writing %s", path)
     path.parent.mkdir(parents=True, exist_ok=True)
     # write_bytes() writes through a symlink instead of replacing it (userChrome.css is often one).
     path.write_bytes((UTF8_BOM if bom else b"") + text.encode("utf-8"))
@@ -95,6 +117,7 @@ def _edit(path: Path, transform: Callable[[str], str]) -> None:
 
 
 def _remove(path: Path) -> None:
+    log.debug("removing %s if present", path)
     path.unlink(missing_ok=True)
 
 
