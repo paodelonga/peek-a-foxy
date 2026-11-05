@@ -2,31 +2,68 @@
 
 from __future__ import annotations
 
+import errno
 import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated, Any
 
 import typer
 from rich.panel import Panel
-from rich.text import Text
+from typer.core import TyperGroup
 
-from peek_a_foxy import __version__, platform, ui
-from peek_a_foxy.installer import (
-    Plan,
-    Step,
-    UserFileError,
-    plan_install,
-    plan_uninstall,
-)
-from peek_a_foxy.loader import LoaderError
-from peek_a_foxy.profiles import NoProfilesError, Profile, default_profile, read_profiles
+from peek_a_foxy import __version__, errors, platform, ui
+from peek_a_foxy.errors import DiscoveryError, PeekError, PlatformError
+from peek_a_foxy.installer import Plan, Step, plan_install, plan_uninstall
+from peek_a_foxy.profiles import Profile, default_profile, read_profiles
 
 # Shown to the user as the way to toggle each bar; they must match the script's TARGETS.
 TABS_SHORTCUT = "Ctrl+Alt+T"
 URLBAR_SHORTCUT = "Ctrl+Alt+U"
 
+
+class _Group(TyperGroup):
+    """The top-level command: every failure ends up as a message, a log entry and an exit code.
+
+    An expected failure (:class:`PeekError`, or a file system error) exits with 1 and a short
+    message; anything else is a bug: it exits with 70 and the unexpected-error code. Typer's own
+    handling would print a stack trace instead.
+    """
+
+    def invoke(self, ctx: Any) -> Any:
+        try:
+            return super().invoke(ctx)
+        except Exception as error:
+            if _is_click_signal(error):
+                raise
+            raise typer.Exit(_handle_failure(error)) from None
+
+
+def _is_click_signal(error: Exception) -> bool:
+    """Exit, Abort and the usage errors: Click prints and exits for these itself.
+
+    Typer bundles its own copy of Click in recent versions and relies on the real one in older
+    ones, so they are recognised by what they are rather than by their class.
+    """
+    if isinstance(error, (typer.Exit, typer.Abort)):
+        return True
+    return callable(getattr(error, "show", None)) and hasattr(error, "exit_code")
+
+
+def _handle_failure(error: Exception) -> int:
+    """Log and print a failure; return the exit code."""
+    if isinstance(error, OSError) and error.errno == errno.EPIPE:
+        raise error  # the reader of our output went away: not ours to explain
+    if isinstance(error, OSError):
+        error = errors.from_oserror(error)
+    if isinstance(error, PeekError):
+        ui.report(error)
+        return errors.EXIT_FAILURE
+    ui.report_unexpected(error)
+    return errors.EXIT_UNEXPECTED
+
+
 app = typer.Typer(
+    cls=_Group,
     help="Peek-a-boo for Foxys: autohide the tab bar and navigation bar per window.",
     no_args_is_help=True,
     add_completion=True,  # adds --install-completion / --show-completion for bash, zsh, fish
@@ -39,7 +76,7 @@ def _complete_profile(incomplete: str) -> list[tuple[str, str]]:
     """Shell completion for --profile: the profiles listed in profiles.ini."""
     try:
         profiles = read_profiles(platform.profiles_root())
-    except (NoProfilesError, platform.UnsupportedPlatformError):
+    except (DiscoveryError, PlatformError):
         return []
     return [
         (str(profile.path), profile.name)
@@ -52,7 +89,7 @@ def _complete_firefox_dir(incomplete: str) -> list[str]:
     """Shell completion for --firefox-dir: the Firefox installations that were detected."""
     try:
         candidates = platform.firefox_dir_candidates()
-    except platform.UnsupportedPlatformError:
+    except PlatformError:
         return []
     return [str(path) for path in candidates if str(path).startswith(incomplete)]
 
@@ -126,11 +163,7 @@ def _interactive(yes: bool) -> bool:
 def _choose_profile(profile: Path | None, yes: bool) -> Path:
     if profile is not None:
         return profile
-    try:
-        profiles = read_profiles(platform.profiles_root())
-    except (NoProfilesError, platform.UnsupportedPlatformError) as error:
-        ui.fail(str(error))
-
+    profiles = read_profiles(platform.profiles_root())
     if len(profiles) == 1:
         return profiles[0].path
     preferred = default_profile(profiles)
@@ -138,7 +171,7 @@ def _choose_profile(profile: Path | None, yes: bool) -> Path:
         return _prompt_profile(profiles, preferred)
     if preferred is None:
         # Several installations (release, developer edition...) each have their own default.
-        ui.fail("cannot tell which profile to use; pass --profile (or run without --yes to choose)")
+        raise DiscoveryError(errors.AMBIGUOUS_PROFILE, "cannot tell which profile to use")
     return preferred.path
 
 
@@ -154,7 +187,9 @@ def _prompt_profile(profiles: list[Profile], preferred: Profile | None) -> Path:
     default_number = profiles.index(preferred) + 1 if preferred else None
     choice: int = typer.prompt("Install into profile number", default=default_number, type=int)
     if not 1 <= choice <= len(profiles):
-        ui.fail(f"choose a number between 1 and {len(profiles)}")
+        raise DiscoveryError(
+            errors.INVALID_CHOICE, f"choose a number between 1 and {len(profiles)}"
+        )
     return profiles[choice - 1].path
 
 
@@ -165,22 +200,26 @@ def _resolve_firefox_dir(firefox_dir: Path | None, skip_loader: bool, yes: bool)
         firefox_dir = _choose_firefox_dir(yes)
     kind = platform.sandbox_kind(firefox_dir)
     if kind:
-        ui.fail(f"{kind} builds of Firefox are read-only and not supported ({firefox_dir})")
+        raise DiscoveryError(
+            errors.FIREFOX_SANDBOXED,
+            f"{kind} builds of Firefox are read-only and not supported ({firefox_dir})",
+        )
     return firefox_dir
 
 
 def _choose_firefox_dir(yes: bool) -> Path:
-    try:
-        candidates = platform.firefox_dir_candidates()
-    except platform.UnsupportedPlatformError as error:
-        ui.fail(str(error))
+    candidates = platform.firefox_dir_candidates()
     if not candidates:
-        ui.fail("could not find the Firefox install directory; pass --firefox-dir")
+        raise DiscoveryError(
+            errors.FIREFOX_NOT_FOUND, "could not find the Firefox install directory"
+        )
     if len(candidates) == 1:
         return candidates[0]
     if not _interactive(yes):
         found = ", ".join(str(path) for path in candidates)
-        ui.fail(f"several Firefox installations found ({found}); pass --firefox-dir")
+        raise DiscoveryError(
+            errors.SEVERAL_FIREFOXES, f"several Firefox installations found ({found})"
+        )
 
     table = ui.new_table("Firefox installations")
     table.add_column("#", justify="right")
@@ -190,16 +229,10 @@ def _choose_firefox_dir(yes: bool) -> Path:
     ui.show(table)
     choice: int = typer.prompt("Install the loader into number", type=int)
     if not 1 <= choice <= len(candidates):
-        ui.fail(f"choose a number between 1 and {len(candidates)}")
+        raise DiscoveryError(
+            errors.INVALID_CHOICE, f"choose a number between 1 and {len(candidates)}"
+        )
     return candidates[choice - 1]
-
-
-def _build(make_plan: Callable[[], Plan]) -> Plan:
-    """Build a plan, turning unreadable user files into a clean error instead of a traceback."""
-    try:
-        return make_plan()
-    except (UserFileError, LoaderError, OSError) as error:
-        ui.fail(str(error))
 
 
 def _show_plan(plan: Plan, title: str) -> None:
@@ -214,14 +247,16 @@ def _show_plan(plan: Plan, title: str) -> None:
 def _confirm() -> None:
     """Ask before changing anything; with nobody to ask (no terminal) refuse instead of assuming."""
     if not _interactive(False):
-        hint = ""
+        hint = None
         if platform.is_windows():
             hint = (
-                " (Git Bash does not look like a terminal to Python: "
-                "use --yes, or run it through winpty)"
+                "Add --yes to apply the changes without asking. (Git Bash does not look like a "
+                "terminal to Python: use --yes, or run the command through winpty.)"
             )
-        ui.fail(
-            f"no terminal to ask for confirmation; pass --yes to apply the changes anyway{hint}"
+        raise PlatformError(
+            errors.NO_TERMINAL,
+            "no terminal to ask for confirmation; pass --yes to apply the changes anyway",
+            hint=hint,
         )
     if not typer.confirm("Apply these changes?", default=True):
         raise typer.Exit(1)
@@ -241,24 +276,24 @@ def _apply(plan: Plan, title: str, dry_run: bool, yes: bool) -> list[str]:
 
     try:
         return plan.execute(announce)
-    except (LoaderError, UserFileError, OSError) as error:
-        _fail_partway(plan, error)
+    except Exception as error:
+        # Whatever went wrong, the person should know what the earlier steps already changed.
+        errors.set_context(error, _progress(plan))
+        raise
 
 
-def _fail_partway(plan: Plan, error: Exception) -> NoReturn:
-    """Report a failed step together with what the earlier steps already changed."""
+def _progress(plan: Plan) -> str:
+    """What a failed plan already changed, and that running it again is safe."""
     finished = len(plan.completed)
     if finished:
         done = "; ".join(step.description for step in plan.completed)
         progress = f"{finished} of {len(plan.steps)} steps finished: {done}."
     else:
         progress = "No step had finished."
-    ui.errors.print(Text.assemble(("error: ", "bold red"), str(error)), soft_wrap=True)
-    ui.say(
+    return (
         f"{progress} The failed step may have changed part of its files. "
         "Running the same command again is safe: every step can be repeated."
     )
-    raise typer.Exit(1)
 
 
 def done_summary(skipped_loader: bool, loader_conflict: bool) -> tuple[str, str]:
@@ -304,7 +339,7 @@ def install(
     """Install the autohide stylesheet and script, and the fx-autoconfig loader they need."""
     profile_path = _choose_profile(profile, yes)
     loader_dir = _resolve_firefox_dir(firefox_dir, skip_loader, yes)
-    plan = _build(lambda: plan_install(profile_path, loader_dir))
+    plan = plan_install(profile_path, loader_dir)
     warnings = _apply(plan, f"Install into {profile_path}", dry_run, yes)
 
     for warning in warnings:
@@ -322,7 +357,7 @@ def uninstall(
 ) -> None:
     """Remove this project's files and prefs from a profile (the loader is left in place)."""
     profile_path = _choose_profile(profile, yes)
-    plan = _build(lambda: plan_uninstall(profile_path))
+    plan = plan_uninstall(profile_path)
     _apply(plan, f"Uninstall from {profile_path}", dry_run, yes)
     ui.console.print(
         "[green]Done.[/] Left in place: chrome/utils and the loader in the Firefox install "

@@ -18,17 +18,14 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from peek_a_foxy import elevate, platform
+from peek_a_foxy import elevate, errors, platform
+from peek_a_foxy.errors import LoaderError
 
 DEFAULT_REPO = "https://github.com/MrOtherGuy/fx-autoconfig.git"
 DEFAULT_COMMIT = "dfdab5684faffc112b76ccb1d8cab7f75da0102c"
 
 # Relative to the Firefox install directory (and to ``program/`` in the fx-autoconfig checkout).
 LOADER_FILES = ("config.js", "defaults/pref/config-prefs.js")
-
-
-class LoaderError(RuntimeError):
-    """The loader could not be fetched or installed."""
 
 
 def repo_url() -> str:
@@ -43,7 +40,10 @@ def pinned_commit() -> str:
     """
     commit = os.environ.get("FXAC_COMMIT", DEFAULT_COMMIT)
     if not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
-        raise LoaderError(f"FXAC_COMMIT must be a full 40-digit commit hash, not {commit!r}")
+        raise LoaderError(
+            errors.BAD_PINNED_COMMIT,
+            f"FXAC_COMMIT must be a full 40-digit commit hash, not {commit!r}",
+        )
     return commit.lower()
 
 
@@ -65,7 +65,11 @@ def _git(*args: str, cwd: Path | None = None) -> str:
             errors="replace",
         )
     except subprocess.CalledProcessError as error:
-        raise LoaderError(f"git {' '.join(args)} failed: {error.stderr.strip()}") from error
+        raise LoaderError(
+            errors.GIT_FAILED,
+            f"git {' '.join(args)} failed: {error.stderr.strip()}",
+            detail=f"git {' '.join(args)} exited with code {error.returncode}",
+        ) from error
     return result.stdout.strip()
 
 
@@ -92,31 +96,34 @@ def _fetch_commit(repo: str, commit: str, checkout: Path) -> None:
     _git("checkout", "--quiet", "--detach", commit, cwd=checkout)
 
 
-def _git_missing() -> str:
-    hint = "(or use --skip-loader)"
+def _git_missing() -> LoaderError:
     try:
         windows = platform.system() == "windows"
     except platform.UnsupportedPlatformError:
         windows = False
+    hint = errors.GIT_MISSING.hint
     if windows:
-        return (
-            "git is required to fetch fx-autoconfig: install Git for Windows "
-            f"(https://git-scm.com/download/win, or `winget install Git.Git`) {hint}"
+        hint = (
+            "Install Git for Windows (https://git-scm.com/download/win, or run "
+            "`winget install Git.Git` in a terminal) and run the command again. "
+            "If fx-autoconfig is already set up in your Firefox, use --skip-loader."
         )
-    return f"git is required to fetch fx-autoconfig {hint}"
+    return LoaderError(errors.GIT_MISSING, "git is required to fetch fx-autoconfig", hint=hint)
 
 
 @contextmanager
 def fetch_loader() -> Iterator[Path]:
     """Fetch fx-autoconfig into a temporary directory and yield the verified checkout."""
     if shutil.which("git") is None:
-        raise LoaderError(_git_missing())
+        raise _git_missing()
     commit = pinned_commit()
     with tempfile.TemporaryDirectory(prefix="peek-a-foxy-", ignore_cleanup_errors=True) as tmp:
         checkout = Path(tmp) / "fx-autoconfig"
         _fetch_commit(repo_url(), commit, checkout)
         if _git("rev-parse", "HEAD", cwd=checkout) != commit:
-            raise LoaderError("fx-autoconfig checkout does not match the pinned commit")
+            raise LoaderError(
+                errors.CHECKOUT_MISMATCH, "fx-autoconfig checkout does not match the pinned commit"
+            )
         yield checkout
 
 
@@ -141,7 +148,11 @@ def _sudo(*command: str) -> None:
     try:
         subprocess.run(["sudo", *command], check=True)
     except (subprocess.CalledProcessError, FileNotFoundError) as error:
-        raise LoaderError(f"could not run 'sudo {' '.join(command)}'") from error
+        raise LoaderError(
+            errors.SUDO_FAILED,
+            f"could not run 'sudo {' '.join(command)}'",
+            detail=repr(error),
+        ) from error
 
 
 def _copy_direct(source: Path, destination: Path) -> None:
@@ -182,8 +193,10 @@ def install_loader(
             _copy_direct(checkout / "program" / name, firefox_dir / name)
     except PermissionError as error:
         if (is_admin or elevate.is_admin)():
-            raise LoaderError(f"cannot write to {firefox_dir} even as administrator") from error
-        try:
-            elevate.copy_as_administrator(checkout, firefox_dir, elevator)
-        except elevate.ElevationError as failure:
-            raise LoaderError(str(failure)) from failure
+            raise LoaderError(
+                errors.ADMIN_CANNOT_WRITE,
+                f"cannot write to {firefox_dir} even as administrator",
+                detail=repr(error),
+            ) from error
+        # Failures come back as ElevationError, which already has its own code (3xx).
+        elevate.copy_as_administrator(checkout, firefox_dir, elevator)

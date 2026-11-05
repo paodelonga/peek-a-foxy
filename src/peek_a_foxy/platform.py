@@ -12,6 +12,9 @@ from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
 
+from peek_a_foxy import errors
+from peek_a_foxy.errors import PlatformError
+
 FIREFOX_BINARIES = ("firefox", "firefox-developer-edition", "firefox-esr")
 LINUX_INSTALL_DIRS = (
     "/usr/lib/firefox",
@@ -38,8 +41,7 @@ SANDBOX_MARKERS = {
 BACKSLASH = "\\"
 
 
-class UnsupportedPlatformError(RuntimeError):
-    """The current operating system is not supported."""
+UnsupportedPlatformError = PlatformError  # the name this error had before codes
 
 
 def system() -> str:
@@ -50,8 +52,9 @@ def system() -> str:
         return "macos"
     if sys.platform == "win32":
         return "windows"
-    raise UnsupportedPlatformError(
-        f"unsupported platform '{sys.platform}': only Linux, macOS and Windows are handled"
+    raise PlatformError(
+        errors.UNSUPPORTED_OS,
+        f"unsupported platform '{sys.platform}': only Linux, macOS and Windows are handled",
     )
 
 

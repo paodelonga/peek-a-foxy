@@ -9,12 +9,13 @@ written in this package's source may contain markup, and they must not contain u
 from __future__ import annotations
 
 import sys
-from typing import NoReturn
 
-import typer
 from rich.console import Console, RenderableType
 from rich.table import Table
 from rich.text import Text
+
+from peek_a_foxy import errors as paf
+from peek_a_foxy.errors import PeekError
 
 console = Console()
 errors = Console(stderr=True)
@@ -55,10 +56,29 @@ def step_line(number: int, total: int, description: str) -> None:
     console.print(Text.assemble((f"({number}/{total}) ", "cyan"), description), soft_wrap=True)
 
 
-def fail(message: str) -> NoReturn:
+def _error_line(text: Text | str) -> None:
     # soft_wrap: a path must not be broken across lines, people copy it from the message.
-    errors.print(Text.assemble(("error: ", "bold red"), message), soft_wrap=True)
-    raise typer.Exit(1)
+    errors.print(text if isinstance(text, Text) else Text(text), soft_wrap=True)
+
+
+def report(error: PeekError) -> None:
+    """Print an expected failure: the code and message, what to do, then the extras."""
+    _error_line(Text.assemble((f"error [{error.code.code}]: ", "bold red"), error.message))
+    if error.hint:
+        _error_line(Text.assemble(("What to do: ", "bold"), error.hint))
+    context = paf.get_context(error)
+    if context:
+        _error_line(context)
+
+
+def report_unexpected(error: BaseException) -> None:
+    """Print a bug: the unexpected-error code and hint."""
+    code = paf.UNEXPECTED
+    _error_line(Text.assemble((f"error [{code.code}]: ", "bold red"), code.meaning))
+    _error_line(Text.assemble(("What to do: ", "bold"), code.hint))
+    context = paf.get_context(error)
+    if context:
+        _error_line(context)
 
 
 def new_table(title: str, *, header: bool = True) -> Table:

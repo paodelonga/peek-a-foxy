@@ -13,8 +13,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
 
-from peek_a_foxy import loader, userfiles
+from peek_a_foxy import errors, loader, userfiles
 from peek_a_foxy.assets import FILES, assets_dir
+from peek_a_foxy.errors import UserFileError
 
 T = TypeVar("T")
 
@@ -66,10 +67,6 @@ class Plan:
 UTF8_BOM = b"\xef\xbb\xbf"
 
 
-class UserFileError(RuntimeError):
-    """One of the user's own files can't be edited safely."""
-
-
 def _read(path: Path) -> tuple[str, bool]:
     """Return the text of ``path`` (empty if missing) and whether it starts with a UTF-8 BOM."""
     if not path.is_file():
@@ -79,7 +76,7 @@ def _read(path: Path) -> tuple[str, bool]:
         return raw.decode("utf-8-sig"), raw.startswith(UTF8_BOM)
     except UnicodeDecodeError as error:
         raise UserFileError(
-            f"{path} is not valid UTF-8, so it can't be edited safely; fix or remove it and retry"
+            errors.FILE_NOT_UTF8, f"{path} is not valid UTF-8", detail=repr(error)
         ) from error
 
 

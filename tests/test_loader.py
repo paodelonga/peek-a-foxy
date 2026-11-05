@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 from support import needs_permissions, needs_symlinks
 
-from peek_a_foxy import loader
+from peek_a_foxy import errors, loader
+from peek_a_foxy.errors import PlatformError
 from peek_a_foxy.loader import LoaderError, fetch_loader
 
 
@@ -115,7 +116,7 @@ def test_a_server_that_refuses_a_fetch_by_hash_falls_back_to_a_clone(fxac_repo: 
 
     def refuse_fetch(*args: str, **kwargs):
         if args[0] == "fetch":
-            raise LoaderError("git fetch failed: not our ref")
+            raise LoaderError(errors.GIT_FAILED, "git fetch failed: not our ref")
         return real(*args, **kwargs)
 
     monkeypatch.setattr(loader, "_git", refuse_fetch)
@@ -207,20 +208,23 @@ def test_a_tree_with_read_only_files_can_be_removed_on_every_platform(tmp_path: 
 
 
 @pytest.mark.parametrize(
-    ("system", "needle"), [("windows", "Git for Windows"), ("linux", "git is")]
+    ("system", "needle"), [("windows", "Git for Windows"), ("linux", "Install git")]
 )
 def test_missing_git_is_explained_for_the_platform(monkeypatch, system, needle):
     monkeypatch.setattr(loader.shutil, "which", lambda name: None)
     monkeypatch.setattr(loader.platform, "system", lambda: system)
-    with pytest.raises(LoaderError, match=needle) as caught, fetch_loader():
+    with pytest.raises(LoaderError, match="git is required") as caught, fetch_loader():
         pass
-    assert "--skip-loader" in str(caught.value)
-    assert ("winget" in str(caught.value)) is (system == "windows")
+    assert caught.value.code is errors.GIT_MISSING
+    # The platform-specific advice is the hint (what to do), not the message (what happened).
+    assert needle in caught.value.hint
+    assert "--skip-loader" in caught.value.hint
+    assert ("winget" in caught.value.hint) is (system == "windows")
 
 
 def test_missing_git_on_an_unsupported_platform_still_says_so(monkeypatch):
     def unsupported():
-        raise loader.platform.UnsupportedPlatformError("nope")
+        raise PlatformError(errors.UNSUPPORTED_OS, "nope")
 
     monkeypatch.setattr(loader.shutil, "which", lambda name: None)
     monkeypatch.setattr(loader.platform, "system", unsupported)

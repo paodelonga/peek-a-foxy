@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from peek_a_foxy import assets
+from peek_a_foxy import assets, errors
+from peek_a_foxy.errors import PlatformError
 
 
 def test_assets_are_found():
@@ -17,8 +18,9 @@ def test_falls_back_to_the_checkout_and_fails_clearly_when_nothing_is_there(monk
     monkeypatch.setattr(assets.resources, "files", lambda name: empty)
     assert (assets.assets_dir() / assets.CSS_NAME).is_file()  # the repo's chrome/ directory
     monkeypatch.setattr(assets, "__file__", str(tmp_path / "a" / "b" / "assets.py"))
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(PlatformError) as caught:
         assets.assets_dir()
+    assert caught.value.code is errors.FILES_MISSING
 
 
 def test_installed_files_match_the_repository_sources():
