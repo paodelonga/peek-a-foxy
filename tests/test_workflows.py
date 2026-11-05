@@ -31,3 +31,29 @@ def test_the_weekly_run_covers_the_current_release_and_the_beta():
 
 def test_the_regular_ci_does_not_run_on_a_schedule():
     assert "schedule" not in load("ci.yml")[True]
+
+
+def test_every_test_job_uploads_a_doctor_report_without_failing_on_it():
+    job = load("ci.yml")["jobs"]["test"]
+    assert set(job["strategy"]["matrix"]["os"]) == {
+        "ubuntu-latest",
+        "macos-latest",
+        "windows-latest",
+    }
+    steps = job["steps"]
+    names = [step.get("name") for step in steps]
+    tests = names.index("Test")
+    doctor = steps[tests + 1]
+    assert "doctor --json --save doctor.json" in doctor["run"]
+    assert doctor["continue-on-error"] is True  # a runner may have no Firefox: exit code 1 is fine
+    upload = steps[tests + 2]
+    assert upload["uses"] == "actions/upload-artifact@v4" and upload["if"] == "always()"
+    assert upload["with"]["name"] == "doctor-${{ matrix.os }}-py${{ matrix.python }}"
+    assert upload["with"]["path"] == "doctor.json"
+    assert upload["with"]["if-no-files-found"] == "ignore"
+
+
+def test_the_ci_permissions_stay_read_only():
+    workflow = load("ci.yml")
+    assert workflow["permissions"] == {"contents": "read"}  # uploading an artifact needs no more
+    assert all("permissions" not in job for job in workflow["jobs"].values())
