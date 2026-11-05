@@ -24,7 +24,7 @@ ALL = list(CODES.values())
 
 def test_every_code_has_the_documented_shape():
     for entry in ALL:
-        assert re.fullmatch(r"PAF-[1-5,9]\d\d", entry.code), entry.code
+        assert re.fullmatch(r"PAF-[1-69]\d\d", entry.code), entry.code
         assert re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", entry.slug), entry.slug
         assert entry.meaning.endswith("."), entry.code
         assert entry.hint.endswith("."), entry.code

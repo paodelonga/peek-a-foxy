@@ -151,6 +151,11 @@ def _folder_pattern(path: str) -> str:
     return lead + r"[\\/]+".join(_name(part) for part in parts)
 
 
+STANDARD_PROFILE_NAMES = frozenset(
+    {"default", "default-release", "default-esr", "default-nightly", "dev-edition-default"}
+)
+
+
 class Redactor:
     """Hides what identifies the person or grants access, in any text."""
 
@@ -161,6 +166,7 @@ class Redactor:
         user: str | None,
         extra_homes: Sequence[str] = (),
         ignore_case: bool = False,
+        profile_names: Sequence[str] = (),
     ) -> None:
         # A home that is just "/" or "C:\" would blank out every path. The longest goes first, so
         # that a folder inside another is not cut short.
@@ -175,6 +181,14 @@ class Redactor:
             if homes
             else None
         )
+        # A profile name chosen by the person may be personal: each becomes ``<profile N>`` (N is
+        # its place in profiles.ini, so a report stays readable). Standard names Firefox itself
+        # gives, and names too short to tell apart from ordinary words, are kept.
+        self._names: list[tuple[re.Pattern[str], str]] = []
+        for number, name in enumerate(profile_names, start=1):
+            if len(name) >= 3 and name not in STANDARD_PROFILE_NAMES:
+                pattern = re.compile(rf"(?<!\w){re.escape(name)}(?!\w)", flags)
+                self._names.append((pattern, f"<profile {number}>"))
         # Short names would also match inside ordinary words, so only distinctive ones are hidden
         # on their own; the home folder (which contains the name) is always hidden.
         self._user = (
@@ -190,6 +204,7 @@ class Redactor:
         home: Path | None = None,
         kind: str | None = None,
         short_path: Callable[[str], str | None] | None = None,
+        profile_names: Sequence[str] = (),
     ) -> Redactor:
         """``short_path`` gives a folder's 8.3 name on Windows (``C:\\Users\\ANAMAR~1``)."""
         env = os.environ if environ is None else environ
@@ -211,11 +226,19 @@ class Redactor:
             if system == "windows" and short_path:
                 with contextlib.suppress(Exception):
                     homes.append(short_path(folder) or "")
-        return cls(home=main, user=user, extra_homes=homes, ignore_case=system == "windows")
+        return cls(
+            home=main,
+            user=user,
+            extra_homes=homes,
+            ignore_case=system == "windows",
+            profile_names=profile_names,
+        )
 
     def __call__(self, text: str) -> str:
         if self._home:
             text = self._home.sub("~", text)
+        for pattern, placeholder in self._names:
+            text = pattern.sub(placeholder, text)
         if self._user:
             text = self._user.sub("<user>", text)
         text = _URL_CREDENTIALS.sub(r"\g<scheme>***@", text)

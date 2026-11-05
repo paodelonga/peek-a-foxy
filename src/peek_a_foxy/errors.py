@@ -1,8 +1,9 @@
 """The errors this program expects, each with a stable code, a message and a "what to do" hint.
 
 A code is ``PAF-<area><nn>``: ``1`` profiles and Firefox discovery, ``2`` the loader (git, network),
-``3`` elevation and permissions, ``4`` the user's files, ``5`` platform and environment, ``9``
-unexpected. Codes never change meaning and are never reused, so people can search for them.
+``3`` elevation and permissions, ``4`` the user's files, ``5`` platform and environment, ``6``
+what ``peek-a-foxy doctor`` reports about an installation, ``9`` unexpected. Codes never change
+meaning and are never reused, so people can search for them.
 
 Every code is registered here and only here (:data:`CODES`); a test fails if one is duplicated or
 used without being registered. The wording of ``meaning`` and ``hint`` is written for someone who
@@ -200,6 +201,12 @@ FILE_IO = _register(
     "Check that it exists, that you may change it, and that no other program (an editor, an "
     "antivirus) has it open. Then run the command again: it is safe to repeat.",
 )
+FILE_EXISTS = _register(
+    "PAF-403",
+    "file-exists",
+    "A file with that name already exists, so nothing was saved.",
+    "Choose another name with --save PATH, or move the old file away first.",
+)
 
 # --- 5xx: platform and environment --------------------------------------------------------------
 
@@ -223,14 +230,133 @@ FILES_MISSING = _register(
     "Reinstall Peek-a-Foxy (for example: pipx reinstall peek-a-foxy) and run the command again.",
 )
 
+# --- 6xx: what `peek-a-foxy doctor` reports (findings, not failures of the command) ------------
+
+LOADER_MISSING = _register(
+    "PAF-601",
+    "loader-missing",
+    "This Firefox does not have the loader (fx-autoconfig), so it cannot run the "
+    "Peek-a-Foxy script.",
+    "Run `peek-a-foxy install` and allow the request for administrator rights; it only "
+    "copies two small files into the Firefox folder.",
+)
+LOADER_DIFFERENT = _register(
+    "PAF-602",
+    "loader-different",
+    "The loader in this Firefox is not exactly the version that Peek-a-Foxy installs.",
+    "If Peek-a-Foxy works for you, leave it as it is; if it does not, remove config.js and "
+    "defaults/pref/config-prefs.js from the Firefox folder and run `peek-a-foxy install` "
+    "again.",
+)
+AUTOCONFIG_FOREIGN = _register(
+    "PAF-603",
+    "autoconfig-foreign",
+    "Another autoconfig setup is present in the Firefox folder and may prevent the loader "
+    "from starting.",
+    "The report names the files involved. If you do not need the other setup, remove it; "
+    "otherwise make sure that it also loads fx-autoconfig's config.js.",
+)
+FIREFOX_INFO_UNREADABLE = _register(
+    "PAF-604",
+    "firefox-info-unreadable",
+    "Firefox's application.ini file could not be read, so the version of this Firefox is unknown.",
+    "Nothing needs to be done unless something else fails; if it does, mention which "
+    "Firefox you use, which about:support shows.",
+)
+PROFILE_FOLDER_MISSING = _register(
+    "PAF-605",
+    "profile-folder-missing",
+    "The profile folder does not exist.",
+    "Choose an existing profile with --profile, or start Firefox once so that it creates one.",
+)
+PROFILE_FILES_MISSING = _register(
+    "PAF-606",
+    "profile-files-missing",
+    "Some of the Peek-a-Foxy files are missing from the profile.",
+    "Run `peek-a-foxy install` again.",
+)
+PROFILE_FILES_DIFFERENT = _register(
+    "PAF-607",
+    "profile-files-different",
+    "Some of the Peek-a-Foxy files in the profile are not the ones that came with this version.",
+    "Run `peek-a-foxy install` to update them; any change you made to those files will be "
+    "replaced.",
+)
+UTILS_MISSING = _register(
+    "PAF-608",
+    "utils-missing",
+    "The loader's utils folder is missing from the profile's chrome folder.",
+    "Run `peek-a-foxy install` again.",
+)
+CSS_IMPORT_MISSING = _register(
+    "PAF-609",
+    "css-import-missing",
+    "The file userChrome.css does not load the Peek-a-Foxy stylesheet.",
+    "Run `peek-a-foxy install` again; it adds the missing line and keeps the rest of your file.",
+)
+CSS_IMPORT_LATE = _register(
+    "PAF-610",
+    "css-import-late",
+    "The line that loads the Peek-a-Foxy stylesheet is placed below other rules, so "
+    "Firefox ignores it.",
+    "Run `peek-a-foxy install`; it moves the line to the top and keeps the rest of your file.",
+)
+PREFS_MISSING = _register(
+    "PAF-611",
+    "prefs-missing",
+    "A setting that Firefox needs in order to run the script is missing or turned off.",
+    "Run `peek-a-foxy install` again; it adds the settings to your user.js file.",
+)
+STARTUP_CACHE = _register(
+    "PAF-612",
+    "startup-cache",
+    "Firefox may still be using a copy of its files from before Peek-a-Foxy was installed.",
+    "Close all Firefox windows, start Firefox, open about:support, press the 'Clear "
+    "startup cache' button and let Firefox restart.",
+)
+STATUS_MISSING = _register(
+    "PAF-613",
+    "status-missing",
+    "Firefox has not run the script yet, so it has not reported anything.",
+    "Close all Firefox windows and start Firefox again; if this message stays, the loader "
+    "is not working, so look at the Firefox checks above it.",
+)
+STATUS_UNUSABLE = _register(
+    "PAF-614",
+    "status-unusable",
+    "The status file written by Firefox could not be read, has an impossible date, or is "
+    "older than the installed files.",
+    "Close all Firefox windows, start Firefox again, and then run `peek-a-foxy doctor` once more.",
+)
+FIREFOX_REPORTS_PROBLEM = _register(
+    "PAF-615",
+    "firefox-reports-problem",
+    "The script found something in this Firefox that it cannot work with.",
+    "Update Peek-a-Foxy and Firefox; if the message stays, include this report when you "
+    "ask for help, because Firefox may have changed something.",
+)
+FIREFOX_SCRIPT_ERRORS = _register(
+    "PAF-616",
+    "firefox-script-errors",
+    "The script recorded errors while it was running in Firefox.",
+    "Include this report when you ask for help, because the errors are listed in it.",
+)
+CONSOLE_ENCODING = _register(
+    "PAF-617",
+    "console-encoding",
+    "This terminal cannot show every character, so some of the text may look wrong.",
+    "This is harmless; for clean output use a terminal that is set to UTF-8, as Windows "
+    "Terminal is.",
+)
+
 # --- 9xx: unexpected ----------------------------------------------------------------------------
 
 UNEXPECTED = _register(
     "PAF-900",
     "unexpected",
     "Something unexpected went wrong; this is a bug in Peek-a-Foxy.",
-    f"Please report it at {ISSUES_URL} and attach the log file (`peek-a-foxy logs` shows "
-    "where it is).",
+    f"Please report it at {ISSUES_URL}: run `peek-a-foxy doctor --copy`, paste the result into "
+    "your report and attach the log file, whose location `peek-a-foxy logs` shows.",
 )
 
 
