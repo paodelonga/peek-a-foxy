@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import errno
+import logging
+import os
 import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -11,31 +15,49 @@ import typer
 from rich.panel import Panel
 from typer.core import TyperGroup
 
-from peek_a_foxy import __version__, errors, platform, ui
+from peek_a_foxy import __version__, errors, logs, platform, ui
 from peek_a_foxy.errors import DiscoveryError, PeekError, PlatformError
 from peek_a_foxy.installer import Plan, Step, plan_install, plan_uninstall
 from peek_a_foxy.profiles import Profile, default_profile, read_profiles
 
+log = logging.getLogger(__name__)
+
 # Shown to the user as the way to toggle each bar; they must match the script's TARGETS.
 TABS_SHORTCUT = "Ctrl+Alt+T"
 URLBAR_SHORTCUT = "Ctrl+Alt+U"
+
+# The arguments of this run, as given (the log records them, redacted).
+_argv: list[str] = sys.argv[1:]
 
 
 class _Group(TyperGroup):
     """The top-level command: every failure ends up as a message, a log entry and an exit code.
 
     An expected failure (:class:`PeekError`, or a file system error) exits with 1 and a short
-    message; anything else is a bug: it exits with 70 and the unexpected-error code. Typer's own
-    handling would print a stack trace instead.
+    message; anything else is a bug: it exits with 70 and the unexpected-error code. Both are
+    logged with their traceback. Typer's own handling would print a stack trace instead.
     """
 
+    def main(self, args: Sequence[str] | None = None, *rest: Any, **extra: Any) -> Any:
+        global _argv
+        _argv = list(sys.argv[1:] if args is None else args)
+        return super().main(args, *rest, **extra)
+
     def invoke(self, ctx: Any) -> Any:
+        code = errors.EXIT_OK
         try:
             return super().invoke(ctx)
+        except KeyboardInterrupt:
+            code = 130
+            raise
         except Exception as error:
             if _is_click_signal(error):
+                code = getattr(error, "exit_code", errors.EXIT_FAILURE)
                 raise
-            raise typer.Exit(_handle_failure(error)) from None
+            code = _handle_failure(error)
+            raise typer.Exit(code) from None
+        finally:
+            logs.stop(code)
 
 
 def _is_click_signal(error: Exception) -> bool:
@@ -55,15 +77,21 @@ def _handle_failure(error: Exception) -> int:
         raise error  # the reader of our output went away: not ours to explain
     if isinstance(error, OSError):
         error = errors.from_oserror(error)
+    verbose, path = logs.is_verbose(), logs.active_path()
     if isinstance(error, PeekError):
-        ui.report(error)
+        log.error("failed [%s] %s", error.code.code, error.message, exc_info=error)
+        if error.detail:
+            log.error("detail: %s", error.detail)
+        ui.report(error, verbose=verbose, log_path=path)
         return errors.EXIT_FAILURE
-    ui.report_unexpected(error)
+    log.error("unexpected error [%s]", errors.UNEXPECTED.code, exc_info=error)
+    ui.report_unexpected(error, verbose=verbose, log_path=path)
     return errors.EXIT_UNEXPECTED
 
 
 app = typer.Typer(
     cls=_Group,
+    pretty_exceptions_show_locals=False,  # a traceback must never print the user's variables
     help="Peek-a-boo for Foxys: autohide the tab bar and navigation bar per window.",
     no_args_is_help=True,
     add_completion=True,  # adds --install-completion / --show-completion for bash, zsh, fish
@@ -137,6 +165,56 @@ YesOption = Annotated[
 ]
 
 
+VerboseOption = Annotated[
+    bool,
+    typer.Option(
+        "--verbose", "-v", help="Also print the technical details of each step, and of an error."
+    ),
+]
+LogFileOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--log-file",
+        help="Write the log to this file instead of the default one (see: peek-a-foxy logs).",
+        dir_okay=False,
+    ),
+]
+NoLogOption = Annotated[
+    bool, typer.Option("--no-log", help="Do not write a log file for this run.")
+]
+
+
+@dataclass
+class _LogOptions:
+    """The logging flags given before the command name, which every command also accepts."""
+
+    verbose: bool = False
+    log_file: Path | None = None
+    no_log: bool = False
+
+
+def _begin(
+    ctx: typer.Context,
+    verbose: bool,
+    log_file: Path | None,
+    no_log: bool,
+) -> None:
+    """Start logging for this run, from the flags before and after the command name."""
+    given = ctx.obj if isinstance(ctx.obj, _LogOptions) else _LogOptions()
+    target = logs.resolve_target(
+        log_file=str(log_file or given.log_file or "") or None,
+        no_log=no_log or given.no_log,
+        env_value=os.environ.get(logs.ENV_VAR),
+    )
+    logs.start(
+        target=target.path,
+        verbose=verbose or given.verbose,
+        argv=_argv,
+        version=__version__,
+        warn=ui.warn,
+    )
+
+
 def _version(value: bool) -> None:
     if value:
         ui.console.print(f"peek-a-foxy {__version__}")
@@ -145,15 +223,20 @@ def _version(value: bool) -> None:
 
 @app.callback()
 def main(
+    ctx: typer.Context,
     version: Annotated[
         bool,
         typer.Option(
             "--version", callback=_version, is_eager=True, help="Show the version and exit."
         ),
     ] = False,
+    verbose: VerboseOption = False,
+    log_file: LogFileOption = None,
+    no_log: NoLogOption = False,
 ) -> None:
     """Peek-a-boo for Foxys: autohide the tab bar and navigation bar per window."""
     ui.setup_streams()
+    ctx.obj = _LogOptions(verbose, log_file, no_log)
 
 
 def _interactive(yes: bool) -> bool:
@@ -330,13 +413,18 @@ def done_summary(skipped_loader: bool, loader_conflict: bool) -> tuple[str, str]
 
 @app.command()
 def install(
+    ctx: typer.Context,
     profile: ProfileOption = None,
     firefox_dir: FirefoxDirOption = None,
     skip_loader: SkipLoaderOption = False,
     dry_run: DryRunOption = False,
     yes: YesOption = False,
+    verbose: VerboseOption = False,
+    log_file: LogFileOption = None,
+    no_log: NoLogOption = False,
 ) -> None:
     """Install the autohide stylesheet and script, and the fx-autoconfig loader they need."""
+    _begin(ctx, verbose, log_file, no_log)
     profile_path = _choose_profile(profile, yes)
     loader_dir = _resolve_firefox_dir(firefox_dir, skip_loader, yes)
     plan = plan_install(profile_path, loader_dir)
@@ -351,11 +439,16 @@ def install(
 
 @app.command()
 def uninstall(
+    ctx: typer.Context,
     profile: ProfileOption = None,
     dry_run: DryRunOption = False,
     yes: YesOption = False,
+    verbose: VerboseOption = False,
+    log_file: LogFileOption = None,
+    no_log: NoLogOption = False,
 ) -> None:
     """Remove this project's files and prefs from a profile (the loader is left in place)."""
+    _begin(ctx, verbose, log_file, no_log)
     profile_path = _choose_profile(profile, yes)
     plan = plan_uninstall(profile_path)
     _apply(plan, f"Uninstall from {profile_path}", dry_run, yes)

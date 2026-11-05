@@ -9,6 +9,8 @@ written in this package's source may contain markup, and they must not contain u
 from __future__ import annotations
 
 import sys
+import traceback
+from pathlib import Path
 
 from rich.console import Console, RenderableType
 from rich.table import Table
@@ -61,7 +63,7 @@ def _error_line(text: Text | str) -> None:
     errors.print(text if isinstance(text, Text) else Text(text), soft_wrap=True)
 
 
-def report(error: PeekError) -> None:
+def report(error: PeekError, *, verbose: bool, log_path: Path | None) -> None:
     """Print an expected failure: the code and message, what to do, then the extras."""
     _error_line(Text.assemble((f"error [{error.code.code}]: ", "bold red"), error.message))
     if error.hint:
@@ -69,16 +71,35 @@ def report(error: PeekError) -> None:
     context = paf.get_context(error)
     if context:
         _error_line(context)
+    if verbose:
+        _verbose_details(error, error.detail)
+    _log_line(log_path)
 
 
-def report_unexpected(error: BaseException) -> None:
-    """Print a bug: the unexpected-error code and hint."""
+def report_unexpected(error: BaseException, *, verbose: bool, log_path: Path | None) -> None:
+    """Print a bug: the unexpected-error code and hint, and (verbose) the traceback."""
     code = paf.UNEXPECTED
     _error_line(Text.assemble((f"error [{code.code}]: ", "bold red"), code.meaning))
     _error_line(Text.assemble(("What to do: ", "bold"), code.hint))
     context = paf.get_context(error)
     if context:
         _error_line(context)
+    if verbose:
+        _error_line("".join(traceback.format_exception(error)).rstrip())
+    _log_line(log_path)
+
+
+def _verbose_details(error: BaseException, detail: str) -> None:
+    if detail:
+        _error_line(Text.assemble(("Details: ", "bold"), detail))
+    cause = error.__cause__
+    if cause is not None:
+        _error_line(Text.assemble(("Caused by: ", "bold"), f"{type(cause).__name__}: {cause}"))
+
+
+def _log_line(log_path: Path | None) -> None:
+    if log_path is not None:
+        _error_line(f"Details were saved to {log_path}")
 
 
 def new_table(title: str, *, header: bool = True) -> Table:
