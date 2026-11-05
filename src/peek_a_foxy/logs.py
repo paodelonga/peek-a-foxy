@@ -77,7 +77,7 @@ class Target:
     """Where this run logs: ``path`` is ``None`` when logging is off; ``source`` says why."""
 
     path: Path | None
-    source: str  # "default", "flag", "env", "off-flag" or "off-env"
+    source: str  # "default", "flag", "env", "off-flag", "off-env" or "no-home"
 
 
 def _file_for(value: str) -> Path:
@@ -103,11 +103,11 @@ def resolve_target(
         if env_value.strip().lower() == "off":
             return Target(None, "off-env")
         return Target(_file_for(env_value.strip()), "env")
-    folder = log_dir(
-        kind or default_kind(),
-        os.environ if environ is None else environ,
-        Path.home() if home is None else home,
-    )
+    try:
+        base_home = Path.home() if home is None else home
+    except (RuntimeError, OSError):  # no home folder to put a log in: go without one
+        return Target(None, "no-home")
+    folder = log_dir(kind or default_kind(), os.environ if environ is None else environ, base_home)
     return Target(Path(str(folder)) / LOG_NAME, "default")
 
 
@@ -149,6 +149,16 @@ def _folder_pattern(path: str) -> str:
     elif path.startswith(("\\", "/")):
         lead = r"[\\/]+"
     return lead + r"[\\/]+".join(_name(part) for part in parts)
+
+
+def _home_text(home: Path | None) -> str | None:
+    """The home folder as text; ``None`` when the system cannot say where it is."""
+    if home is not None:
+        return str(home)
+    try:
+        return str(Path.home())
+    except (RuntimeError, OSError):
+        return None
 
 
 STANDARD_PROFILE_NAMES = frozenset(
@@ -215,8 +225,8 @@ class Redactor:
             user = None
         names = [env.get(name) for name in ("USERNAME", "USER", "LOGNAME")]
         user = user or next((name for name in names if name), None)
-        main = str(Path.home() if home is None else home)
-        homes = [main, *(value for value in (env.get("USERPROFILE"), env.get("HOME")) if value)]
+        main = _home_text(home)
+        homes = [value for value in (main, env.get("USERPROFILE"), env.get("HOME")) if value]
         if short_path is None and sys.platform == "win32":  # pragma: no cover - Windows only
             from peek_a_foxy._winapi import short_path
         # The same folders as the system itself may spell them: with links resolved, and (the
@@ -248,6 +258,9 @@ class Redactor:
         return _PROFILE_FOLDER.sub("<profile>", text)
 
 
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")  # all but \t \n \r
+
+
 class _Formatter(logging.Formatter):
     """Formats a record (traceback included) and redacts the result."""
 
@@ -260,7 +273,8 @@ class _Formatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         record.run_id = self._run_id
-        return self._redact(super().format(record))
+        # Escape sequences from a file's content must not reach a terminal when the log is shown.
+        return _CONTROL.sub("\ufffd", self._redact(super().format(record)))
 
 
 FILE_FORMAT = "%(asctime)sZ %(levelname)-7s %(run_id)s %(message)s"

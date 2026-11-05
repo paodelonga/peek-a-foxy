@@ -200,7 +200,11 @@ def firefox_dir_candidates() -> list[Path]:
 
 def sandbox_kind(path: Path) -> str | None:
     """Name of the sandbox that keeps this Firefox read-only (so no loader), or ``None``."""
-    text = f"{str(path.resolve()).replace(BACKSLASH, '/')}/".lower()
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError):  # a symbolic link loop (RuntimeError before Python 3.13)
+        resolved = Path(os.path.abspath(path))
+    text = f"{str(resolved).replace(BACKSLASH, '/')}/".lower()
     return next((kind for marker, kind in SANDBOX_MARKERS.items() if marker in text), None)
 
 

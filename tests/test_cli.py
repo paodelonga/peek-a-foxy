@@ -147,9 +147,11 @@ def _complete(words: str, cword: int, **env: str) -> list[str]:
 
 
 def test_commands_and_options_are_completed():
-    assert _complete("peek-a-foxy ", 1) == ["install", "uninstall", "logs"]
+    assert _complete("peek-a-foxy ", 1) == ["install", "uninstall", "logs", "doctor"]
     assert "--skip-loader" in _complete("peek-a-foxy install --s", 2)
     assert "--dry-run" in _complete("peek-a-foxy uninstall --d", 2)
+    assert "--save" in _complete("peek-a-foxy doctor --s", 2)
+    assert {"--profile", "--firefox-dir"} <= set(_complete("peek-a-foxy doctor --", 2))
 
 
 def test_profile_option_completes_from_profiles_ini(tmp_path: Path):
@@ -167,9 +169,10 @@ def test_profile_option_completes_from_profiles_ini(tmp_path: Path):
         "USERPROFILE": str(tmp_path),  # what Path.home() reads on Windows
         "APPDATA": str(tmp_path / "AppData" / "Roaming"),
     }
-    offered = _complete("peek-a-foxy install --profile ", 3, **home)
-    tails = {Path(path).parts[-2:] for path in offered}
-    assert ("Profiles", "one") in tails and ("Profiles", "two") in tails
+    for command in ("install", "doctor"):  # doctor completes --profile the same way as install
+        offered = _complete(f"peek-a-foxy {command} --profile ", 3, **home)
+        tails = {Path(path).parts[-2:] for path in offered}
+        assert ("Profiles", "one") in tails and ("Profiles", "two") in tails
 
 
 def test_completion_scripts_are_available_for_the_common_shells():

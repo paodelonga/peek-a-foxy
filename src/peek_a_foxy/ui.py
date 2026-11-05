@@ -50,6 +50,11 @@ def say(message: str, style: str = "") -> None:
     console.print(Text(message, style=style), soft_wrap=True)
 
 
+def note(message: str) -> None:
+    """A remark for the person, on stderr so that a report on stdout stays clean."""
+    errors.print(Text(message, style="dim"), soft_wrap=True)
+
+
 def warn(message: str) -> None:
     console.print(Text.assemble(("warning: ", "yellow"), message), soft_wrap=True)
 

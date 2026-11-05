@@ -382,3 +382,16 @@ def test_logs_follows_the_log_file_flag_and_notes_when_logging_is_off(tmp_path: 
     assert f"Log file: {mine}" in runner.invoke(app, ["--log-file", str(mine), "logs"]).output
     off = runner.invoke(app, ["logs"])  # the suite sets PEEK_A_FOXY_LOG=off
     assert "Logging is turned off" in off.output and "peek-a-foxy" in off.output
+
+
+def test_logs_without_a_home_folder_says_there_is_no_log_location(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def nowhere(cls):
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(Path, "home", classmethod(nowhere))
+    monkeypatch.delenv(logs.ENV_VAR, raising=False)
+    result = runner.invoke(app, ["logs"])
+    assert result.exit_code == 0 and "PAF-900" not in result.output
+    assert "No log location is available" in result.output
