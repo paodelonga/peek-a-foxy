@@ -147,7 +147,7 @@ def _complete(words: str, cword: int, **env: str) -> list[str]:
 
 
 def test_commands_and_options_are_completed():
-    assert _complete("peek-a-foxy ", 1) == ["install", "uninstall"]
+    assert _complete("peek-a-foxy ", 1) == ["install", "uninstall", "logs"]
     assert "--skip-loader" in _complete("peek-a-foxy install --s", 2)
     assert "--dry-run" in _complete("peek-a-foxy uninstall --d", 2)
 

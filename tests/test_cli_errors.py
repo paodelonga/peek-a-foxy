@@ -180,6 +180,7 @@ def test_an_interrupt_is_not_a_bug(profile: Path, log_file: Path, monkeypatch):
 def test_a_wrong_option_is_a_usage_error_with_exit_code_2(profile: Path):
     result = runner.invoke(app, ["install", "--no-such-option"])
     assert result.exit_code == errors.EXIT_USAGE and "PAF-" not in result.output
+    assert runner.invoke(app, ["logs", "--open", "--clear"]).exit_code == 2
 
 
 # --- the flags ----------------------------------------------------------------------------------
@@ -289,3 +290,91 @@ def test_the_log_never_holds_the_home_folder(profile: Path, log_file: Path, monk
     install(profile)
     text = log_file.read_text(encoding="utf-8")
     assert str(tmp_path) not in text and "~/profile/chrome" in text
+
+
+# --- the logs command ---------------------------------------------------------------------------
+
+
+def test_logs_says_there_is_no_log_yet(log_file: Path):
+    result = runner.invoke(app, ["logs"])
+    assert result.exit_code == 0
+    assert f"Log file: {log_file}" in result.output and "No log yet" in result.output
+    assert not log_file.exists()  # looking must not create it
+
+
+def test_logs_shows_the_size_and_the_last_run(profile: Path, log_file: Path):
+    install(profile)
+    before = log_file.read_text(encoding="utf-8")
+    result = runner.invoke(app, ["logs"])
+    assert result.exit_code == 0
+    assert f"Log file: {log_file}" in result.output and "Size: " in result.output
+    assert "Last run:" in result.output and "run finished: exit code 0" in result.output
+    assert log_file.read_text(encoding="utf-8") == before  # the logs command does not log itself
+
+
+def test_logs_folds_a_very_long_last_run(log_file: Path):
+    logs.start(target=log_file, verbose=False, argv=[], version="1")
+    for number in range(100):
+        cli.log.info("line %d", number)
+    logs.stop(0)
+    result = runner.invoke(app, ["logs"])
+    assert "lines not shown" in result.output and "line 99" in result.output
+    assert "line 50" not in result.output
+
+
+def test_logs_open_opens_the_folder(profile: Path, log_file: Path, monkeypatch):
+    install(profile)
+    opened: list[Path] = []
+    monkeypatch.setattr(cli.logs, "open_folder", lambda folder: opened.append(folder) or True)
+    result = runner.invoke(app, ["logs", "--open"])
+    assert result.exit_code == 0 and opened == [log_file.parent]
+
+
+def test_logs_open_that_fails_prints_the_folder_to_open_by_hand(
+    profile: Path, log_file: Path, monkeypatch
+):
+    install(profile)
+    monkeypatch.setattr(cli.logs, "open_folder", lambda folder: False)
+    result = runner.invoke(app, ["logs", "--open"])
+    assert result.exit_code == 0 and "could not open the folder" in result.output
+    assert str(log_file.parent) in result.output
+
+
+def test_logs_open_before_there_is_a_folder(log_file: Path, monkeypatch):
+    monkeypatch.setattr(cli.logs, "open_folder", lambda folder: pytest.fail("nothing to open"))
+    result = runner.invoke(app, ["logs", "--open"])
+    assert result.exit_code == 0 and "no log folder yet" in result.output
+
+
+def test_logs_clear_deletes_after_a_yes(profile: Path, log_file: Path):
+    install(profile)
+    result = runner.invoke(app, ["logs", "--clear", "--yes"])
+    assert result.exit_code == 0 and "Deleted 1 log file(s)." in result.output
+    assert not log_file.exists()
+    assert "there is no log yet" in runner.invoke(app, ["logs", "--clear", "--yes"]).output
+
+
+def test_logs_clear_asks_first_and_a_no_keeps_the_files(profile: Path, log_file: Path, monkeypatch):
+    install(profile)
+    monkeypatch.setattr(cli, "_interactive", lambda yes: True)
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True, raising=False)
+    refused = runner.invoke(app, ["logs", "--clear"], input="n\n")
+    assert refused.exit_code == 1 and log_file.is_file()
+    accepted = runner.invoke(app, ["logs", "--clear"], input="y\n")
+    assert accepted.exit_code == 0 and not log_file.exists()
+
+
+def test_logs_clear_without_a_terminal_needs_yes(profile: Path, log_file: Path, monkeypatch):
+    install(profile)
+    monkeypatch.setattr(cli, "_interactive", lambda yes: False)
+    result = runner.invoke(app, ["logs", "--clear"])
+    assert result.exit_code == 1 and "error [PAF-502]" in result.output and log_file.is_file()
+
+
+def test_logs_follows_the_log_file_flag_and_notes_when_logging_is_off(tmp_path: Path, monkeypatch):
+    mine = tmp_path / "mine.log"
+    logs.start(target=mine, verbose=False, argv=["x"], version="1")
+    logs.stop(0)
+    assert f"Log file: {mine}" in runner.invoke(app, ["--log-file", str(mine), "logs"]).output
+    off = runner.invoke(app, ["logs"])  # the suite sets PEEK_A_FOXY_LOG=off
+    assert "Logging is turned off" in off.output and "peek-a-foxy" in off.output

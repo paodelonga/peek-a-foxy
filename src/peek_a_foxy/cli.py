@@ -198,12 +198,14 @@ def _begin(
     verbose: bool,
     log_file: Path | None,
     no_log: bool,
+    *,
+    write_file: bool = True,
 ) -> None:
     """Start logging for this run, from the flags before and after the command name."""
     given = ctx.obj if isinstance(ctx.obj, _LogOptions) else _LogOptions()
     target = logs.resolve_target(
         log_file=str(log_file or given.log_file or "") or None,
-        no_log=no_log or given.no_log,
+        no_log=no_log or given.no_log or not write_file,
         env_value=os.environ.get(logs.ENV_VAR),
     )
     logs.start(
@@ -327,7 +329,7 @@ def _show_plan(plan: Plan, title: str) -> None:
     ui.show(table)
 
 
-def _confirm() -> None:
+def _confirm(question: str = "Apply these changes?", *, default: bool = True) -> None:
     """Ask before changing anything; with nobody to ask (no terminal) refuse instead of assuming."""
     if not _interactive(False):
         hint = None
@@ -341,7 +343,7 @@ def _confirm() -> None:
             "no terminal to ask for confirmation; pass --yes to apply the changes anyway",
             hint=hint,
         )
-    if not typer.confirm("Apply these changes?", default=True):
+    if not typer.confirm(question, default=default):
         raise typer.Exit(1)
 
 
@@ -456,3 +458,77 @@ def uninstall(
         "[green]Done.[/] Left in place: chrome/utils and the loader in the Firefox install "
         "directory, since other scripts may use them."
     )
+
+
+def _size(files: list[Path]) -> str:
+    total = sum(path.stat().st_size for path in files)
+    return f"{total / 1024:.1f} KB" if total < 1024 * 1024 else f"{total / 1024 / 1024:.1f} MB"
+
+
+MAX_SHOWN = 30  # lines of the last run that `logs` prints before it folds the middle
+
+
+@app.command("logs")
+def logs_command(
+    ctx: typer.Context,
+    open_folder: Annotated[
+        bool, typer.Option("--open", help="Open the folder that holds the log.")
+    ] = False,
+    clear: Annotated[bool, typer.Option("--clear", help="Delete the log files.")] = False,
+    yes: YesOption = False,
+    log_file: LogFileOption = None,
+) -> None:
+    """Show where the log is and what the last run did; open its folder or delete it."""
+    if open_folder and clear:
+        raise typer.BadParameter("use --open or --clear, not both")
+    _begin(ctx, False, None, False, write_file=False)  # reading the log must not write to it
+    given = ctx.obj if isinstance(ctx.obj, _LogOptions) else _LogOptions()
+    target = logs.resolve_target(
+        log_file=str(log_file or given.log_file or "") or None,
+        env_value=os.environ.get(logs.ENV_VAR),
+    )
+    path = target.path
+    if path is None:  # logging is off, but the default place is still where a log would be
+        path = logs.resolve_target(env_value="").path
+        assert path is not None
+        ui.say("Logging is turned off here (PEEK_A_FOXY_LOG=off); this is where the log would be.")
+    files = logs.log_files(path)
+    ui.say(f"Log file: {path}")
+
+    if open_folder:
+        if not path.parent.is_dir():
+            ui.say("There is no log folder yet: it is created the first time you run a command.")
+        elif not logs.open_folder(path.parent):
+            ui.warn(f"could not open the folder; open it yourself: {path.parent}")
+        return
+    if clear:
+        _clear(path, files, yes)
+        return
+    if not files:
+        ui.say("No log yet. It is created the first time you run install or uninstall.")
+        return
+    ui.say(f"Size: {_size(files)} in {len(files)} file(s), at most 5 MB each.")
+    lines = logs.last_run(path)
+    if lines:
+        ui.say("Last run:")
+        shown = lines
+        if len(lines) > MAX_SHOWN:
+            hidden = len(lines) - MAX_SHOWN
+            shown = [
+                lines[0],
+                f"... {hidden} lines not shown; open the file to read them ...",
+                *lines[-(MAX_SHOWN - 1) :],
+            ]
+        for line in shown:
+            ui.say(f"  {line}")
+    ui.say("Nothing is ever sent anywhere. If you share the log, read it first.", style="dim")
+
+
+def _clear(path: Path, files: list[Path], yes: bool) -> None:
+    if not files:
+        ui.say("Nothing to delete: there is no log yet.")
+        return
+    if not yes:
+        _confirm(f"Delete {len(files)} log file(s) ({_size(files)})?", default=False)
+    removed = logs.clear(path)
+    ui.say(f"Deleted {removed} log file(s).")
