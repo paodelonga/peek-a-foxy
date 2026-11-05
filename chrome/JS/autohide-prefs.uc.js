@@ -10,9 +10,9 @@
 // the settings are real prefs, so they can still be changed in about:config.
 
 (() => {
-  const LOG = "[peekafoxy settings]";
   const Peek = ChromeUtils.importESModule("chrome://userchrome/content/peekafoxy.sys.mjs");
-  const { PREFS } = Peek;
+  const { PREFS, Diag } = Peek;
+  Diag.watch(window, "settings");
 
   const CATEGORY = "panePeekafoxy"; // what Firefox derives from the address about:preferences#peekafoxy
   const FRIENDLY = "peekafoxy";
@@ -131,6 +131,15 @@
     return el("div", { class: "pf-row" }, button, done);
   };
 
+  // The browser window this settings tab belongs to (its script is the one that has to be running).
+  const ownerWindow = () => {
+    try {
+      return window.browsingContext?.topChromeWindow ?? Services.wm.getMostRecentWindow("navigator:browser");
+    } catch (e) {
+      return null;
+    }
+  };
+
   const buildPage = () => {
     const header = customElements.get("moz-page-header")
       ? el("moz-page-header", { heading: TEXT.category, description: TEXT.description })
@@ -165,7 +174,7 @@
     const missing = requirements();
     if (missing.length) throw new Error(`missing from about:preferences: ${missing.join(", ")}`);
 
-    Peek.registerDefaults(console);
+    Peek.registerDefaults();
     const nav = document.getElementById("categories");
     const mainPane = document.getElementById("mainPrefPane");
 
@@ -204,7 +213,13 @@
 
   try {
     install();
+    Diag.setHealth("settings", [{ name: "settings-page", ok: true, note: "" }]);
+    Diag.check(ownerWindow()); // so the status line is up to date as soon as the page is opened
   } catch (e) {
-    console.warn(`${LOG} the Peek-a-Foxy category was not added:`, e);
+    Diag.warn("settings:install", `the Peek-a-Foxy category was not added: ${Peek.describe(e)}`, e);
+    Diag.setHealth("settings", [{
+      name: "settings-page", ok: false,
+      note: `Firefox's settings page is not what the script expects (${e?.message}), so the Peek-a-Foxy category was not added. The settings can still be changed in about:config: search for peekafoxy.`,
+    }]);
   }
 })();

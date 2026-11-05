@@ -1,8 +1,10 @@
 """The status file the Firefox script leaves in the profile, and a reader for it (schema 1).
 
-The script (a later change writes it, through ``IOUtils``, debounced and small) saves
-``<profile>/chrome/peekafoxy-status.json`` so that ``peek-a-foxy doctor`` can see what Firefox
-itself saw. This module only reads it; a missing, old or damaged file is a finding, never a crash.
+The script (``Diag`` in ``chrome/resources/peekafoxy.sys.mjs``, through ``IOUtils``, debounced and
+small) saves ``<profile>/chrome/peekafoxy-status.json`` so that ``peek-a-foxy doctor`` can see what
+Firefox itself saw. This module only reads it; a missing, old or damaged file is a finding, never
+a crash. The writer already redacts the home folder, the user name and the profile folder and name,
+and cleans control characters; the reader redacts and cleans again, because it cannot trust a file.
 
 Schema 1, one JSON object. Keys other than ``schema`` and ``updated`` may be missing; unknown keys
 are ignored, so the writer can add keys without breaking the reader::

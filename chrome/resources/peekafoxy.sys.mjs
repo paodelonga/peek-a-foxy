@@ -3,6 +3,18 @@
 // every text the user can read. Loaded with
 //   ChromeUtils.importESModule("chrome://userchrome/content/peekafoxy.sys.mjs")
 // (fx-autoconfig maps chrome://userchrome/content/ to the profile's chrome/resources/).
+// It also holds Diag, the diagnostics both scripts use: a ring buffer of recent events, the health
+// check and the status file that `peek-a-foxy doctor` reads (see the section at the end of the file).
+
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+});
+
+// The version of the Peek-a-Foxy files (a test keeps it equal to the package version).
+export const SCRIPT_VERSION = "0.2.0";
 
 // One entry per pref. Everything is registered on Firefox's default branch (see registerDefaults),
 // so about:config lists the prefs with the right type and nothing is written until a value changes.
@@ -26,7 +38,7 @@ export const PREF_BRANCH = "peekafoxy.";
 
 // --- prefs -------------------------------------------------------------------------------------
 
-export function registerDefaults(log = console) {
+export function registerDefaults() {
   const branch = Services.prefs.getDefaultBranch("");
   for (const pref of Object.values(PREFS)) {
     try {
@@ -34,7 +46,7 @@ export function registerDefaults(log = console) {
       else if (pref.type === "int") branch.setIntPref(pref.name, pref.default);
       else branch.setStringPref(pref.name, pref.default);
     } catch (e) {
-      log.warn(`[peekafoxy] could not register ${pref.name}:`, e);
+      Diag.warn("module:register", `could not register ${pref.name}: ${describe(e)}`, e);
     }
   }
 }
@@ -48,7 +60,7 @@ export function read(pref) {
     if (pref.type === "int") return clamp(pref, Services.prefs.getIntPref(pref.name, pref.default));
     return Services.prefs.getStringPref(pref.name, pref.default);
   } catch (e) {
-    console.warn(`[peekafoxy] ${pref.name} has the wrong type, using ${pref.default}:`, e);
+    Diag.warn("module:read", `${pref.name} has the wrong type, using ${pref.default}: ${describe(e)}`, e);
     return pref.default;
   }
 }
@@ -57,6 +69,7 @@ export const hasUserValue = (pref) => {
   try {
     return Services.prefs.prefHasUserValue(pref.name);
   } catch (e) {
+    Diag.warn("module:hasUserValue", `${pref.name} could not be read: ${describe(e)}`, e);
     return false;
   }
 };
@@ -251,3 +264,615 @@ export function shortcutHint(settings, os = Services.appinfo.OS) {
 
 export const textFor = (locale) =>
   STRINGS[String(locale).split(/[-_]/)[0].toLowerCase()] ?? STRINGS.en;
+
+// --- diagnostics -------------------------------------------------------------------------------
+//
+// Diag is shared by every window and by the settings page (Firefox gives all of them the same
+// instance of this module), and it does three things:
+//   1. keeps the last 50 events (errors first), so nothing a script does wrong is swallowed silently;
+//   2. runs the health check: do the elements, attributes, prefs and shortcuts that the stylesheet
+//      and the scripts depend on still exist and make sense in this Firefox?
+//   3. writes both to <profile>/chrome/peekafoxy-status.json (schema 1, documented in
+//      src/peek_a_foxy/status.py, which `peek-a-foxy doctor` reads), and builds the Markdown that the
+//      "Copy diagnostic info" button puts on the clipboard.
+// Nothing here is ever sent anywhere, and nothing here throws: a diagnostic must not break the thing
+// it diagnoses. Every text is redacted (home folder, user name, profile folder and name) and cleaned
+// of control characters before it is stored, so the file and the clipboard text are safe to share.
+
+export const STATUS_FILE = "peekafoxy-status.json";
+export const STATUS_SCHEMA = 1;
+export const ISSUES_URL = "https://github.com/paodelonga/peek-a-foxy/issues/new/choose";
+export const NOTICE = "Nothing was sent anywhere. Review it, then paste it into your issue.";
+export const TOOLBAR_BUTTONS = ["tabs-autohide-button", "urlbar-autohide-button"];
+
+const MAX_EVENTS = 50; // the ring buffer
+const MAX_WHERE = 60; // characters kept of the place of an event
+const MAX_MESSAGE = 300; // ... of its message
+const MAX_NOTE = 260; // ... of a health note
+const MAX_FIELD = 80; // ... of a plain field (version, channel...)
+const RAW_LIMIT = 4000; // a text is cut to this before anything else happens to it
+const WRITE_DELAY_MS = 2000; // writes are coalesced: one per this many milliseconds at most
+const NOTIFY_DELAY_MS = 300;
+const SEVERITY = { info: 0, warn: 1, error: 2 };
+
+const BREAKS = /[\t\n\r\v\f\u0085\u2028\u2029]/g;
+const CONTROLS = /[\u0000-\u0008\u000e-\u001f\u007f-\u0084\u0086-\u009f]/g;
+const DIRECTION = /[\u202a-\u202e\u2066-\u2069]/g; // overrides and isolates, which can mislead a reader
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+
+const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+
+// One text, ready to be stored: redacted, line breaks and tabs as spaces, other control characters
+// and direction overrides as U+FFFD (what the Python report does too), cut to `max` characters.
+// Right-to-left letters stay.
+export function sanitize(text, max, redact = (t) => t) {
+  let out;
+  try {
+    out = String(text ?? "");
+  } catch (e) {
+    out = "(a text that could not be shown)";
+  }
+  if (out.length > RAW_LIMIT) out = out.slice(0, RAW_LIMIT);
+  out = redact(out).replace(BREAKS, " ").replace(CONTROLS, "\ufffd").replace(DIRECTION, "\ufffd").trim();
+  if (out.length > max) out = `${out.slice(0, max - 1)}\u2026`;
+  return out.replace(LONE_SURROGATE, "\ufffd");
+}
+
+// An error (from any compartment) or a text as one line: "TypeError: x is null (fn@file:3:5)".
+export function describe(what) {
+  try {
+    if (typeof what === "string") return what;
+    if (what && typeof what === "object" && typeof what.message === "string") {
+      const frame = String(what.stack ?? "").split("\n")[0].trim();
+      return `${what.name || "Error"}: ${what.message}${frame ? ` (${frame.slice(0, 160)})` : ""}`;
+    }
+    return String(what);
+  } catch (e) {
+    return "(an error that could not be shown)";
+  }
+}
+
+// --- redaction: the same placeholders as the Python report (~, <user>, <profile>) ---
+
+const STANDARD_PROFILE_NAMES = new Set(
+  ["default", "default-release", "default-esr", "default-nightly", "dev-edition-default"]);
+const SCRIPT_SUFFIX = /^(?:uc\.js|sys\.mjs|m?js|css|json|py|x?html|ini)(?![A-Za-z0-9_-])/i;
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const WORD = (text) => `(?<![\\p{L}\\p{N}_])${escapeRegExp(text)}(?![\\p{L}\\p{N}_])`;
+
+// One path as it may be printed: as given, with either slash, escaped (a repr), and as part of a URL.
+function spellings(path) {
+  const forward = path.replace(/\\/g, "/");
+  const backward = path.replace(/\//g, "\\");
+  const found = new Set([path, forward, backward, backward.replace(/\\/g, "\\\\")]);
+  try {
+    found.add(encodeURI(forward));
+  } catch (e) {
+    // A path with a lone surrogate cannot be URL-encoded; the plain spellings still apply.
+  }
+  return [...found];
+}
+
+// {homes, user, profileDir, profileName, ignoreCase} -> a function that hides them in a text. A home
+// folder that is only "/" or "C:\" would blank out every path, and a user name shorter than three
+// characters would match inside ordinary words, so neither is used.
+export function makeRedactor({ homes = [], user = "", profileDir = "", profileName = "", ignoreCase = false } = {}) {
+  const flags = `gu${ignoreCase ? "i" : ""}`;
+  const rules = [];
+  const paths = (list, replacement, minimum) => {
+    const spelled = new Set();
+    for (const path of list) {
+      const trimmed = String(path || "").replace(/[\\/]+$/, "");
+      const bare = trimmed.replace(/^[\\/]+/, "");
+      if (bare.length >= minimum && !/^[A-Za-z]:$/.test(bare)) spellings(trimmed).forEach((p) => spelled.add(p));
+    }
+    if (spelled.size) {
+      const pattern = [...spelled].sort((a, b) => b.length - a.length).map(escapeRegExp).join("|");
+      rules.push([new RegExp(pattern, flags), replacement]);
+    }
+  };
+  paths([profileDir], "<profile>", 2);
+  paths(homes, "~", 2);
+  // Firefox names profile folders like a1b2c3d4.default-release. The same shape is a file name in
+  // eight letters ("autohide.uc.js:12" in an error's stack), which is kept: the real profile folder
+  // was hidden above, by its whole path, and a stack without its file names would be useless.
+  rules.push([/(?<=[\\/])[a-z0-9]{8}\.(?<rest>[^\\/\s'"]+)/gu, (found, ...args) =>
+    SCRIPT_SUFFIX.test(args.at(-1).rest) ? found : "<profile>"]);
+  if (profileName && profileName.length >= 3 && !STANDARD_PROFILE_NAMES.has(profileName)) {
+    rules.push([new RegExp(WORD(profileName), flags), "<profile>"]);
+  }
+  if (user && user.length >= 3) rules.push([new RegExp(WORD(user), flags), "<user>"]);
+  rules.push(
+    [/(?<scheme>[A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/\s:@]+(?::[^/\s@]*)?@/gu, "$<scheme>***@"],
+    [/(?<head>authorization:\s*(?:bearer|basic|token)\s+)\S+/giu, "$<head>***"],
+    [/\b(?<name>access_token|token|api[_-]?key|key|secret|password|passwd|auth|sig|signature)=[^&\s"']+/giu, "$<name>=***"],
+    [/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/gu, "***"],
+  );
+  return (text) => rules.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
+}
+
+let redactor = null;
+function machineRedactor() {
+  if (redactor) return redactor;
+  const env = (name) => {
+    try {
+      return Services.env.get(name) || "";
+    } catch (e) {
+      return "";
+    }
+  };
+  const tryGet = (fn) => {
+    try {
+      return fn() || "";
+    } catch (e) {
+      return "";
+    }
+  };
+  redactor = makeRedactor({
+    homes: [tryGet(() => Services.dirsvc.get("Home", Ci.nsIFile).path), env("HOME"), env("USERPROFILE")],
+    user: env("USER") || env("USERNAME") || env("LOGNAME"),
+    profileDir: tryGet(() => PathUtils.profileDir),
+    profileName: tryGet(() =>
+      Cc["@mozilla.org/toolkit/profile-service;1"].getService(Ci.nsIToolkitProfileService).currentProfile?.name),
+    ignoreCase: Services.appinfo.OS === "WINNT",
+  });
+  return redactor;
+}
+
+// --- the ring buffer ---
+
+const events = []; // {time, level, where, message, base, count}
+let spentMs = 0; // time the synchronous parts of Diag took (see Diag.stats)
+let writes = 0;
+let writesFailed = 0;
+let writeTimer = null;
+let writeChain = Promise.resolve();
+let notifyTimer = null;
+
+const notify = () => {
+  if (notifyTimer !== null) return;
+  notifyTimer = lazy.setTimeout(() => {
+    notifyTimer = null;
+    try {
+      Services.obs.notifyObservers(null, "peekafoxy-diag-changed");
+    } catch (e) {
+      // Nobody listening is not a problem.
+    }
+  }, NOTIFY_DELAY_MS);
+};
+
+function scheduleWrite() {
+  if (writeTimer !== null) return;
+  writeTimer = lazy.setTimeout(() => {
+    writeTimer = null;
+    writeNow();
+  }, WRITE_DELAY_MS);
+}
+
+// When the buffer is full the oldest event of the lowest severity makes room, so a flood of harmless
+// events never pushes out an error. A new event less severe than everything in a full buffer is dropped.
+function makeRoom(level) {
+  if (events.length < MAX_EVENTS) return true;
+  for (const kind of Object.keys(SEVERITY)) {
+    if (SEVERITY[kind] > SEVERITY[level]) break;
+    const index = events.findIndex((e) => e.level === kind);
+    if (index >= 0) {
+      events.splice(index, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+function record(level, where, what, extra, { write = true } = {}) {
+  try {
+    const began = now();
+    const redact = machineRedactor();
+    const place = sanitize(where, MAX_WHERE, redact);
+    const base = sanitize(typeof what === "string" ? what : describe(what), MAX_MESSAGE, redact);
+    const last = events.at(-1);
+    if (last && last.level === level && last.where === place && last.base === base) {
+      last.count += 1;
+      last.message = sanitize(`${base} (repeated ${last.count} times)`, MAX_MESSAGE + 30);
+    } else {
+      if (level !== "info") {
+        const detail = extra ?? (typeof what === "string" ? undefined : what);
+        console[level](`[peekafoxy ${place}] ${base}`, ...(detail === undefined ? [] : [detail]));
+      }
+      if (makeRoom(level)) {
+        events.push({ time: new Date().toISOString(), level, where: place, message: base, base, count: 1 });
+      }
+    }
+    if (write) scheduleWrite();
+    if (level === "error") notify();
+    spentMs += now() - began;
+  } catch (e) {
+    // Diag must never be the reason something fails.
+  }
+}
+
+const publicEvent = ({ time, level, where, message }) => ({ time, level, where, message });
+
+// --- health checks ---
+//
+// Each check gives {name, ok, note}. The note, when it fails, says in plain words what was not found
+// and which change in Firefox it suggests. In the status file it is "ok" or "fail: <note>".
+
+const pass = (name) => ({ name, ok: true, note: "" });
+const fail = (name, note) => ({ name, ok: false, note });
+const KINDS = { bool: "a true/false value", int: "a number", string: "text" };
+const PREF_TYPES = { 128: "bool", 64: "int", 32: "string" }; // nsIPrefBranch.PREF_BOOL, PREF_INT, PREF_STRING
+
+const ELEMENTS = [
+  ["navigator-toolbox", "navigator-toolbox", "the container of Firefox's toolbars", "the bars cannot be hidden or shown"],
+  ["tabs-toolbar", "TabsToolbar", "the tab bar", "the tab bar cannot be hidden"],
+  ["nav-bar", "nav-bar", "the navigation bar", "the navigation bar cannot be hidden"],
+  ["urlbar", "urlbar", "the address bar", "the navigation bar may close while the address bar's drop-down list is open"],
+  ["bookmarks-toolbar", "PersonalToolbar", "the bookmarks bar", "it will not hide and show together with the navigation bar"],
+];
+
+// A popup window (window.open with features) has no toolbars of its own to check.
+const isNormalWindow = (win) => {
+  try {
+    return win.toolbar?.visible !== false;
+  } catch (e) {
+    return true;
+  }
+};
+
+export function browserChecks(win) {
+  const doc = win.document;
+  const root = doc.documentElement;
+  const out = [];
+  for (const [name, id, what, effect] of ELEMENTS) {
+    out.push(doc.getElementById(id)
+      ? pass(name)
+      : fail(name, `The element #${id} (${what}) was not found. Firefox may have renamed or removed it, so ${effect}.`));
+  }
+
+  const custom = root.hasAttribute("customtitlebar");
+  if (!doc.getElementById("tabbrowser-tabs")) {
+    out.push(fail("tabs-holder", "The element #tabbrowser-tabs (the tabs themselves) was not found. Firefox may have renamed it, so the tab bar may not collapse properly."));
+  } else if (custom && !doc.querySelector("#TabsToolbar .toolbar-items")) {
+    out.push(fail("tabs-holder", "The window draws its own title bar (customtitlebar), but #TabsToolbar .toolbar-items, the part of the tab bar that holds the tabs, was not found. Firefox may have moved the tabs, so hiding the tab bar may hide the window buttons or do nothing."));
+  } else {
+    out.push(pass("tabs-holder"));
+  }
+
+  // The stylesheet has one variant with the root attribute customtitlebar (window buttons inside the
+  // tab bar) and one without. Window buttons that are visible without the attribute mean that Firefox
+  // may have renamed it, and the wrong variant would hide the buttons together with the tabs.
+  let buttons = false;
+  try {
+    buttons = [...doc.querySelectorAll("#TabsToolbar .titlebar-buttonbox-container")].some(
+      (box) => win.getComputedStyle(box).display !== "none" && box.getBoundingClientRect().width > 0);
+  } catch (e) {
+    Diag.info("diag:buttons", e);
+  }
+  out.push(buttons && !custom
+    ? fail("customtitlebar", "The window buttons are inside the tab bar, but the window does not have the customtitlebar attribute that the stylesheet looks for. Firefox may have renamed it, so hiding the tab bar could hide the window buttons too.")
+    : pass("customtitlebar"));
+
+  const missing = [
+    ["gBrowser.tabContainer", win.gBrowser?.tabContainer],
+    ["SessionStore.setCustomWindowValue", win.SessionStore?.setCustomWindowValue],
+    ["CustomizableUI.getWidget", win.CustomizableUI?.getWidget],
+    ["UC_API.Utils.createWidget", win.UC_API?.Utils?.createWidget],
+  ].filter(([, value]) => !value).map(([name]) => name);
+  out.push(missing.length
+    ? fail("browser-apis", `These parts of Firefox or of the loader that the script uses are missing: ${missing.join(", ")}. Firefox or fx-autoconfig may have changed them, so some features of the script will not work.`)
+    : pass("browser-apis"));
+
+  const unregistered = TOOLBAR_BUTTONS.filter((id) => {
+    try {
+      return !win.CustomizableUI.getWidget(id);
+    } catch (e) {
+      return true;
+    }
+  });
+  out.push(unregistered.length
+    ? fail("toolbar-buttons", `The toolbar button ${unregistered.join(" and ")} is not registered with Firefox, so it is missing from Customize Toolbar. Firefox may have changed how toolbar buttons are made, or the script stopped before it made them.`)
+    : pass("toolbar-buttons"));
+  return out;
+}
+
+const userValue = (pref, type) => {
+  try {
+    if (type === "bool") return Services.prefs.getBoolPref(pref.name);
+    if (type === "int") return Services.prefs.getIntPref(pref.name);
+    return Services.prefs.getStringPref(pref.name);
+  } catch (e) {
+    return undefined;
+  }
+};
+
+export function globalChecks() {
+  const out = [];
+  const prefs = [];
+  const wrongType = new Set();
+  for (const pref of Object.values(PREFS)) {
+    const actual = PREF_TYPES[Services.prefs.getPrefType(pref.name)];
+    if (!actual) {
+      prefs.push(`The setting ${pref.name} is not registered, so it is missing from about:config and the script uses its built-in default.`);
+    } else if (actual !== pref.type) {
+      wrongType.add(pref.name);
+      prefs.push(`The setting ${pref.name} holds ${KINDS[actual]} instead of ${KINDS[pref.type]}, probably from a line in user.js or prefs.js with the wrong kind of value, so the script ignores it and uses the default (${pref.default}). Reset it in about:config.`);
+    }
+  }
+  out.push(prefs.length
+    ? fail("prefs", prefs.length > 1 ? `${prefs[0]} ${prefs.length - 1} more setting(s) have the same kind of problem.` : prefs[0])
+    : pass("prefs"));
+
+  const ranges = [];
+  for (const pref of Object.values(PREFS)) {
+    if (pref.type !== "int" || wrongType.has(pref.name)) continue;
+    const value = userValue(pref, "int");
+    if (value !== undefined && (value < pref.min || value > pref.max)) {
+      ranges.push(`The setting ${pref.name} is ${value}, outside the allowed ${pref.min} to ${pref.max}, so the script uses ${clamp(pref, value)} instead.`);
+    }
+  }
+  out.push(ranges.length
+    ? fail("settings-values", ranges.length > 1 ? `${ranges[0]} ${ranges.length - 1} more setting(s) are out of range too.` : ranges[0])
+    : pass("settings-values"));
+
+  const shortcuts = [PREFS.tabsShortcut, PREFS.urlbarShortcut];
+  const bad = [];
+  for (const pref of shortcuts) {
+    if (wrongType.has(pref.name)) continue;
+    const raw = userValue(pref, "string");
+    if (raw !== undefined && !parseShortcut(raw).ok) {
+      bad.push(`The shortcut setting ${pref.name} says "${sanitize(raw, 40)}", which is not a valid shortcut, so the default ${pref.default} is used.`);
+    }
+  }
+  out.push(bad.length
+    ? fail("shortcuts", bad.length > 1 ? `${bad[0]} The other shortcut has the same problem.` : bad[0])
+    : pass("shortcuts"));
+
+  const [tabs, urlbar] = shortcuts.map((pref) => bindingFor(pref).text);
+  out.push(tabs === urlbar
+    ? fail("shortcuts-distinct", `Both bars use the shortcut ${tabs}, so only one of them reacts to it. Choose a different shortcut for one of them in the Peek-a-Foxy settings.`)
+    : pass("shortcuts-distinct"));
+  return out;
+}
+
+// --- the registry of windows and of the checks each one reported ---
+
+const started = new Set(); // browser windows whose script ran to the end
+const healthBySource = new Map(); // a window, or a string for something that is not a window
+let checkTimer = null;
+let checkWindow = null;
+
+const liveWindows = () => {
+  for (const win of [...started]) {
+    let closed = true;
+    try {
+      closed = win.closed;
+    } catch (e) {
+      // A dead window reference counts as closed.
+    }
+    if (closed) forget(win);
+  }
+  return [...started];
+};
+
+function forget(win) {
+  started.delete(win);
+  healthBySource.delete(win);
+}
+
+// The checks of every source in one list: a name fails if it failed anywhere.
+function combinedHealth() {
+  const merged = new Map();
+  for (const results of healthBySource.values()) {
+    for (const result of results) {
+      const seen = merged.get(result.name);
+      if (!seen || (seen.ok && !result.ok)) merged.set(result.name, result);
+    }
+  }
+  return [...merged.values()];
+}
+
+const healthObject = () => {
+  const redact = machineRedactor();
+  const out = {};
+  for (const { name, ok, note } of combinedHealth()) {
+    out[sanitize(name, MAX_WHERE)] = ok ? "ok" : `fail: ${sanitize(note, MAX_NOTE, redact)}`;
+  }
+  return out;
+};
+
+function buildStatus() {
+  const redact = machineRedactor();
+  const field = (value) => sanitize(value, MAX_FIELD, redact);
+  return {
+    schema: STATUS_SCHEMA,
+    scriptVersion: SCRIPT_VERSION,
+    firefoxVersion: field(Services.appinfo.version),
+    buildID: field(Services.appinfo.appBuildID),
+    channel: field(lazy.AppConstants.MOZ_UPDATE_CHANNEL),
+    os: field(Services.appinfo.OS),
+    locale: field(Services.locale.appLocaleAsBCP47),
+    updated: new Date().toISOString(),
+    windows: liveWindows().length,
+    health: healthObject(),
+    errors: events.map(publicEvent),
+  };
+}
+
+// One write at a time, in order, so that windows writing together cannot interleave; and each write
+// goes to a temporary file that is then moved over the real one, so a reader sees the old file or
+// the new one and never half of one. It never rejects.
+async function doWrite() {
+  try {
+    const path = PathUtils.join(PathUtils.profileDir, "chrome", STATUS_FILE);
+    const text = `${JSON.stringify(buildStatus(), null, 2)}\n`;
+    await IOUtils.writeUTF8(path, text, { tmpPath: `${path}.tmp`, mode: "overwrite" });
+    writes += 1;
+  } catch (e) {
+    writesFailed += 1;
+    record("warn", "status:write", `the status file could not be written: ${describe(e)}`, e, { write: false });
+  }
+}
+
+function writeNow() {
+  if (writeTimer !== null) {
+    lazy.clearTimeout(writeTimer);
+    writeTimer = null;
+  }
+  writeChain = writeChain.then(doWrite);
+  return writeChain;
+}
+
+// --- the report that the button copies ---
+
+const cell = (text) => text.replace(/\s+/g, " ").replace(/\|/g, "\\|").replace(/</g, "\\<");
+
+export function reportMarkdown(status) {
+  const failed = Object.entries(status.health).filter(([, value]) => value !== "ok");
+  const lines = [
+    "# Peek-a-Foxy diagnostic info",
+    "",
+    `This was written by the Peek-a-Foxy script ${cell(status.scriptVersion)} in Firefox on ${status.updated} and uses status format ${status.schema}.`,
+    "",
+    `- Program version: ${cell(status.scriptVersion)}`,
+    `- Firefox: ${cell(status.firefoxVersion)} (build ${cell(status.buildID)}, channel ${cell(status.channel)})`,
+    `- System: ${cell(status.os)}`,
+    `- Language: ${cell(status.locale)}`,
+    `- Windows open: ${status.windows}`,
+    "",
+    `**Result: ${failed.length} FAIL, ${Object.keys(status.health).length - failed.length} OK**`,
+    "",
+    "## Health checks",
+    "",
+    "| Status | Check | Result |",
+    "|---|---|---|",
+  ];
+  for (const [name, value] of Object.entries(status.health)) {
+    const note = value === "ok" ? "" : value.replace(/^fail:\s*/, "");
+    lines.push(`| ${value === "ok" ? "OK" : "FAIL"} | ${cell(name)} | ${cell(note)} |`);
+  }
+  lines.push("", "## Last events (newest last)", "");
+  if (status.errors.length) {
+    lines.push("```text");
+    for (const e of status.errors) {
+      lines.push(`${e.time} ${e.level} ${e.where}: ${e.message}`.replace(/`/g, "'"));
+    }
+    lines.push("```");
+  } else {
+    lines.push("None.");
+  }
+  lines.push("", NOTICE, ISSUES_URL, "");
+  return lines.join("\n");
+}
+
+// Puts text on the system clipboard; `copy` throws when Firefox cannot. It is an object so that a
+// test can swap the method for one that fails.
+export const Clipboard = {
+  copy(text) {
+    Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper).copyString(text);
+  },
+};
+
+const OUR_FILES = /(?:autohide(?:-prefs)?\.uc\.js|peekafoxy\.sys\.mjs)/;
+
+export const Diag = {
+  error: (where, what, extra) => record("error", where, what, extra),
+  warn: (where, what, extra) => record("warn", where, what, extra),
+  info: (where, what, extra) => record("info", where, what, extra),
+
+  // A copy of the events, oldest first.
+  events: () => events.map(publicEvent),
+  stats: () => ({ events: events.length, writes, writesFailed, syncMs: spentMs }),
+  redact: (text, max = MAX_MESSAGE) => sanitize(text, max, machineRedactor()),
+
+  // Records the errors that come from the Peek-a-Foxy files: Firefox's own are not ours to report.
+  watch(win, label) {
+    win.addEventListener("error", (event) => {
+      if (OUR_FILES.test(String(event.filename ?? ""))) {
+        Diag.error(`${label}:uncaught`, `${event.message} (${String(event.filename).split("/").pop()}:${event.lineno})`);
+      }
+    });
+    win.addEventListener("unhandledrejection", (event) => {
+      const stack = String(event.reason?.stack ?? "");
+      if (OUR_FILES.test(stack)) Diag.error(`${label}:rejected`, event.reason);
+    });
+  },
+
+  // A browser window whose script ran to the end; it leaves the count when the window closes.
+  windowStarted(win) {
+    started.add(win);
+    win.addEventListener("unload", () => {
+      forget(win);
+      scheduleWrite();
+      notify();
+    }, { once: true });
+    scheduleWrite();
+    notify();
+  },
+  windowGone: (win) => forget(win),
+  hasStarted: (win) => started.has(win),
+
+  // Stores the checks of one source (a window, or a name such as "settings") and queues a write.
+  setHealth(source, results) {
+    healthBySource.set(source, results);
+    scheduleWrite();
+    notify();
+  },
+
+  // The health check, now: this window's elements and the prefs. Returns the combined results.
+  check(win) {
+    try {
+      const began = now();
+      if (win && isNormalWindow(win)) healthBySource.set(win, browserChecks(win));
+      healthBySource.set("global", globalChecks());
+      spentMs += now() - began;
+      scheduleWrite();
+      notify();
+    } catch (e) {
+      Diag.error("diag:check", e);
+    }
+    return combinedHealth();
+  },
+
+  // The same, a moment later and at most once for a burst of changes (a pref edited in about:config).
+  checkSoon(win) {
+    checkWindow = win;
+    if (checkTimer !== null) return;
+    checkTimer = lazy.setTimeout(() => {
+      checkTimer = null;
+      Diag.check(checkWindow);
+    }, NOTIFY_DELAY_MS);
+  },
+
+  health: () => combinedHealth(),
+
+  // How things stand, for the status line: "notstarted" (this window's script did not finish),
+  // "problem" (a health check failed), "errors" (the script recorded errors) or "ok".
+  summary(win) {
+    const failed = combinedHealth().filter((r) => !r.ok);
+    let state = "ok";
+    if (win && !started.has(win)) state = "notstarted";
+    else if (failed.length) state = "problem";
+    else if (events.some((e) => e.level === "error")) state = "errors";
+    return { state, version: SCRIPT_VERSION, failed: failed.map(({ name, note }) => ({ name, note: sanitize(note, MAX_NOTE, machineRedactor()) })) };
+  },
+
+  status: () => buildStatus(),
+  report: () => {
+    try {
+      return reportMarkdown(buildStatus());
+    } catch (e) {
+      return `# Peek-a-Foxy diagnostic info\n\nThe report could not be built: ${sanitize(describe(e), MAX_MESSAGE)}\n\n${NOTICE}\n${ISSUES_URL}\n`;
+    }
+  },
+  schedule: scheduleWrite,
+  flush: writeNow, // a promise that resolves when the file has been written (or the attempt failed)
+
+  // For tests: forget the events and the counters (not the windows and their checks).
+  reset() {
+    events.length = 0;
+    spentMs = 0;
+    writes = 0;
+    writesFailed = 0;
+  },
+};
