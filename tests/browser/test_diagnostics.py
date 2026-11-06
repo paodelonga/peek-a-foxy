@@ -627,9 +627,9 @@ def test_the_settings_page_check_is_reported_once_the_page_has_been_opened(brows
 
 
 def _navbar_is_renamed_in_the_check(source: str) -> str:
-    old = '["nav-bar", "nav-bar", "the navigation bar"'
+    old = '["nav-bar", "nav-bar"],'
     assert source.count(old) == 1, "the nav-bar check moved: update this test"
-    return source.replace(old, '["nav-bar", "nav-bar-renamed-by-firefox", "the navigation bar"')
+    return source.replace(old, '["nav-bar", "nav-bar-renamed-by-firefox"],')
 
 
 @pytest.fixture(scope="module")
@@ -647,7 +647,7 @@ def test_a_problem_present_at_startup_is_in_the_file_the_settings_page_and_the_d
     browser.wait_for_status_file()
     failure = failed_health(status_of(browser))
     assert list(failure) == ["nav-bar"]
-    assert "#nav-bar-renamed-by-firefox" in failure["nav-bar"]
+    assert "The element #nav-bar (the navigation bar) was not found" in failure["nav-bar"]
     # The script itself is not broken by it: the toolbar buttons are there, the bars work.
     assert browser.js("return !!document.getElementById('tabs-autohide-button');")
 
@@ -655,7 +655,7 @@ def test_a_problem_present_at_startup_is_in_the_file_the_settings_page_and_the_d
     browser.wait(f"{PANE}?.hidden === false")
     shown = browser.settings(SUPPORT)
     assert shown["state"] == "problem"
-    assert shown["lines"][0].startswith("Problem found: The element #nav-bar-renamed-by-firefox")
+    assert shown["lines"][0].startswith("Problem found: The element #nav-bar (the navigation bar)")
     browser.close_settings_tabs()
 
     doctor = run_doctor(browser, browser.install_dir)
@@ -1311,8 +1311,20 @@ def test_the_fallback_text_fits_a_tiny_window_too(small_window):
 
 
 CONTRAST = """
+  // rgb(), rgba(), color(srgb ...) and oklch(), which is what newer Firefox gives for some colours.
+  const oklch = (L, C, h) => {
+    const a = C * Math.cos((h * Math.PI) / 180), b = C * Math.sin((h * Math.PI) / 180);
+    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+    const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+    const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+    const lin = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+                 -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+                 -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+    return lin.map((v) => 255 * Math.min(1, Math.max(0, v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055)));
+  };
   const parse = (css) => {
     const n = css.match(/[\\d.]+/g).map(Number);
+    if (css.startsWith('oklch(')) return [...oklch(n[0], n[1], n[2]), n[3] ?? 1];
     return css.startsWith('color(') ? [n[0] * 255, n[1] * 255, n[2] * 255, n[3] ?? 1]
                                     : [n[0], n[1], n[2], n[3] ?? 1];
   };
@@ -1320,17 +1332,21 @@ CONTRAST = """
     const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
     return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
   };
+  // The colour behind a node: every background from the page down to the node, laid over each other
+  // (many are translucent), starting from the canvas colour.
   const background = (node) => {
-    for (let n = node; n; n = n.parentElement) {
-      const c = win.getComputedStyle(n).backgroundColor;
-      if (!/rgba\\(.*, 0\\)$|transparent/.test(c)) return c;
-    }
     const probe = doc.createElement('div');
     probe.style.cssText = 'background-color: Canvas';
     doc.body.append(probe);
-    const c = win.getComputedStyle(probe).backgroundColor;
+    let back = parse(win.getComputedStyle(probe).backgroundColor);
     probe.remove();
-    return c;
+    const chain = [];
+    for (let n = node; n; n = n.parentElement) chain.unshift(win.getComputedStyle(n).backgroundColor);
+    for (const css of chain) {
+      const layer = parse(css);
+      back = [0, 1, 2].map((i) => layer[i] * layer[3] + back[i] * (1 - layer[3])).concat([1]);
+    }
+    return `rgb(${back.slice(0, 3).join(',')})`;
   };
   const ratio = (node) => {
     const back = parse(background(node)), front = parse(win.getComputedStyle(node).color);
@@ -1377,3 +1393,101 @@ def test_portuguese_firefox_labels_survive_a_missing_language(browser):
     assert browser.diag("return Peek.textFor('xx-YY').settings.supportGroup;") == "Support"
     assert browser.diag("return Peek.textFor('pt-PT').settings.supportGroup;") == "Suporte"
     assert _speaking("pt-BR")  # (the fixture that fakes the language is the one used above)
+
+
+# --- the health notes in Portuguese (the file and the report stay in English) --------------------
+
+SAMPLE_VALUES = (
+    "{name: 'peekafoxy.strip.px', actual: 'int', expected: 'bool', default: false, value: 99, min: 1,"
+    " max: 40, used: 40, text: 'Ctrl+Alt+K', n: 2, what: 'x', names: ['gBrowser.tabContainer', 'SessionStore'],"
+    " ids: ['tabs-autohide-button', 'urlbar-autohide-button']}"
+)
+
+
+def test_a_failed_check_is_shown_in_portuguese_but_written_in_english(browser_in_portuguese):
+    browser = browser_in_portuguese
+    browser.wait_for_status_file()
+    open_support(browser)
+    with renamed(browser, "nav-bar"):
+        browser.diag("Diag.check(window);")
+        browser.wait(STATE_IS("problem"), 5)
+        shown = browser.settings(SUPPORT)
+        file_note = failed_health(status_of(browser))["nav-bar"]
+        text = (browser.chrome_dir / STATUS_FILE).read_text(encoding="utf-8")
+        report_text = browser.diag("return Diag.report();")
+    browser.close_settings_tabs()
+    assert shown["state"] == "problem"
+    assert shown["lines"][0] == (
+        "Problema encontrado: O elemento #nav-bar (a barra de navegação) não foi encontrado. "
+        "O Firefox pode tê-lo renomeado ou removido, então a barra de navegação não "
+        "pode ser ocultada."
+    )
+    assert file_note == (
+        "The element #nav-bar (the navigation bar) was not found. Firefox may have renamed or removed "
+        "it, so the navigation bar cannot be hidden."
+    )
+    assert "não foi encontrado" not in text and "não foi encontrado" not in report_text
+    assert "was not found" in report_text
+
+
+def test_every_note_has_a_portuguese_sentence_that_is_complete_and_not_cut(browser):
+    problems = browser.diag(
+        f"""const out = [], values = {SAMPLE_VALUES};
+           const en = Peek.STRINGS.en.settings.health, pt = Peek.STRINGS.pt.settings.health;
+           for (const key of Object.keys(en)) {{
+             if (key === 'and' || key === 'kinds') continue;
+             for (const [label, health] of [['en', en], ['pt', pt]]) {{
+               const text = Peek.noteFor({{ parts: [[key, values]] }}, health);
+               if (/[{{}}]|undefined/.test(text)) out.push(label + ' ' + key + ': unfilled: ' + text);
+               if (text.endsWith('\\u2026')) out.push(label + ' ' + key + ': cut: ' + text);
+               if (label === 'pt' && text === Peek.noteFor({{ parts: [[key, values]] }}, en))
+                 out.push(key + ': pt equals en');
+             }}
+           }}
+           return out;"""
+    )
+    assert problems == []
+
+
+def test_a_sentence_missing_in_portuguese_falls_back_to_english(browser):
+    texts = browser.diag(
+        f"""const values = {SAMPLE_VALUES};
+           const some = {{ ...Peek.STRINGS.pt.settings.health }};
+           delete some.shortcutsSame;
+           const part = [['shortcutsSame', {{ text: 'Ctrl+Alt+K' }}], ['shortcutMore']];
+           return [Peek.noteFor({{ parts: part }}, some),
+                   Peek.noteFor({{ parts: [['prefType', values]] }}, {{}}),
+                   Peek.noteFor({{ parts: part }})];"""
+    )
+    assert texts[0].startswith(
+        "Both bars use the shortcut Ctrl+Alt+K"
+    )  # English, for the missing one
+    assert texts[0].endswith(
+        "O outro atalho tem o mesmo problema."
+    )  # Portuguese, for the present one
+    assert texts[1].startswith(
+        "The setting peekafoxy.strip.px holds a number instead of a true/false value"
+    )
+    assert texts[2].startswith("Both bars use the shortcut") and texts[2].endswith(
+        "The other shortcut has the same problem."
+    )
+
+
+def test_portuguese_notes_name_the_kinds_and_join_the_lists_in_portuguese(browser):
+    text = browser.diag(
+        f"""const values = {SAMPLE_VALUES};
+           const pt = Peek.STRINGS.pt.settings.health;
+           return [Peek.noteFor({{ parts: [['prefType', values]] }}, pt),
+                   Peek.noteFor({{ parts: [['toolbarButtons', values]] }}, pt)];"""
+    )
+    assert "contém um número em vez de um valor verdadeiro/falso" in text[0]
+    assert "tabs-autohide-button e urlbar-autohide-button" in text[1]
+
+
+def test_a_hostile_value_in_a_portuguese_note_is_cleaned_like_any_other_text(browser):
+    text = browser.diag(
+        """const pt = Peek.STRINGS.pt.settings.health;
+           return Peek.noteFor({ parts: [['shortcutBad', { name: 'n', text: 'a\\u0000b\\u202e', default: 'd' }],
+                                         ['settingsPage', { what: 'x'.repeat(5000) }]] }, pt);"""
+    )
+    assert not any(char in text for char in FORBIDDEN) and len(text) <= 420

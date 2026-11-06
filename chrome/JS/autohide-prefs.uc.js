@@ -158,7 +158,7 @@
       else if (state === "errors") lines.push(fill(TEXT.supportErrors, { version }));
       else if (state === "notstarted") lines.push(TEXT.supportNotStarted);
       else {
-        lines.push(fill(TEXT.supportProblem, { note: failed[0].note }));
+        lines.push(fill(TEXT.supportProblem, { note: Peek.noteFor(failed[0], TEXT.health) }));
         if (failed.length > 1) lines.push(TEXT.supportMore);
       }
       line.dataset.state = state;
@@ -287,13 +287,10 @@
 
   try {
     install();
-    Diag.setHealth("settings", [{ name: "settings-page", ok: true, note: "" }]);
+    Diag.setHealth("settings", [{ name: "settings-page", ok: true, parts: [], note: "" }]);
     Diag.check(ownerWindow()); // so the status line is up to date as soon as the page is opened
   } catch (e) {
     Diag.warn("settings:install", `the Peek-a-Foxy category was not added: ${Peek.describe(e)}`, e);
-    Diag.setHealth("settings", [{
-      name: "settings-page", ok: false,
-      note: `Firefox's settings page is not what the script expects (${e?.message}), so the Peek-a-Foxy category was not added. The settings can still be changed in about:config: search for peekafoxy.`,
-    }]);
+    Diag.setHealth("settings", [Peek.healthFail("settings-page", ["settingsPage", { what: e?.message }])]);
   }
 })();

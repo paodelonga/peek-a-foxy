@@ -210,6 +210,29 @@ export const STRINGS = {
       supportFallbackLabel: "Diagnostic info, to copy by hand",
       supportNote: "Nothing is sent anywhere: the diagnostic info only goes to your clipboard, with your user name, home folder and profile folder hidden. Read it before you paste it into an issue at {link}.",
       supportLink: "the Peek-a-Foxy issue page",
+      health: {
+        and: "and",
+        kinds: { bool: "a true/false value", int: "a number", string: "text" },
+        "navigator-toolbox": "The element #navigator-toolbox (the container of Firefox's toolbars) was not found. Firefox may have renamed or removed it, so the bars cannot be hidden or shown.",
+        "tabs-toolbar": "The element #TabsToolbar (the tab bar) was not found. Firefox may have renamed or removed it, so the tab bar cannot be hidden.",
+        "nav-bar": "The element #nav-bar (the navigation bar) was not found. Firefox may have renamed or removed it, so the navigation bar cannot be hidden.",
+        urlbar: "The element #urlbar (the address bar) was not found. Firefox may have renamed or removed it, so the navigation bar may close while the address bar's drop-down list is open.",
+        "bookmarks-toolbar": "The element #PersonalToolbar (the bookmarks bar) was not found. Firefox may have renamed or removed it, so it will not hide and show together with the navigation bar.",
+        tabsHolder: "The element #tabbrowser-tabs (the tabs themselves) was not found. Firefox may have renamed it, so the tab bar may not collapse properly.",
+        tabsHolderCustom: "The window draws its own title bar (customtitlebar), but #TabsToolbar .toolbar-items, the part of the tab bar that holds the tabs, was not found. Firefox may have moved the tabs, so hiding the tab bar may hide the window buttons or do nothing.",
+        customtitlebar: "The window buttons are inside the tab bar, but the window does not have the customtitlebar attribute that the stylesheet looks for. Firefox may have renamed it, so hiding the tab bar could hide the window buttons too.",
+        browserApis: "These parts of Firefox or of the loader that the script uses are missing: {names}. Firefox or fx-autoconfig may have changed them, so some features of the script will not work.",
+        toolbarButtons: "The toolbar button {ids} is not registered with Firefox, so it is missing from Customize Toolbar. Firefox may have changed how toolbar buttons are made, or the script stopped before it made them.",
+        prefMissing: "The setting {name} is not registered, so it is missing from about:config and the script uses its built-in default.",
+        prefType: "The setting {name} holds {actual} instead of {expected}, probably from a line in user.js or prefs.js with the wrong kind of value, so the script ignores it and uses the default ({default}). Reset it in about:config.",
+        prefsMore: "{n} more setting(s) have the same kind of problem.",
+        rangeBad: "The setting {name} is {value}, outside the allowed {min} to {max}, so the script uses {used} instead.",
+        rangeMore: "{n} more setting(s) are out of range too.",
+        shortcutBad: "The shortcut setting {name} says \"{text}\", which is not a valid shortcut, so the default {default} is used.",
+        shortcutMore: "The other shortcut has the same problem.",
+        shortcutsSame: "Both bars use the shortcut {text}, so only one of them reacts to it. Choose a different shortcut for one of them in the Peek-a-Foxy settings.",
+        settingsPage: "Firefox's settings page is not what the script expects ({what}), so the Peek-a-Foxy category was not added. The settings can still be changed in about:config: search for peekafoxy.",
+      },
       problems: {
         format: "That is not a valid shortcut.",
         key: "Use a letter, a digit or F1 to F12.",
@@ -267,6 +290,29 @@ export const STRINGS = {
       supportFallbackLabel: "Informações de diagnóstico, para copiar manualmente",
       supportNote: "Nada é enviado a lugar nenhum: as informações de diagnóstico só vão para a sua área de transferência, com o seu nome de usuário, a sua pasta pessoal e a pasta do perfil ocultos. Leia-as antes de colá-las em uma issue em {link}.",
       supportLink: "a página de issues do Peek-a-Foxy",
+      health: {
+        and: "e",
+        kinds: { bool: "um valor verdadeiro/falso", int: "um número", string: "um texto" },
+        "navigator-toolbox": "O elemento #navigator-toolbox (o container das barras de ferramentas do Firefox) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então as barras não podem ser ocultadas nem mostradas.",
+        "tabs-toolbar": "O elemento #TabsToolbar (a barra de abas) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então a barra de abas não pode ser ocultada.",
+        "nav-bar": "O elemento #nav-bar (a barra de navegação) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então a barra de navegação não pode ser ocultada.",
+        urlbar: "O elemento #urlbar (a barra de endereço) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então a barra de navegação pode se fechar enquanto a lista suspensa da barra de endereço está aberta.",
+        "bookmarks-toolbar": "O elemento #PersonalToolbar (a barra de favoritos) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então ela não vai se ocultar e se mostrar junto com a barra de navegação.",
+        tabsHolder: "O elemento #tabbrowser-tabs (as abas em si) não foi encontrado. O Firefox pode tê-lo renomeado, então a barra de abas pode não se recolher corretamente.",
+        tabsHolderCustom: "A janela desenha a própria barra de título (customtitlebar), mas #TabsToolbar .toolbar-items, a parte da barra de abas que contém as abas, não foi encontrada. O Firefox pode ter movido as abas, então ocultar a barra de abas pode ocultar os botões da janela ou não fazer nada.",
+        customtitlebar: "Os botões da janela estão dentro da barra de abas, mas a janela não tem o atributo customtitlebar que o stylesheet procura. O Firefox pode tê-lo renomeado, então ocultar a barra de abas pode ocultar também os botões da janela.",
+        browserApis: "Estas partes do Firefox ou do loader que o script usa estão ausentes: {names}. O Firefox ou o fx-autoconfig pode tê-las alterado, então alguns recursos do script não vão funcionar.",
+        toolbarButtons: "O botão da barra de ferramentas {ids} não está registrado no Firefox, então ele não aparece em Personalizar barra de ferramentas. O Firefox pode ter mudado a forma de criar botões da barra de ferramentas, ou o script parou antes de criá-los.",
+        prefMissing: "A configuração {name} não está registrada, então ela não aparece no about:config e o script usa o valor padrão embutido.",
+        prefType: "A configuração {name} contém {actual} em vez de {expected}, provavelmente por uma linha do user.js ou do prefs.js com o tipo de valor errado, então o script a ignora e usa o valor padrão ({default}). Restaure-a no about:config.",
+        prefsMore: "Mais {n} configuração(ões) têm o mesmo tipo de problema.",
+        rangeBad: "A configuração {name} está em {value}, fora do intervalo permitido de {min} a {max}, então o script usa {used} no lugar.",
+        rangeMore: "Mais {n} configuração(ões) também estão fora do intervalo.",
+        shortcutBad: "A configuração de atalho {name} diz \"{text}\", que não é um atalho válido, então o atalho padrão {default} é usado.",
+        shortcutMore: "O outro atalho tem o mesmo problema.",
+        shortcutsSame: "As duas barras usam o atalho {text}, então só uma delas reage a ele. Escolha um atalho diferente para uma delas nas configurações do Peek-a-Foxy.",
+        settingsPage: "A página de configurações do Firefox não é a que o script espera ({what}), então a categoria Peek-a-Foxy não foi adicionada. As configurações ainda podem ser alteradas no about:config: procure por peekafoxy.",
+      },
       problems: {
         format: "Esse atalho não é válido.",
         key: "Use uma letra, um dígito ou F1 a F12.",
@@ -312,7 +358,7 @@ export const TOOLBAR_BUTTONS = ["tabs-autohide-button", "urlbar-autohide-button"
 const MAX_EVENTS = 50; // the ring buffer
 const MAX_WHERE = 60; // characters kept of the place of an event
 const MAX_MESSAGE = 300; // ... of its message
-const MAX_NOTE = 260; // ... of a health note
+const MAX_NOTE = 420; // ... of a health note
 const MAX_FIELD = 80; // ... of a plain field (version, channel...)
 const RAW_LIMIT = 4000; // a text is cut to this before anything else happens to it
 const WRITE_DELAY_MS = 2000; // writes are coalesced: one per this many milliseconds at most
@@ -519,20 +565,44 @@ const publicEvent = ({ time, level, where, message }) => ({ time, level, where, 
 
 // --- health checks ---
 //
-// Each check gives {name, ok, note}. The note, when it fails, says in plain words what was not found
-// and which change in Firefox it suggests. In the status file it is "ok" or "fail: <note>".
+// Each check gives {name, ok, parts, note}. When it fails, `parts` are the sentences of the note as
+// [key, values] (the texts are in STRINGS.<language>.settings.health) and `note` is the same in
+// English, which is what the status file and the report hold, whatever language Firefox speaks:
+// they go to an issue. The settings page shows the parts in the language of Firefox (see noteFor).
+// A note says in plain words what was not found and which change in Firefox it suggests.
 
-const pass = (name) => ({ name, ok: true, note: "" });
-const fail = (name, note) => ({ name, ok: false, note });
-const KINDS = { bool: "a true/false value", int: "a number", string: "text" };
+const pass = (name) => ({ name, ok: true, parts: [], note: "" });
 const PREF_TYPES = { 128: "bool", 64: "int", 32: "string" }; // nsIPrefBranch.PREF_BOOL, PREF_INT, PREF_STRING
 
+// The sentences of one language. `values` are filled in where "{name}" appears; a list is joined with
+// the language's own "and", and the names of the kinds of pref value are translated.
+function sentence(health, [key, values = {}]) {
+  const english = STRINGS.en.settings.health;
+  const template = health[key] ?? english[key];
+  return template.replace(/\{(\w+)\}/g, (_, name) => {
+    const value = values[name];
+    if (Array.isArray(value)) return value.join(name === "ids" ? ` ${health.and ?? english.and} ` : ", ");
+    if (name === "actual" || name === "expected") return (health.kinds ?? english.kinds)[value];
+    return String(value ?? "");
+  });
+}
+
+export const healthFail = (name, ...parts) => ({
+  name, ok: false, parts,
+  note: parts.map((part) => sentence(STRINGS.en.settings.health, part)).join(" "),
+});
+
+// A failed check as the settings page shows it: in `health`'s language, and in English for any
+// sentence that language does not have (yet).
+export const noteFor = (failed, health = STRINGS.en.settings.health) =>
+  sanitize(failed.parts.map((part) => sentence(health, part)).join(" "), MAX_NOTE, machineRedactor());
+
 const ELEMENTS = [
-  ["navigator-toolbox", "navigator-toolbox", "the container of Firefox's toolbars", "the bars cannot be hidden or shown"],
-  ["tabs-toolbar", "TabsToolbar", "the tab bar", "the tab bar cannot be hidden"],
-  ["nav-bar", "nav-bar", "the navigation bar", "the navigation bar cannot be hidden"],
-  ["urlbar", "urlbar", "the address bar", "the navigation bar may close while the address bar's drop-down list is open"],
-  ["bookmarks-toolbar", "PersonalToolbar", "the bookmarks bar", "it will not hide and show together with the navigation bar"],
+  ["navigator-toolbox", "navigator-toolbox"],
+  ["tabs-toolbar", "TabsToolbar"],
+  ["nav-bar", "nav-bar"],
+  ["urlbar", "urlbar"],
+  ["bookmarks-toolbar", "PersonalToolbar"],
 ];
 
 // A popup window (window.open with features) has no toolbars of its own to check.
@@ -548,17 +618,15 @@ export function browserChecks(win) {
   const doc = win.document;
   const root = doc.documentElement;
   const out = [];
-  for (const [name, id, what, effect] of ELEMENTS) {
-    out.push(doc.getElementById(id)
-      ? pass(name)
-      : fail(name, `The element #${id} (${what}) was not found. Firefox may have renamed or removed it, so ${effect}.`));
+  for (const [name, id] of ELEMENTS) {
+    out.push(doc.getElementById(id) ? pass(name) : healthFail(name, [name]));
   }
 
   const custom = root.hasAttribute("customtitlebar");
   if (!doc.getElementById("tabbrowser-tabs")) {
-    out.push(fail("tabs-holder", "The element #tabbrowser-tabs (the tabs themselves) was not found. Firefox may have renamed it, so the tab bar may not collapse properly."));
+    out.push(healthFail("tabs-holder", ["tabsHolder"]));
   } else if (custom && !doc.querySelector("#TabsToolbar .toolbar-items")) {
-    out.push(fail("tabs-holder", "The window draws its own title bar (customtitlebar), but #TabsToolbar .toolbar-items, the part of the tab bar that holds the tabs, was not found. Firefox may have moved the tabs, so hiding the tab bar may hide the window buttons or do nothing."));
+    out.push(healthFail("tabs-holder", ["tabsHolderCustom"]));
   } else {
     out.push(pass("tabs-holder"));
   }
@@ -573,9 +641,7 @@ export function browserChecks(win) {
   } catch (e) {
     Diag.info("diag:buttons", e);
   }
-  out.push(buttons && !custom
-    ? fail("customtitlebar", "The window buttons are inside the tab bar, but the window does not have the customtitlebar attribute that the stylesheet looks for. Firefox may have renamed it, so hiding the tab bar could hide the window buttons too.")
-    : pass("customtitlebar"));
+  out.push(buttons && !custom ? healthFail("customtitlebar", ["customtitlebar"]) : pass("customtitlebar"));
 
   const missing = [
     ["gBrowser.tabContainer", win.gBrowser?.tabContainer],
@@ -583,9 +649,7 @@ export function browserChecks(win) {
     ["CustomizableUI.getWidget", win.CustomizableUI?.getWidget],
     ["UC_API.Utils.createWidget", win.UC_API?.Utils?.createWidget],
   ].filter(([, value]) => !value).map(([name]) => name);
-  out.push(missing.length
-    ? fail("browser-apis", `These parts of Firefox or of the loader that the script uses are missing: ${missing.join(", ")}. Firefox or fx-autoconfig may have changed them, so some features of the script will not work.`)
-    : pass("browser-apis"));
+  out.push(missing.length ? healthFail("browser-apis", ["browserApis", { names: missing }]) : pass("browser-apis"));
 
   const unregistered = TOOLBAR_BUTTONS.filter((id) => {
     try {
@@ -595,7 +659,7 @@ export function browserChecks(win) {
     }
   });
   out.push(unregistered.length
-    ? fail("toolbar-buttons", `The toolbar button ${unregistered.join(" and ")} is not registered with Firefox, so it is missing from Customize Toolbar. Firefox may have changed how toolbar buttons are made, or the script stopped before it made them.`)
+    ? healthFail("toolbar-buttons", ["toolbarButtons", { ids: unregistered }])
     : pass("toolbar-buttons"));
   return out;
 }
@@ -610,6 +674,10 @@ const userValue = (pref, type) => {
   }
 };
 
+// The first problem in full, and how many others there are.
+const firstAndMore = (name, problems, moreKey) =>
+  problems.length ? healthFail(name, problems[0], ...(problems.length > 1 ? [[moreKey, { n: problems.length - 1 }]] : [])) : pass(name);
+
 export function globalChecks() {
   const out = [];
   const prefs = [];
@@ -617,27 +685,23 @@ export function globalChecks() {
   for (const pref of Object.values(PREFS)) {
     const actual = PREF_TYPES[Services.prefs.getPrefType(pref.name)];
     if (!actual) {
-      prefs.push(`The setting ${pref.name} is not registered, so it is missing from about:config and the script uses its built-in default.`);
+      prefs.push(["prefMissing", { name: pref.name }]);
     } else if (actual !== pref.type) {
       wrongType.add(pref.name);
-      prefs.push(`The setting ${pref.name} holds ${KINDS[actual]} instead of ${KINDS[pref.type]}, probably from a line in user.js or prefs.js with the wrong kind of value, so the script ignores it and uses the default (${pref.default}). Reset it in about:config.`);
+      prefs.push(["prefType", { name: pref.name, actual, expected: pref.type, default: pref.default }]);
     }
   }
-  out.push(prefs.length
-    ? fail("prefs", prefs.length > 1 ? `${prefs[0]} ${prefs.length - 1} more setting(s) have the same kind of problem.` : prefs[0])
-    : pass("prefs"));
+  out.push(firstAndMore("prefs", prefs, "prefsMore"));
 
   const ranges = [];
   for (const pref of Object.values(PREFS)) {
     if (pref.type !== "int" || wrongType.has(pref.name)) continue;
     const value = userValue(pref, "int");
     if (value !== undefined && (value < pref.min || value > pref.max)) {
-      ranges.push(`The setting ${pref.name} is ${value}, outside the allowed ${pref.min} to ${pref.max}, so the script uses ${clamp(pref, value)} instead.`);
+      ranges.push(["rangeBad", { name: pref.name, value, min: pref.min, max: pref.max, used: clamp(pref, value) }]);
     }
   }
-  out.push(ranges.length
-    ? fail("settings-values", ranges.length > 1 ? `${ranges[0]} ${ranges.length - 1} more setting(s) are out of range too.` : ranges[0])
-    : pass("settings-values"));
+  out.push(firstAndMore("settings-values", ranges, "rangeMore"));
 
   const shortcuts = [PREFS.tabsShortcut, PREFS.urlbarShortcut];
   const bad = [];
@@ -645,17 +709,15 @@ export function globalChecks() {
     if (wrongType.has(pref.name)) continue;
     const raw = userValue(pref, "string");
     if (raw !== undefined && !parseShortcut(raw).ok) {
-      bad.push(`The shortcut setting ${pref.name} says "${sanitize(raw, 40)}", which is not a valid shortcut, so the default ${pref.default} is used.`);
+      bad.push(["shortcutBad", { name: pref.name, text: sanitize(raw, 40), default: pref.default }]);
     }
   }
   out.push(bad.length
-    ? fail("shortcuts", bad.length > 1 ? `${bad[0]} The other shortcut has the same problem.` : bad[0])
+    ? healthFail("shortcuts", bad[0], ...(bad.length > 1 ? [["shortcutMore"]] : []))
     : pass("shortcuts"));
 
   const [tabs, urlbar] = shortcuts.map((pref) => bindingFor(pref).text);
-  out.push(tabs === urlbar
-    ? fail("shortcuts-distinct", `Both bars use the shortcut ${tabs}, so only one of them reacts to it. Choose a different shortcut for one of them in the Peek-a-Foxy settings.`)
-    : pass("shortcuts-distinct"));
+  out.push(tabs === urlbar ? healthFail("shortcuts-distinct", ["shortcutsSame", { text: tabs }]) : pass("shortcuts-distinct"));
   return out;
 }
 
@@ -878,7 +940,7 @@ export const Diag = {
     if (win && !started.has(win)) state = "notstarted";
     else if (failed.length) state = "problem";
     else if (events.some((e) => e.level === "error")) state = "errors";
-    return { state, version: SCRIPT_VERSION, failed: failed.map(({ name, note }) => ({ name, note: sanitize(note, MAX_NOTE, machineRedactor()) })) };
+    return { state, version: SCRIPT_VERSION, failed: failed.map(({ name, note, parts }) => ({ name, parts, note: sanitize(note, MAX_NOTE, machineRedactor()) })) };
   },
 
   status: () => buildStatus(),
