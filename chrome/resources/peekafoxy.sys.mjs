@@ -258,7 +258,7 @@ export const STRINGS = {
       startUrlbar: "Ocultar a barra de navegação automaticamente em novas janelas",
       startNote: "As janelas que já estão abertas mantêm o próprio estado: use o atalho ou o botão da barra de ferramentas nelas.",
       timingGroup: "Tamanho e tempos",
-      stripPx: "Altura da faixa de hover (pixels)",
+      stripPx: "Largura da faixa de ativação (pixels)",
       showMs: "Animação de abertura (milissegundos)",
       hideDelayMs: "Atraso antes de uma barra se fechar (milissegundos)",
       flashMs: "Quanto tempo a barra de abas fica aberta depois de um desses eventos (milissegundos)",
