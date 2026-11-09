@@ -284,7 +284,7 @@ def test_a_link_to_a_folder_is_an_error_not_a_replaced_folder(tmp_path: Path):
     (folder / "keep.txt").write_text("keep")
     link = tmp_path / "userChrome.css"
     link.symlink_to(folder, target_is_directory=True)
-    with pytest.raises(OSError):
+    with pytest.raises(UserFileError):
         add_import(link)
     assert (folder / "keep.txt").read_text() == "keep" and link.is_symlink()
     assert leftovers(tmp_path) == []

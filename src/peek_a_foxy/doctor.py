@@ -32,7 +32,17 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from peek_a_foxy import __version__, assets, elevate, errors, loader, platform, ui, userfiles
+from peek_a_foxy import (
+    __version__,
+    assets,
+    elevate,
+    errors,
+    fileio,
+    loader,
+    platform,
+    ui,
+    userfiles,
+)
 from peek_a_foxy.errors import DiscoveryError, ErrorCode, PeekError
 from peek_a_foxy.profiles import Profile, read_profiles
 from peek_a_foxy.report import FAIL, OK, WARN, Check, Report, Section
@@ -216,8 +226,7 @@ def _short(text: str, limit: int = MAX_SHOWN) -> str:
 def _read_bytes(path: Path, limit: int = MAX_FILE) -> bytes | None:
     """The bytes of a file; ``None`` if it cannot be read or is far bigger than it should be."""
     try:
-        with open(path, "rb") as handle:
-            data = handle.read(limit + 1)
+        data = fileio.read_regular(path, limit)
     except (OSError, ValueError):
         return None
     return data if len(data) <= limit else None
@@ -226,12 +235,13 @@ def _read_bytes(path: Path, limit: int = MAX_FILE) -> bytes | None:
 def _read_text(path: Path) -> tuple[str | None, str]:
     """The text of a file, or ``None`` and why not (a missing file is not a problem here)."""
     try:
-        with open(path, "rb") as handle:
-            data = handle.read(MAX_TEXT + 1)
+        data = fileio.read_regular(path, MAX_TEXT)
     except (FileNotFoundError, NotADirectoryError):
         return None, ""
     except IsADirectoryError:
         return None, "it is a folder"
+    except fileio.NotARegularFileError as error:
+        return None, error.strerror or "it is not a regular file"
     except (OSError, ValueError) as error:
         return None, getattr(error, "strerror", None) or type(error).__name__
     if len(data) > MAX_TEXT:
@@ -731,7 +741,9 @@ OWN_PREFIX = "peekafoxy."
 def parse_prefs(text: str) -> dict[str, str]:
     """``user_pref("name", value);`` lines of ``user.js`` or ``prefs.js`` as name to raw value."""
     found: dict[str, str] = {}
-    for line in text.splitlines():
+    # Comments are skipped as Firefox skips them; lines end at "\n" only, as in userfiles, because
+    # splitlines() would also break at U+2028, \x0b and \x1c and read other lines than Firefox does.
+    for line in userfiles.mask_comments(text, line_comments=True).split("\n"):
         if len(line) > MAX_LINE:
             continue
         match = _PREF_LINE.match(line)

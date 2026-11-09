@@ -92,8 +92,11 @@ def test_a_broken_pipe_is_not_ours_to_explain(profile: Path, monkeypatch):
     assert result.exit_code == 1 and "PAF-" not in result.output
 
 
-def test_the_partial_progress_still_follows_the_error(profile: Path):
-    (profile / "chrome" / "userChrome.css").mkdir()  # fails the second step
+def test_the_partial_progress_still_follows_the_error(profile: Path, monkeypatch):
+    def refused(path, *args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr("peek_a_foxy.installer._write", refused)  # fails the second step
     result = install(profile)
     assert "error [PAF-402]" in result.output and "1 of 3 steps finished" in result.output
 

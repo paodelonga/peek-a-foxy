@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
 
-from peek_a_foxy import errors, loader, platform, userfiles
+from peek_a_foxy import errors, fileio, loader, platform, userfiles
 from peek_a_foxy.assets import FILES, assets_dir
 from peek_a_foxy.errors import UserFileError
 from peek_a_foxy.status import STATUS_FILE
@@ -120,18 +120,26 @@ def _resolve(path: Path) -> Path:
 
 
 def _read_raw(real: Path) -> bytes | None:
-    """The bytes of a regular file, or ``None`` when there is none (missing, a folder, a device)."""
-    if not real.is_file():
-        return None
+    """The bytes of a regular file, or ``None`` when there is no such file.
+
+    Anything else behind the name (a folder, a named pipe, a device) is refused: an edit replaces
+    the file by renaming a new one over it, which would silently swap that thing for a plain file.
+    """
     log.debug("reading %s", real)
-
-    def read() -> bytes:
-        with real.open("rb") as handle:
-            return handle.read(MAX_USER_FILE_BYTES + 1)
-
-    # Windows refuses the file for a moment while another program (a second install, a virus
-    # scanner) has it open or is renaming a new one over it.
-    raw = platform.retry_if_denied(read)
+    try:
+        # Windows refuses the file for a moment while another program (a second install, a virus
+        # scanner) has it open or is renaming a new one over it.
+        raw = platform.retry_if_denied(lambda: fileio.read_regular(real, MAX_USER_FILE_BYTES))
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except (fileio.NotARegularFileError, IsADirectoryError) as error:
+        raise UserFileError(
+            errors.FILE_IO,
+            f"{real} is not a regular file ({error.strerror}), so it is not edited",
+            hint="Peek-a-Foxy only edits ordinary files. Move that item aside, or point the name "
+            "at a regular file, then run the command again.",
+            detail=repr(error),
+        ) from error
     if len(raw) > MAX_USER_FILE_BYTES:
         raise UserFileError(
             errors.FILE_IO,
@@ -245,6 +253,13 @@ def _write(path: Path, real: Path, text: str, bom: bool, original: bytes | None)
             os.unlink(temporary)  # gone after a successful rename; otherwise remove the leftover
 
 
+def _named_after(error: OSError, path: Path) -> OSError:
+    """The same error, naming the file the person knows and not the temporary one beside it."""
+    if not str(error.filename).endswith(TEMP_SUFFIX):
+        return error
+    return type(error)(error.errno, error.strerror, str(path))
+
+
 def _edit(path: Path, transform: Callable[[str], str]) -> None:
     """Apply ``transform`` to a text file, creating it when missing and skipping no-op rewrites.
 
@@ -259,7 +274,11 @@ def _edit(path: Path, transform: Callable[[str], str]) -> None:
         after = transform(before)
         if after == before and (raw is not None or real.exists()):
             return
-        if _write(path, real, after, bom, raw):
+        try:
+            written = _write(path, real, after, bom, raw)
+        except OSError as error:
+            raise _named_after(error, path) from error
+        if written:
             return
         log.warning("%s changed while it was being edited; starting again", path)
     raise UserFileError(
