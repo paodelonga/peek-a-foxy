@@ -152,7 +152,7 @@ What the tests cover, and why:
   `PEEK_A_FOXY_FIREFOX` at its binary, or the first Firefox found is used.
 
 Firefox changes its own interface without notice, so the browser tests also run every week against
-the current release and the Beta (`.github/workflows/firefox-weekly.yml`, or start it by hand from the
+the current release, the Beta and the ESR (`.github/workflows/firefox-weekly.yml`, or start it by hand from the
 Actions tab). A red run there means the script or the CSS needs attention before users notice.
 
 The installer tests run against temporary profiles and a local stand-in for the fx-autoconfig repository,
