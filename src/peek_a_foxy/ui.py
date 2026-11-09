@@ -137,7 +137,8 @@ def note(message: str) -> None:
 
 
 def warn(message: str) -> None:
-    _print(console, Text.assemble(("warning: ", "yellow"), message), soft_wrap=True)
+    """A warning, on stderr: stdout is for the product (a plan, a report that a program reads)."""
+    _print(errors, Text.assemble(("warning: ", "yellow"), message), soft_wrap=True)
 
 
 def step_line(number: int, total: int, description: str) -> None:

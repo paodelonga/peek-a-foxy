@@ -280,7 +280,8 @@ def test_a_windows_home_never_survives_any_mix_of_separators(parts, separators, 
 
 @given(home=homes, before=noise, after=noise, tail=st.sampled_from(["", "/chrome", "/a b/c.txt"]))
 def test_a_random_home_folder_never_appears_in_redacted_text(home, before, after, tail):
-    shown = logs.Redactor(home=home, user=None)(f"{before}{home}{tail}{after}")
+    # Whole path components: what is glued to the home with letters is another folder's name.
+    shown = logs.Redactor(home=home, user=None)(f"{before} {home}{tail} {after}")
     assert home not in shown
 
 
@@ -299,7 +300,7 @@ def test_a_random_home_folder_never_reaches_the_log_file(home, text):
             redactor=logs.Redactor(home=home, user=None),
         )
         logger = logging.getLogger("peek_a_foxy.test")
-        logger.warning("opening %s%s", home, text)
+        logger.warning("opening %s %s", home, text)
         try:
             raise ValueError(f"cannot read {home}/x")
         except ValueError:
@@ -322,8 +323,9 @@ def test_a_run_writes_utc_lines_with_a_run_id_and_the_start_facts(tmp_path: Path
     lines = target.read_text(encoding="utf-8").splitlines()
     assert session.run_id == "abcd1234"
     assert re.fullmatch(
-        r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ INFO    abcd1234 run started: peek-a-foxy 9.8.7 "
-        r"\(installed with pip\), Python \d+\.\d+\.\d+, .+, args: \['install', '--yes'\]",
+        r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ INFO    abcd1234 run started: peek-a-foxy 9.8.7, "
+        r"(?:source checkout|installed with pip|unknown)[^,]*, Python \d+\.\d+\.\d+, .+, "
+        r"args: \['install', '--yes'\]",
         lines[0],
     ), lines[0]
     assert lines[1].endswith("abcd1234 héllo — ünïcode")
@@ -334,7 +336,9 @@ def test_a_frozen_program_says_so(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     logs.start(target=tmp_path / "f.log", verbose=False, argv=[], version="1")
     logs.stop()
-    assert "(standalone program)" in (tmp_path / "f.log").read_text(encoding="utf-8")
+    assert "standalone program (no Python needed), Python" in (tmp_path / "f.log").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_every_run_gets_its_own_id(tmp_path: Path):
@@ -538,8 +542,9 @@ def test_the_last_run_of_a_missing_or_foreign_file_is_empty(tmp_path: Path):
 
 def test_clearing_removes_only_the_log_and_its_rotated_copies(tmp_path: Path):
     path = tmp_path / "peek-a-foxy.log"
+    record = "2026-01-01T00:00:00Z INFO    abcd1234 run started: x\n"
     for name in ("peek-a-foxy.log", "peek-a-foxy.log.1", "peek-a-foxy.log.2", "notes.txt"):
-        (tmp_path / name).write_text("x")
+        (tmp_path / name).write_text(record if name != "notes.txt" else "x")
     assert logs.clear(path) == 3
     assert [p.name for p in tmp_path.iterdir()] == ["notes.txt"]
     assert logs.clear(path) == 0

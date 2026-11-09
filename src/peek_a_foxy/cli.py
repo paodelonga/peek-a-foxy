@@ -255,6 +255,11 @@ def _begin(
         version=__version__,
         warn=ui.warn,
     )
+    if target.source == "env-unusable":
+        ui.warn(
+            f"{logs.ENV_VAR} could not be used, because it starts with ~ that cannot be expanded "
+            "here; going on without a log file"
+        )
 
 
 def _version(value: bool) -> None:
@@ -399,7 +404,7 @@ def _apply(plan: Plan, title: str, dry_run: bool, yes: bool) -> list[str]:
     """Show the plan, ask for confirmation when interactive, then run it."""
     _show_plan(plan, title)
     if dry_run:
-        ui.show("[dim]Dry run: nothing was changed.[/]")
+        ui.show("[dim]Dry run: none of your files was changed.[/]")
         raise typer.Exit()
     if not yes:
         _confirm()
@@ -556,7 +561,15 @@ def _logs(
                 "Use --log-file or PEEK_A_FOXY_LOG to choose one."
             )
             return
-        ui.say("Logging is turned off here (PEEK_A_FOXY_LOG=off); this is where the log would be.")
+        if target.source == "env-unusable":
+            ui.say(
+                f"{logs.ENV_VAR} could not be used, because it starts with ~ that cannot be "
+                "expanded here; this is where the log would be otherwise."
+            )
+        else:
+            ui.say(
+                "Logging is turned off here (PEEK_A_FOXY_LOG=off); this is where the log would be."
+            )
     files = logs.log_files(path)
     ui.say(f"Log file: {path}")
 
@@ -570,7 +583,7 @@ def _logs(
         _clear(path, files, yes)
         return
     if not files:
-        ui.say("No log yet. It is created the first time you run install or uninstall.")
+        ui.say("No log yet. It is created the first time you run a command.")
         return
     ui.say(f"Size: {_size(files)} in {len(files)} file(s), at most 5 MB each.")
     lines = logs.last_run(path)
@@ -611,7 +624,7 @@ def _default_save_folder() -> Path:
 def _save_report(save: str, text: str, suffix: str, now: datetime) -> Path:
     if save == SAVE_DEFAULT:
         return report.save_new(text, _default_save_folder(), suffix, now)
-    path = Path(save).expanduser()
+    path = logs.expand_user(save)
     if path.is_dir():
         return report.save_new(text, path, suffix, now)
     return report.save(text, path)
@@ -692,6 +705,8 @@ def doctor_command(
     nothing."""
     if markdown and as_json:
         raise typer.BadParameter("Use either --markdown or --json, but not both.")
+    if save not in (None, SAVE_DEFAULT):
+        logs.expand_user(save)  # a path that cannot be used is refused before the report is made
     _begin(ctx, verbose, log_file, no_log)
     machine = doctor.Context.detect(log_target=logs.active_path())
     found = doctor.collect(machine, profile=profile, firefox_dir=firefox_dir)
