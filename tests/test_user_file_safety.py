@@ -592,6 +592,108 @@ def test_uninstall_does_not_touch_files_that_it_does_not_change(profile: Path):
     assert (profile / "user.js").read_text() == 'user_pref("my.own", 1);\n'
 
 
+# --- the status file the script writes ---------------------------------------------------------
+
+STATUS = "peekafoxy-status.json"
+
+
+def status_step(profile: Path):
+    step = next(s for s in plan_uninstall(profile).steps if STATUS in s.description)
+    assert ".tmp" in step.description  # it says that the leftover goes too
+    return step
+
+
+def test_uninstall_removes_the_status_file_and_its_temporary_leftover(profile: Path):
+    chrome = profile / "chrome"
+    (chrome / STATUS).write_text("{}")
+    (chrome / f"{STATUS}.tmp").write_text("{")
+    assert plan_uninstall(profile).execute() == []
+    assert not (chrome / STATUS).exists() and not (chrome / f"{STATUS}.tmp").exists()
+
+
+def test_uninstall_without_a_status_file_is_quiet(profile: Path):
+    assert plan_uninstall(profile).execute() == []
+    assert plan_uninstall(profile).execute() == []  # and again
+
+
+def test_uninstall_removes_only_the_leftover_when_the_file_itself_is_gone(profile: Path):
+    (profile / "chrome" / f"{STATUS}.tmp").write_text("{")
+    assert plan_uninstall(profile).execute() == []
+    assert not (profile / "chrome" / f"{STATUS}.tmp").exists()
+
+
+def test_a_folder_at_the_status_path_is_kept_with_a_warning_not_deleted(profile: Path):
+    folder = profile / "chrome" / STATUS
+    folder.mkdir()
+    (folder / "mine.txt").write_text("mine")
+    warnings = plan_uninstall(profile).execute()
+    assert len(warnings) == 1 and "is a folder" in warnings[0] and str(folder) in warnings[0]
+    assert (folder / "mine.txt").read_text() == "mine"
+
+
+@needs_symlinks
+def test_a_link_at_the_status_path_is_removed_but_never_its_target(profile: Path, tmp_path: Path):
+    precious = tmp_path / "precious.json"
+    precious.write_text("keep me")
+    (profile / "chrome" / STATUS).symlink_to(precious)
+    (profile / "chrome" / f"{STATUS}.tmp").symlink_to(tmp_path / "nowhere")  # dangling
+    assert plan_uninstall(profile).execute() == []
+    assert not os.path.lexists(profile / "chrome" / STATUS)
+    assert not os.path.lexists(profile / "chrome" / f"{STATUS}.tmp")
+    assert precious.read_text() == "keep me"
+
+
+@needs_symlinks
+def test_a_link_to_a_folder_at_the_status_path_leaves_the_folder_alone(
+    profile: Path, tmp_path: Path
+):
+    folder = tmp_path / "elsewhere"
+    folder.mkdir()
+    (folder / "keep.txt").write_text("keep")
+    (profile / "chrome" / STATUS).symlink_to(folder, target_is_directory=True)
+    plan_uninstall(profile).execute()
+    assert (folder / "keep.txt").read_text() == "keep"
+
+
+@needs_permissions
+def test_a_status_file_in_a_folder_that_cannot_be_changed_is_a_warning_not_a_failure(
+    profile: Path,
+):
+    chrome = profile / "chrome"
+    (chrome / STATUS).write_text("{}")
+    chrome.chmod(0o555)
+    try:
+        warnings = status_step(profile).run()
+    finally:
+        chrome.chmod(0o755)
+    assert warnings and "could not be removed" in warnings and "by hand" in warnings
+    assert (chrome / STATUS).exists()
+
+
+def test_a_status_file_that_cannot_be_removed_for_any_reason_never_fails_the_uninstall(
+    profile: Path, monkeypatch
+):
+    (profile / "chrome" / STATUS).write_text("{}")
+    real_unlink = Path.unlink
+
+    def locked(self: Path, missing_ok: bool = False) -> None:
+        if self.name.startswith(STATUS):
+            raise PermissionError(errno.EACCES, "The process cannot access the file")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", locked)
+    warnings = plan_uninstall(profile).execute()
+    assert len(warnings) == 1 and "could not be removed" in warnings[0]
+
+
+def test_the_command_prints_the_warning_about_a_status_file_it_kept(profile: Path):
+    from typer.testing import CliRunner
+
+    (profile / "chrome" / STATUS).mkdir()
+    result = CliRunner().invoke(app, ["uninstall", "--profile", str(profile), "--yes"])
+    assert result.exit_code == 0 and "is a folder" in result.output
+
+
 # --- a property: whatever the file holds, the copy is exact and nothing is left over ----------
 
 contents = st.text(

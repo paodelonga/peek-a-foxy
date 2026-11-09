@@ -454,7 +454,9 @@ def uninstall(
     _begin(ctx, verbose, log_file, no_log)
     profile_path = _choose_profile(profile, yes)
     plan = plan_uninstall(profile_path)
-    _apply(plan, f"Uninstall from {profile_path}", dry_run, yes)
+    warnings = _apply(plan, f"Uninstall from {profile_path}", dry_run, yes)
+    for warning in warnings:
+        ui.warn(warning)
     ui.console.print(
         "[green]Done.[/] Left in place: chrome/utils and the loader in the Firefox install "
         "directory, since other scripts may use them, and any copies of your files that end in "

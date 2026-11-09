@@ -23,6 +23,7 @@ from typing import TypeVar
 from peek_a_foxy import errors, loader, userfiles
 from peek_a_foxy.assets import FILES, assets_dir
 from peek_a_foxy.errors import UserFileError
+from peek_a_foxy.status import STATUS_FILE
 
 T = TypeVar("T")
 log = logging.getLogger(__name__)
@@ -266,6 +267,25 @@ def _remove(path: Path) -> None:
     path.unlink(missing_ok=True)
 
 
+def _remove_leftover(path: Path) -> str | None:
+    """Remove a file that only holds diagnostics; if that is not possible, a warning, not a failure.
+
+    A link is removed itself and never followed. A folder is not ours to delete.
+    """
+    log.debug("removing %s if present", path)
+    try:
+        if path.is_dir() and not path.is_symlink():
+            return f"{path} is a folder, not the status file that Firefox writes, so it was kept."
+        path.unlink(missing_ok=True)
+    except OSError as error:
+        reason = error.strerror or type(error).__name__
+        return (
+            f"{path} could not be removed ({reason}); it only holds diagnostic data, so it can be "
+            "deleted by hand."
+        )
+    return None
+
+
 def plan_install(profile: Path, firefox_dir: Path | None) -> Plan:
     """Changes needed to install into ``profile``; ``firefox_dir=None`` skips the loader."""
     chrome = profile / "chrome"
@@ -377,6 +397,19 @@ def plan_uninstall(profile: Path) -> Plan:
 
     plan.add(f"Remove {_names(FILES)} from {chrome}", remove_files)
 
+    def remove_status() -> str | None:
+        problems = [
+            problem
+            for name in (STATUS_FILE, f"{STATUS_FILE}.tmp")
+            if (problem := _remove_leftover(chrome / name))
+        ]
+        return " ".join(problems) or None
+
+    plan.add(
+        f"Remove {STATUS_FILE}, the status file that Firefox writes, and its .tmp leftover "
+        f"from {chrome}",
+        remove_status,
+    )
     css = chrome / "userChrome.css"
     plan.add(
         f"Remove the @import line from {css} ({_backup_note(css, installing=False)})",
