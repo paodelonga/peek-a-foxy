@@ -35,6 +35,19 @@ PINNED_SHA256 = {
 }
 TIMEOUT_SECONDS = 180
 
+# How long the command may be. ShellExecuteEx ends up in CreateProcessW, and Microsoft documents for
+# its lpCommandLine: "The maximum length of this string is 32,767 characters, including the Unicode
+# terminating null character"
+# (learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw).
+# SHELLEXECUTEINFOW.lpParameters has no limit of its own documented
+# (learn.microsoft.com/windows/win32/api/shellapi/ns-shellapi-shellexecuteinfow), so the limit is
+# applied to the whole line that CreateProcessW is assumed to receive:
+#     quoted executable + one space + parameters + the terminating null <= 32,767
+# The executable is counted as always quoted ("<path>", two characters more than a path without
+# spaces), which is the pessimistic case. The real command is 4 to 5 KB, far below the limit; the
+# guard only turns a command that cannot work into a clear error instead of an opaque Win32 failure.
+MAX_COMMAND_LINE_CHARS = 32767
+
 # Exit codes of the elevated process.
 OK, USAGE, NOT_FIREFOX, MISMATCH, LINKED, WRITE_FAILED = 0, 10, 11, 12, 13, 14
 MESSAGES = {
@@ -129,13 +142,26 @@ def helper_command(firefox_dir: Path, payloads: list[bytes]) -> list[str]:
     return [python, "-I", "-S", "-c", helper_code(), str(firefox_dir), *encoded]
 
 
+def parameters_of(command: list[str]) -> str:
+    """The parameter string that ShellExecuteEx gets: every argument after the program, quoted."""
+    return subprocess.list2cmdline(command[1:])
+
+
+def command_line_length(command: list[str]) -> int:
+    """Characters of the whole line CreateProcessW gets, with its terminating null (see above)."""
+    return len(f'"{command[0]}"') + 1 + len(parameters_of(command)) + 1
+
+
+def parameters_allowed(executable: str) -> int:
+    """The longest parameter string that keeps the whole line within the limit."""
+    return MAX_COMMAND_LINE_CHARS - len(f'"{executable}"') - 2
+
+
 def windows_elevator(command: list[str]) -> int:  # pragma: no cover - needs Windows and a prompt
     from peek_a_foxy import _winapi
 
     try:
-        return _winapi.run_elevated(
-            command[0], subprocess.list2cmdline(command[1:]), TIMEOUT_SECONDS
-        )
+        return _winapi.run_elevated(command[0], parameters_of(command), TIMEOUT_SECONDS)
     except _winapi.ElevationFailed as error:
         if error.args[0] == _winapi.ERROR_CANCELLED:
             raise ElevationError(
@@ -171,6 +197,14 @@ def copy_as_administrator(
     payloads = [(checkout / "program" / name).read_bytes() for name in PINNED_SHA256]
     run = elevator or windows_elevator
     command = helper_command(firefox_dir, payloads)
+    length = command_line_length(command)
+    if length > MAX_COMMAND_LINE_CHARS:
+        raise ElevationError(
+            errors.COMMAND_TOO_LONG,
+            f"the command for the administrator step is {length} characters long, more than the "
+            f"{MAX_COMMAND_LINE_CHARS} that Windows allows, so it was not started",
+            detail=f"{length} characters for the command line of {len(payloads)} file(s)",
+        )
     # The command carries the code and the file contents: log only what it is made of.
     log.info(
         "asking for administrator rights to copy %d file(s) into %s (%d bytes of payload)",
