@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from peek_a_foxy import cli, errors, report, status, userfiles
+from peek_a_foxy import cli, errors, logs, report, status, userfiles
 from peek_a_foxy.assets import FILES, MODULE_NAME, PREFS_SCRIPT_NAME, SCRIPT_NAME, assets_dir
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,6 +74,19 @@ def test_the_script_version_is_the_package_version():
     version = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE)
     assert version
     assert _module_constant("SCRIPT_VERSION") == version.group(1)
+
+
+def test_the_script_file_endings_that_redaction_keeps_are_the_same_in_both_languages():
+    """``_SCRIPT_SUFFIX`` (logs.py) and ``SCRIPT_SUFFIX`` (the module) must stay equal (PF-27)."""
+    js = re.search(r"const SCRIPT_SUFFIX = /\^\(\?:([^)]*)\)", source(f"resources/{MODULE_NAME}"))
+    py = re.search(r"\(\?i:([^)]*)\)", logs._SCRIPT_SUFFIX)
+    assert js and py
+    assert js.group(1).split("|") == py.group(1).split("|")
+    # And the rest of the pattern: not followed by more name characters, case-insensitive.
+    assert "(?![A-Za-z0-9_-])" in logs._SCRIPT_SUFFIX
+    assert re.search(
+        r"SCRIPT_SUFFIX = /[^\n]*\(\?!\[A-Za-z0-9_-\]\)/i;", source(f"resources/{MODULE_NAME}")
+    )
 
 
 def test_the_status_file_the_script_writes_is_the_one_the_doctor_reads():

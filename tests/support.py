@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -55,6 +56,44 @@ def flat(text: str) -> str:
     for border in "│╭╮╰╯─┃┏┓┗┛━┡┩┌┐└┘╞╡":
         text = plain(text).replace(border, " ")
     return " ".join(text.split())
+
+
+def git(repo: Path, *args: str) -> str:
+    """Run git in ``repo`` and return its output, whatever the developer's git is set up to do.
+
+    A global ``commit.gpgsign=true``, a ``core.hooksPath``, a different default branch or a
+    ``GIT_CONFIG_COUNT`` in the environment must not decide whether the suite can run.
+    """
+    environment = {
+        key: value for key, value in os.environ.items() if not key.startswith("GIT_CONFIG_")
+    }
+    environment.update(
+        GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0"
+    )
+    result = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "tag.gpgsign=false",
+            "-c",
+            "init.defaultBranch=main",
+            "-c",
+            "core.hooksPath=" + os.devnull,
+            *args,
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    return result.stdout.strip()
 
 
 needs_posix_shell = pytest.mark.skipif(WINDOWS, reason="the fake sudo is a shell script")

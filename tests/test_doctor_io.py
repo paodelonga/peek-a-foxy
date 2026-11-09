@@ -14,6 +14,7 @@ import sys
 import textwrap
 import threading
 import time
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -113,17 +114,17 @@ def test_a_reader_that_went_away_ends_the_run_quietly_in_process(
 def test_a_pipe_closed_before_the_report_is_written_is_not_a_traceback(home: Path):
     make_profile(home)
     env = {**os.environ, "HOME": str(home), "PYTHONPATH": SRC, "PEEK_A_FOXY_LOG": "off"}
-    process = subprocess.Popen(
+    with subprocess.Popen(
         [sys.executable, "-m", "peek_a_foxy", "doctor", "--markdown"],
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-    )
-    assert process.stdout is not None
-    process.stdout.close()  # nobody reads: the first write fails with EPIPE
-    stderr = process.stderr.read() if process.stderr else ""
-    process.wait(timeout=60)
+    ) as process:
+        assert process.stdout is not None
+        process.stdout.close()  # nobody reads: the first write fails with EPIPE
+        stderr = process.stderr.read() if process.stderr else ""
+        process.wait(timeout=60)
     assert "Traceback" not in stderr and "BrokenPipe" not in stderr, stderr
     assert process.returncode in (0, 1)
 
@@ -194,17 +195,20 @@ def test_two_runs_at_once_share_a_log_and_both_succeed(home: Path, tmp_path: Pat
     make_profile(home)
     log = tmp_path / "shared.log"
     env = {**os.environ, "HOME": str(home), "PYTHONPATH": SRC, "PEEK_A_FOXY_LOG": str(log)}
-    processes = [
-        subprocess.Popen(
-            [sys.executable, "-m", "peek_a_foxy", "doctor", "--json"],
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        for _ in range(4)
-    ]
-    outputs = [process.communicate(timeout=120) for process in processes]
+    with ExitStack() as stack:
+        processes = [
+            stack.enter_context(
+                subprocess.Popen(
+                    [sys.executable, "-m", "peek_a_foxy", "doctor", "--json"],
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            )
+            for _ in range(4)
+        ]
+        outputs = [process.communicate(timeout=120) for process in processes]
     for (stdout, stderr), process in zip(outputs, processes, strict=True):
         assert "Traceback" not in stderr, stderr
         assert json.loads(stdout)["schema"] == 1
@@ -218,19 +222,22 @@ def test_two_runs_at_once_never_save_to_the_same_name(home: Path, tmp_path: Path
     folder = tmp_path / "reports"
     folder.mkdir()
     env = {**os.environ, "HOME": str(home), "PYTHONPATH": SRC, "PEEK_A_FOXY_LOG": "off"}
-    processes = [
-        subprocess.Popen(
-            [sys.executable, "-m", "peek_a_foxy", "doctor", "--save", str(folder)],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        for _ in range(6)
-    ]
-    for process in processes:
-        _, stderr = process.communicate(timeout=120)
-        assert "Traceback" not in stderr and "PAF-403" not in stderr, stderr
+    with ExitStack() as stack:
+        processes = [
+            stack.enter_context(
+                subprocess.Popen(
+                    [sys.executable, "-m", "peek_a_foxy", "doctor", "--save", str(folder)],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            )
+            for _ in range(6)
+        ]
+        for process in processes:
+            _, stderr = process.communicate(timeout=120)
+            assert "Traceback" not in stderr and "PAF-403" not in stderr, stderr
     assert len(list(folder.glob("doctor-*.md"))) == 6
 
 

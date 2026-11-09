@@ -241,13 +241,30 @@ def test_text_built_to_stall_a_parser_does_not(home: Path, name: str, kind: str)
     assert all(c["code"] != BUG for s in data["sections"] for c in s["checks"])
 
 
-def test_unclosed_comments_are_cut_in_linear_time():
-    started = time.monotonic()
+def test_unclosed_comments_are_cut_correctly():
     assert doctor.strip_comments("a/* b /* c") == "a"
     assert doctor.strip_comments("a/**/b/* x */c") == "abc"
-    assert doctor.strip_comments("/* " * 2_000_000) == ""
-    assert doctor.strip_comments("/*/*" * 1_000_000) != "x"  # closes at the first */, linear
-    assert time.monotonic() - started < 2
+    assert doctor.strip_comments("/* " * 20_000) == ""
+    assert doctor.strip_comments("/*/*" * 10_000) != "x"  # closes at the first */
+
+
+@pytest.mark.parametrize("unit", ["/* ", "/*/*", "/**/ ", "/* */"])
+def test_cutting_comments_takes_time_in_proportion_to_the_size(unit):
+    """The algorithm is checked, not the clock: four times the text must not need sixteen times
+    the time. A fixed limit (``< 2 s``) failed under coverage and on a loaded machine (PF-09)."""
+
+    def best_of_three(size: int) -> float:
+        text = unit * size
+        times = []
+        for _ in range(3):
+            started = time.perf_counter()
+            doctor.strip_comments(text)
+            times.append(time.perf_counter() - started)
+        return min(times)
+
+    small, large = best_of_three(100_000), best_of_three(400_000)
+    # Linear would be 4 times; a quadratic algorithm would be 16 times. The slack is for noise.
+    assert large < 8 * small + 0.05, (unit, small, large)
 
 
 # --- symbolic links (adversarial) --------------------------------------------------------------

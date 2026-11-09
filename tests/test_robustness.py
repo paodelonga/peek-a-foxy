@@ -1,10 +1,11 @@
 """Failure modes and unusual-but-plausible setups; none may corrupt user files or crash."""
 
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
-from support import needs_permissions, needs_symlinks
+from support import fake_sudo, needs_permissions, needs_posix_shell, needs_symlinks
 from typer.testing import CliRunner
 
 from peek_a_foxy import cli, loader
@@ -175,22 +176,24 @@ def test_on_macos_the_verified_bytes_go_through_tee_and_chmod(monkeypatch, tmp_p
 
 
 @needs_permissions
-@pytest.mark.parametrize(
-    "failure",
-    [subprocess.CalledProcessError(1, "sudo"), FileNotFoundError("no sudo here")],
-    ids=["sudo-refused", "sudo-missing"],
-)
+@needs_posix_shell
+@pytest.mark.parametrize("sudo", ["refuses", "missing"])
 def test_a_failing_sudo_is_a_clean_error(
-    profile: Path, firefox_dir: Path, fxac_repo, monkeypatch, failure
+    profile: Path, firefox_dir: Path, fxac_repo, monkeypatch, tmp_path, sudo: str
 ):
-    real_run = subprocess.run
+    """The real ``_sudo`` runs against a ``sudo`` that exits 1, or against no ``sudo`` at all.
 
-    def sudo_fails(command, *args, **kwargs):
-        if command[0] == "sudo":
-            raise failure
-        return real_run(command, *args, **kwargs)  # git still has to work
-
-    monkeypatch.setattr(loader.subprocess, "run", sudo_fails)
+    The old test made ``subprocess.run`` itself raise, so ``check=True`` was never exercised: a
+    ``check=False`` mutant of ``_sudo`` survived and a refused sudo would have counted as success.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    if sudo == "refuses":
+        fake_sudo(bin_dir, tmp_path / "calls", exit_code=1)
+    git_path = shutil.which("git")
+    assert git_path is not None
+    (bin_dir / "git").symlink_to(git_path)  # git still has to work
+    monkeypatch.setenv("PATH", str(bin_dir))
     firefox_dir.chmod(0o555)  # not writable: the loader has to ask for sudo
     try:
         result = runner.invoke(
@@ -207,10 +210,11 @@ def test_a_failing_sudo_is_a_clean_error(
         )
     finally:
         firefox_dir.chmod(0o755)
-    assert result.exit_code == 1 and "sudo" in result.output and "Traceback" not in result.output
+    assert result.exit_code == 1 and "PAF-205" in result.output and "Traceback" not in result.output
     assert not (firefox_dir / "config.js").exists()
     assert (profile / "chrome" / "autohide.css").is_file()  # the earlier steps did run
     assert "Running the same command again is safe" in result.output
+    assert "Done" not in result.output  # a refused sudo is never reported as a success
 
 
 def test_sudo_runs_the_command_it_was_given(monkeypatch):
