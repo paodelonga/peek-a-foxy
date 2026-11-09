@@ -35,7 +35,7 @@ from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import cast
 from urllib.parse import quote
 
-from peek_a_foxy import platform
+from peek_a_foxy import platform, ui
 
 ENV_VAR = "PEEK_A_FOXY_LOG"  # "off", or the path of the log file
 LOG_NAME = "peek-a-foxy.log"
@@ -401,7 +401,7 @@ def start(
             if warn:
                 warn(f"could not write the log file ({error}); going on without it")
     if verbose:
-        console = logging.StreamHandler(sys.stderr)
+        console = ui.QuietStreamHandler(sys.stderr)
         console.setFormatter(_Formatter(CONSOLE_FORMAT, redact, run))
         logger.addHandler(console)
 
