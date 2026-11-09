@@ -1,6 +1,8 @@
 """``peek-a-foxy doctor``: look at this computer and say, in plain words, what is in the way.
 
-Read-only: nothing here writes, deletes or runs anything but ``git --version``. The result is a
+Read-only as far as your files go: nothing here changes or deletes them, and the only program that
+is run is ``git --version``. The one thing written is the local log (see :mod:`peek_a_foxy.logs`),
+unless it is turned off. The result is a
 :class:`~peek_a_foxy.report.Report` of checks in four groups:
 
 * Program: version, how it runs, Python, system, rights, terminal, git, the pinned loader, the log.
@@ -191,7 +193,7 @@ def _guarded(id: str, title: str, make: Callable[[], Check | list[Check]]) -> li
                 WARN,
                 errors.UNEXPECTED,
                 "This check could not run because of a bug in Peek-a-Foxy.",
-                detail=f"{type(error).__name__}: {error}",
+                detail=errors.clip(f"{type(error).__name__}: {error}"),
             )
         ]
     return result if isinstance(result, list) else [result]
@@ -602,8 +604,7 @@ def _loader_check(folder: Path) -> Check:
             FAIL,
             errors.LOADER_MISSING,
             f"These loader files are missing from the Firefox folder: {', '.join(missing)}. "
-            "Firefox cannot run the script without them."
-            "run the script.",
+            "Firefox cannot run the script without them.",
             detail=detail,
         )
     if unreadable:
@@ -1216,7 +1217,7 @@ def _read_profile_list(ctx: Context) -> list[Profile]:
         return read_profiles(root)
     except (OSError, ValueError) as error:
         raise DiscoveryError(
-            errors.PROFILES_UNREADABLE, f"could not read {ini}", detail=repr(error)
+            errors.PROFILES_UNREADABLE, f"could not read {ini}", detail=errors.clip(repr(error))
         ) from error
 
 

@@ -22,6 +22,7 @@ LINUX_INSTALL_DIRS = (
     "/usr/lib/firefox",
     "/usr/lib/firefox-developer-edition",
     "/usr/lib/firefox-esr",
+    "/usr/lib64/firefox",  # Fedora and openSUSE
     "/opt/firefox",
 )
 MACOS_APPS = (
@@ -41,7 +42,8 @@ DENIED_WAITS: tuple[float, ...] = (
 # Lowercase: Windows paths do not care about case. Each marker names the kind of build it betrays.
 SANDBOX_MARKERS = {
     "/snap/": "Snap",
-    "/flatpak/": "Flatpak",
+    "/flatpak/app/": "Flatpak",  # not any folder that happens to be called flatpak
+    "/flatpak/runtime/": "Flatpak",
     "/windowsapps/": "Microsoft Store (MSIX)",
 }
 

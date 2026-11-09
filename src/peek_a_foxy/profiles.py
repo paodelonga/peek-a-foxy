@@ -22,6 +22,14 @@ class Profile:
     is_default: bool = False
 
 
+def _unreadable(ini: Path, error: Exception) -> DiscoveryError:
+    """The coded error for a profiles.ini that cannot be understood; the quote is cut short."""
+    # configparser quotes the whole offending line, which a hostile file can make megabytes long.
+    return DiscoveryError(
+        errors.PROFILES_UNREADABLE, f"could not read {ini}", detail=errors.clip(repr(error))
+    )
+
+
 def read_profiles(root: Path) -> list[Profile]:
     """Profiles listed in ``root/profiles.ini``; each install's default one is flagged."""
     ini = root / "profiles.ini"
@@ -32,9 +40,7 @@ def read_profiles(root: Path) -> list[Profile]:
     try:
         parser.read(ini, encoding="utf-8-sig")  # tolerate a BOM
     except (configparser.Error, UnicodeDecodeError) as error:
-        raise DiscoveryError(
-            errors.PROFILES_UNREADABLE, f"could not read {ini}", detail=repr(error)
-        ) from error
+        raise _unreadable(ini, error) from error
 
     # Each [Install...] section names the default profile of one Firefox installation. With several
     # installations (release and developer edition, say) there are several, one per installation.
@@ -52,7 +58,11 @@ def read_profiles(root: Path) -> list[Profile]:
         raw_path = entry.get("path")
         if not raw_path:
             continue
-        path = root / raw_path if entry.getboolean("isrelative", fallback=True) else Path(raw_path)
+        try:
+            relative = entry.getboolean("isrelative", fallback=True)
+        except ValueError as error:  # ``IsRelative=`` or ``IsRelative=maybe``: a hand-edited file
+            raise _unreadable(ini, error) from error
+        path = root / raw_path if relative else Path(raw_path)
         if install_defaults:
             is_default = raw_path in install_defaults
         else:

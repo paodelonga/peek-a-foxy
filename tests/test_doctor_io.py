@@ -234,15 +234,16 @@ def test_two_runs_at_once_never_save_to_the_same_name(home: Path, tmp_path: Path
     assert len(list(folder.glob("doctor-*.md"))) == 6
 
 
-def test_a_profile_given_as_a_symlink_loop_is_a_usage_error_not_a_traceback(tmp_path: Path):
+def test_a_profile_given_as_a_symlink_loop_is_reported_not_a_traceback(tmp_path: Path):
     if WINDOWS:
         pytest.skip("symlinks need a privilege on Windows")
     loop = tmp_path / "loop"
     os.symlink("loop", loop)
     for option in ("--profile", "--firefox-dir"):
-        result = runner.invoke(app, ["doctor", option, str(loop)])
-        assert result.exit_code == errors.EXIT_USAGE, result.output
+        result = runner.invoke(app, ["doctor", "--json", option, str(loop)])
+        assert result.exit_code == errors.EXIT_FAILURE, result.output
         assert "Traceback" not in result.output
+        assert json.loads(result.output)["schema"] == 1
 
 
 # --- saving (adversarial) ----------------------------------------------------------------------

@@ -436,6 +436,16 @@ class UnexpectedError(PeekError):
     area = 9
 
 
+MAX_DETAIL = 400  # a hostile file can hold a line of megabytes, and an error may quote it
+
+
+def clip(text: str, limit: int = MAX_DETAIL) -> str:
+    """``text`` cut to ``limit`` characters, saying how much was left out."""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}... ({len(text) - limit} more characters)"
+
+
 def set_context(error: BaseException, text: str) -> None:
     """Attach what already happened ("2 of 5 steps finished...") to any error, shown after it."""
     error.paf_context = text  # type: ignore[attr-defined]

@@ -143,9 +143,11 @@ def test_a_given_profile_and_firefox_dir_are_used(home: Path, monkeypatch: pytes
     assert ids["profiles.ini"] == "warn" and result.exit_code == 0
 
 
-def test_a_profile_that_does_not_exist_is_refused_by_the_option_itself(healthy: Path, home: Path):
-    result = runner.invoke(app, ["doctor", "--profile", str(home / "nowhere")])
-    assert result.exit_code == errors.EXIT_USAGE
+def test_a_profile_that_does_not_exist_is_a_finding_of_the_report(healthy: Path, home: Path):
+    result = runner.invoke(app, ["doctor", "--json", "--profile", str(home / "nowhere")])
+    assert result.exit_code == errors.EXIT_FAILURE and "Traceback" not in result.output
+    checks = {c["id"]: c for s in json.loads(result.output)["sections"] for c in s["checks"]}
+    assert checks["profile.folder"]["code"] == errors.PROFILE_FOLDER_MISSING.code
 
 
 # --- nothing leaves unredacted ----------------------------------------------------------------

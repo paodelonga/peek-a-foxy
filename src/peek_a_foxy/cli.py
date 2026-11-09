@@ -154,26 +154,71 @@ def _complete_firefox_dir(incomplete: str) -> list[str]:
     return [str(path) for path in candidates if str(path).startswith(incomplete)]
 
 
+def _folder_argument(value: str, *, must_exist: bool) -> Path:
+    """A folder given on the command line, made absolute with its links resolved.
+
+    Click's own ``resolve_path`` asks ``Path.resolve()``, which raises a plain ``RuntimeError``
+    for a symbolic link that loops (before Python 3.13) and so ended in "this is a bug".
+    ``realpath`` never raises; a loop is just a path that does not exist as a folder.
+    """
+    path = Path(os.path.realpath(value))
+    if path.is_file():
+        raise typer.BadParameter(f"Directory '{value}' is a file.")
+    if must_exist and not path.is_dir():
+        raise typer.BadParameter(f"Directory '{value}' does not exist.")
+    return path
+
+
+def _existing_folder(value: str) -> Path:
+    return _folder_argument(value, must_exist=True)
+
+
+def _any_folder(value: str) -> Path:
+    return _folder_argument(value, must_exist=False)
+
+
+PROFILE_HELP = "Firefox profile directory. Default: the default profile from profiles.ini."
+FIREFOX_DIR_HELP = "Firefox install directory for the loader. Default: auto-detected."
 ProfileOption = Annotated[
     Path | None,
     typer.Option(
         "--profile",
-        help="Firefox profile directory. Default: the default profile from profiles.ini.",
+        help=PROFILE_HELP,
         autocompletion=_complete_profile,
-        exists=True,
-        file_okay=False,
-        resolve_path=True,
+        parser=_existing_folder,
+        metavar="DIRECTORY",
     ),
 ]
 FirefoxDirOption = Annotated[
     Path | None,
     typer.Option(
         "--firefox-dir",
-        help="Firefox install directory for the loader. Default: auto-detected.",
+        help=FIREFOX_DIR_HELP,
         autocompletion=_complete_firefox_dir,
-        exists=True,
-        file_okay=False,
-        resolve_path=True,
+        parser=_existing_folder,
+        metavar="DIRECTORY",
+    ),
+]
+# The diagnostic command takes any path: a profile or Firefox folder that does not exist is a
+# finding of the report, with its own code, not a usage error that stops it.
+DoctorProfileOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--profile",
+        help=PROFILE_HELP,
+        autocompletion=_complete_profile,
+        parser=_any_folder,
+        metavar="DIRECTORY",
+    ),
+]
+DoctorFirefoxDirOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--firefox-dir",
+        help=FIREFOX_DIR_HELP,
+        autocompletion=_complete_firefox_dir,
+        parser=_any_folder,
+        metavar="DIRECTORY",
     ),
 ]
 SkipLoaderOption = Annotated[
@@ -192,7 +237,8 @@ AllowUnverifiedOption = Annotated[
     ),
 ]
 DryRunOption = Annotated[
-    bool, typer.Option("--dry-run", help="Show what would be done without changing anything.")
+    bool,
+    typer.Option("--dry-run", help="Show what would be done without changing any of your files."),
 ]
 YesOption = Annotated[
     bool,
@@ -418,18 +464,28 @@ def _apply(plan: Plan, title: str, dry_run: bool, yes: bool) -> list[str]:
         # Whatever went wrong, the person should know what the earlier steps already changed.
         errors.set_context(error, _progress(plan))
         raise
+    except KeyboardInterrupt:
+        # Ctrl-C is not an error that gets reported with a message, so say it here.
+        ui.note(_progress(plan, interrupted=True))
+        raise
 
 
-def _progress(plan: Plan) -> str:
-    """What a failed plan already changed, and that running it again is safe."""
+def _progress(plan: Plan, *, interrupted: bool = False) -> str:
+    """What a failed or interrupted plan already changed, and that running it again is safe."""
     finished = len(plan.completed)
     if finished:
         done = "; ".join(step.description for step in plan.completed)
         progress = f"{finished} of {len(plan.steps)} steps finished: {done}."
     else:
         progress = "No step had finished."
+    step = (
+        "The step that was running was interrupted. If it was copying files,"
+        if interrupted
+        else "If the failed step was copying files,"
+    )
     return (
-        f"{progress} The failed step may have changed part of its files. "
+        f"{progress} {step} some of them may already be in place; "
+        "your own files (userChrome.css and user.js) are never left half written. "
         "Running the same command again is safe: every step can be repeated."
     )
 
@@ -655,10 +711,16 @@ class _OptionalPathCommand(TyperCommand):
     """
 
     def parse_args(self, ctx: Any, args: list[str]) -> list[str]:
+        options = {
+            name for param in self.get_params(ctx) for name in (*param.opts, *param.secondary_opts)
+        }
         rewritten: list[str] = []
         for position, arg in enumerate(args):
             following = args[position + 1] if position + 1 < len(args) else None
-            if arg == "--save" and (following is None or following.startswith("-")):
+            # Only another option ends --save: a path may start with "-" (``-report.json``).
+            if arg == "--save" and (
+                following is None or following == "--" or following.split("=")[0] in options
+            ):
                 arg = f"--save={SAVE_DEFAULT}"
             rewritten.append(arg)
         return super().parse_args(ctx, rewritten)
@@ -667,8 +729,8 @@ class _OptionalPathCommand(TyperCommand):
 @app.command("doctor", cls=_OptionalPathCommand)
 def doctor_command(
     ctx: typer.Context,
-    profile: ProfileOption = None,
-    firefox_dir: FirefoxDirOption = None,
+    profile: DoctorProfileOption = None,
+    firefox_dir: DoctorFirefoxDirOption = None,
     markdown: Annotated[
         bool,
         typer.Option(
@@ -701,8 +763,8 @@ def doctor_command(
     log_file: LogFileOption = None,
     no_log: NoLogOption = False,
 ) -> None:
-    """Checks this computer, tells you what is in the way of Peek-a-Foxy, and changes and sends
-    nothing."""
+    """Checks this computer and tells you what is in the way of Peek-a-Foxy. Nothing is changed or
+    sent anywhere; only the local log is written (use --no-log to avoid that)."""
     if markdown and as_json:
         raise typer.BadParameter("Use either --markdown or --json, but not both.")
     if save not in (None, SAVE_DEFAULT):
