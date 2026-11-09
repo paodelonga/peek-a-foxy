@@ -285,6 +285,11 @@ def test_fedora_and_suse_keep_firefox_in_lib64():
     assert "/usr/lib64/firefox" in platform.LINUX_INSTALL_DIRS
 
 
+def test_the_program_says_it_runs_on_macos_too():
+    text = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    assert "Operating System :: MacOS" in text
+
+
 def test_the_doctor_docstring_does_not_claim_it_writes_nothing():
     assert "Read-only: nothing here writes" not in (doctor.__doc__ or "")
 

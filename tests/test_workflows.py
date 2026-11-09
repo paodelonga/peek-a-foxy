@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -54,7 +55,7 @@ def test_every_test_job_uploads_a_doctor_report_without_failing_on_it():
     assert "doctor --json --save doctor.json" in doctor["run"]
     assert doctor["continue-on-error"] is True  # a runner may have no Firefox: exit code 1 is fine
     upload = steps[tests + 2]
-    assert upload["uses"] == "actions/upload-artifact@v4" and upload["if"] == "always()"
+    assert upload["uses"].startswith("actions/upload-artifact@") and upload["if"] == "always()"
     assert upload["with"]["name"] == "doctor-${{ matrix.os }}-py${{ matrix.python }}"
     assert upload["with"]["path"] == "doctor.json"
     assert upload["with"]["if-no-files-found"] == "ignore"
@@ -64,3 +65,92 @@ def test_the_ci_permissions_stay_read_only():
     workflow = load("ci.yml")
     assert workflow["permissions"] == {"contents": "read"}  # uploading an artifact needs no more
     assert all("permissions" not in job for job in workflow["jobs"].values())
+
+
+# --- the supply chain of the workflows (PF-19) and the lowest versions (PF-15) ------------------
+
+ROOT = Path(__file__).resolve().parents[1]
+USES = re.compile(r"^\s*-?\s*uses:\s*(?P<action>\S+?)@(?P<ref>\S+)(?P<comment>\s+#.*)?$")
+
+
+def uses_lines(name: str) -> list[tuple[str, str, str]]:
+    path = WORKFLOWS / name
+    if not path.is_file():
+        pytest.skip("not a source checkout")
+    found = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = USES.match(line)
+        if match:
+            found.append((match["action"], match["ref"], (match["comment"] or "").strip()))
+    return found
+
+
+@pytest.mark.parametrize("name", ["ci.yml", "firefox-weekly.yml"])
+def test_every_action_is_pinned_by_a_full_commit_with_its_version_in_a_comment(name: str):
+    """A tag can be moved to other code: the commit cannot (the third-party action most of all)."""
+    found = uses_lines(name)
+    assert found, "no action found: the pattern or the file changed"
+    for action, ref, comment in found:
+        assert re.fullmatch(r"[0-9a-f]{40}", ref), f"{action}@{ref} is not a commit"
+        assert re.fullmatch(r"#\s*v\d+(\.\d+){0,2}", comment), (action, comment)
+
+
+@pytest.mark.parametrize("name", ["ci.yml", "firefox-weekly.yml"])
+def test_no_checkout_leaves_the_token_in_the_git_configuration(name: str):
+    workflow = load(name)
+    checkouts = [
+        step
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if str(step.get("uses", "")).startswith("actions/checkout@")
+    ]
+    assert checkouts
+    for step in checkouts:  # no job pushes, so none needs the token after the checkout
+        assert step["with"]["persist-credentials"] is False
+
+
+def test_no_workflow_asks_for_more_than_read_access_to_the_contents():
+    for name in ("ci.yml", "firefox-weekly.yml"):
+        workflow = load(name)
+        assert workflow["permissions"] == {"contents": "read"}
+        assert all("permissions" not in job for job in workflow["jobs"].values())
+
+
+def test_dependabot_still_updates_the_actions_and_the_python_packages():
+    config = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    kinds = {entry["package-ecosystem"] for entry in config["updates"]}
+    assert {"github-actions", "pip"} <= kinds  # pinned commits are moved by it, with the comment
+
+
+def floor_of(requirement: str) -> str:
+    match = re.search(r">=\s*([0-9][0-9.]*)", requirement)
+    assert match, requirement
+    return match.group(1)
+
+
+def declared(package: str) -> str:
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(rf'"({package}[^"]*)"', text.split("[project.optional")[0])
+    assert match, package
+    return match.group(1)
+
+
+def test_the_lowest_job_installs_exactly_the_lower_bounds_of_pyproject():
+    steps = load("ci.yml")["jobs"]["lowest"]["steps"]
+    run = " ".join(step.get("run", "") for step in steps)
+    for package in ("typer", "rich"):
+        assert f'"{package}=={floor_of(declared(package))}"' in run or (
+            f'"{package}=={floor_of(declared(package))}.0"' in run
+        ), (package, run)
+    assert any(step.get("with", {}).get("python-version") == "3.10" for step in steps)
+
+
+@pytest.mark.parametrize("package", ["typer", "rich"])
+def test_the_runtime_dependencies_have_a_lower_and_an_upper_bound(package: str):
+    requirement = declared(package)
+    assert ">=" in requirement and "<" in requirement, requirement
+
+
+def test_the_workflow_tests_are_not_silently_skipped_for_want_of_pyyaml():
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"pyyaml' in text.lower()
