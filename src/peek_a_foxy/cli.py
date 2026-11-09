@@ -457,7 +457,8 @@ def uninstall(
     _apply(plan, f"Uninstall from {profile_path}", dry_run, yes)
     ui.console.print(
         "[green]Done.[/] Left in place: chrome/utils and the loader in the Firefox install "
-        "directory, since other scripts may use them."
+        "directory, since other scripts may use them, and any copies of your files that end in "
+        ".peek-a-foxy.bak, which are yours to keep or delete."
     )
 
 

@@ -6,8 +6,13 @@ confirmation and then execute it, and the tests can run it against throwaway pro
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import logging
+import os
+import secrets
 import shutil
+import stat
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, ExitStack
@@ -85,14 +90,55 @@ class Plan:
 
 
 UTF8_BOM = b"\xef\xbb\xbf"
+BACKUP_SUFFIX = ".peek-a-foxy.bak"  # a copy of a user's file as it was before our first edit
+TEMP_SUFFIX = ".peek-a-foxy.tmp"  # where an edit is written before it replaces the file
+MAX_USER_FILE_BYTES = 64 * 1024 * 1024  # a userChrome.css or user.js is kilobytes; this is absurd
+EDIT_ATTEMPTS = 3  # how often an edit starts over when the file changes while it is being edited
 
 
-def _read(path: Path) -> tuple[str, bool]:
-    """Return the text of ``path`` (empty if missing) and whether it starts with a UTF-8 BOM."""
-    if not path.is_file():
+def backup_path(path: Path) -> Path:
+    """Where the one-time copy of the user's ``path`` is kept: next to it."""
+    return path.with_name(path.name + BACKUP_SUFFIX)
+
+
+def _resolve(path: Path) -> Path:
+    """The file that really holds ``path``'s bytes: the end of a chain of symbolic links.
+
+    Replacing ``path`` itself would replace the link with a plain file (userChrome.css is often a
+    link into a dotfiles folder), so an edit replaces the file the chain ends at, and the link
+    stays. A dangling link resolves to the missing file it points at; a loop has no end.
+    """
+    real = Path(os.path.realpath(path))
+    if real.is_symlink():  # realpath() gives up at a loop and returns the link it stopped at
+        raise UserFileError(
+            errors.FILE_IO,
+            f"{path} is a chain of symbolic links that never ends",
+            detail=f"stopped at {real}",
+        )
+    return real
+
+
+def _read_raw(real: Path) -> bytes | None:
+    """The bytes of a regular file, or ``None`` when there is none (missing, a folder, a device)."""
+    if not real.is_file():
+        return None
+    log.debug("reading %s", real)
+    with real.open("rb") as handle:
+        raw = handle.read(MAX_USER_FILE_BYTES + 1)
+    if len(raw) > MAX_USER_FILE_BYTES:
+        raise UserFileError(
+            errors.FILE_IO,
+            f"{real} is larger than {MAX_USER_FILE_BYTES // (1024 * 1024)} MiB, so it is not "
+            "edited",
+            hint="A Firefox settings file this large is almost certainly not what it should be: "
+            "check it, move it aside if it is not needed, then run the command again.",
+        )
+    return raw
+
+
+def _decode(path: Path, raw: bytes | None) -> tuple[str, bool]:
+    if raw is None:
         return "", False
-    log.debug("reading %s", path)
-    raw = path.read_bytes()
     try:
         return raw.decode("utf-8-sig"), raw.startswith(UTF8_BOM)
     except UnicodeDecodeError as error:
@@ -101,19 +147,118 @@ def _read(path: Path) -> tuple[str, bool]:
         ) from error
 
 
-def _write(path: Path, text: str, bom: bool) -> None:
+def _read(path: Path) -> tuple[str, bool]:
+    """Return the text of ``path`` (empty if missing) and whether it starts with a UTF-8 BOM."""
+    return _decode(path, _read_raw(_resolve(path)))
+
+
+def _new_file(directory: Path, name: str, data: bytes, template: os.stat_result | None) -> Path:
+    """Write ``data`` to a new, uniquely named file in ``directory`` and return its path.
+
+    The name cannot clash with another run (two installs at once) and is never an existing file or
+    link (``O_EXCL``). With a ``template`` the file gets that file's permissions and, when we may,
+    its owner: an edit by root must not turn a person's file into root's.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    temporary = directory / f"{name}.{os.getpid()}.{secrets.token_hex(4)}{TEMP_SUFFIX}"
+    descriptor = os.open(temporary, flags, 0o666)  # the umask trims it for a new file
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())  # the data is on disk before the rename makes it the file
+        if template is not None:
+            os.chmod(temporary, stat.S_IMODE(template.st_mode))
+            if hasattr(os, "chown"):
+                with contextlib.suppress(OSError):  # only root may; anyone else keeps their own
+                    os.chown(temporary, template.st_uid, template.st_gid)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
+    return temporary
+
+
+def _keep_backup(path: Path, original: bytes, template: os.stat_result) -> None:
+    """Keep a copy of the file as the user had it, once: never replaced, never for a new file.
+
+    The copy appears whole or not at all (it is written aside and then linked into place), so a
+    crash cannot leave a half copy that later runs would trust, and two runs cannot overwrite each
+    other: the first one wins.
+    """
+    backup = backup_path(path)
+    if os.path.lexists(backup):
+        return
+    temporary = _new_file(backup.parent, backup.name, original, template)
+    try:
+        try:
+            os.link(temporary, backup)  # fails if it exists, even as a dangling link
+        except FileExistsError:
+            return
+        except OSError:  # a file system without hard links
+            if not os.path.lexists(backup):
+                os.replace(temporary, backup)
+                return
+        log.info("kept a copy of %s as %s", path, backup)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+
+
+def _write(path: Path, real: Path, text: str, bom: bool, original: bytes | None) -> bool:
+    """Replace ``real`` with ``text`` in one step; ``False`` if it changed since it was read.
+
+    ``original`` is what was read (``None`` for a file that did not exist). The new content is
+    written next to the file and renamed over it, so the file is always either all old or all new.
+    """
     log.info("writing %s", path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # write_bytes() writes through a symlink instead of replacing it (userChrome.css is often one).
-    path.write_bytes((UTF8_BOM if bom else b"") + text.encode("utf-8"))
+    if not path.is_symlink():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    template: os.stat_result | None = None
+    if original is not None:
+        try:
+            template = real.stat()
+        except FileNotFoundError:  # removed while we were working: that is a change as well
+            return False
+        if not os.access(real, os.W_OK):  # a read-only file is the owner's way of saying "not me"
+            raise PermissionError(errno.EACCES, "the file is read-only", str(real))
+    data = (UTF8_BOM if bom else b"") + text.encode("utf-8")
+    temporary = _new_file(real.parent, real.name, data, template)
+    try:
+        if _read_raw(real) != original:  # someone else wrote it while we were working
+            return False
+        if original is not None and template is not None:
+            _keep_backup(path, original, template)
+        os.replace(temporary, real)  # the same folder, so this is a rename and never a copy
+        return True
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)  # gone after a successful rename; otherwise remove the leftover
 
 
 def _edit(path: Path, transform: Callable[[str], str]) -> None:
-    """Apply ``transform`` to a text file, creating it when missing and skipping no-op rewrites."""
-    before, bom = _read(path)
-    after = transform(before)
-    if after != before or not path.exists():
-        _write(path, after, bom)
+    """Apply ``transform`` to a text file, creating it when missing and skipping no-op rewrites.
+
+    The file is replaced atomically (through its symbolic link, if it is one) after a copy of the
+    original was kept; if it changes while the edit is being prepared, the edit starts over from
+    the new content, so another program's change is never overwritten.
+    """
+    for _ in range(EDIT_ATTEMPTS):
+        real = _resolve(path)  # again each time: a link may have been moved while we worked
+        raw = _read_raw(real)
+        before, bom = _decode(path, raw)
+        after = transform(before)
+        if after == before and (raw is not None or real.exists()):
+            return
+        if _write(path, real, after, bom, raw):
+            return
+        log.warning("%s changed while it was being edited; starting again", path)
+    raise UserFileError(
+        errors.FILE_IO,
+        f"{path} keeps changing while it is being edited, so it was left as it is",
+        hint="Close the program that keeps saving that file (an editor, a sync tool) and run "
+        "the command again: it is safe to repeat.",
+    )
 
 
 def _remove(path: Path) -> None:
@@ -145,9 +290,10 @@ def plan_install(profile: Path, firefox_dir: Path | None) -> Plan:
             _remove(chrome / legacy)
 
     plan.add(f"Copy {_names(FILES)} into {chrome}", copy_files)
+    css = chrome / "userChrome.css"
     plan.add(
-        f"Add the @import line to {chrome / 'userChrome.css'}",
-        lambda: _edit(chrome / "userChrome.css", userfiles.with_css_import),
+        f"Add the @import line to {css} ({_backup_note(css, installing=True)})",
+        lambda: _edit(css, userfiles.with_css_import),
     )
 
     def set_prefs(text: str) -> str:
@@ -166,14 +312,24 @@ def plan_install(profile: Path, firefox_dir: Path | None) -> Plan:
             text = userfiles.remove_pref(text, old)
         return text
 
+    user_js = profile / "user.js"
     plan.add(
-        f"Enable userChrome.css loading and the settings page in {profile / 'user.js'}",
-        lambda: _edit(profile / "user.js", set_prefs),
+        f"Enable userChrome.css loading and the settings page in {user_js} "
+        f"({_backup_note(user_js, installing=True)})",
+        lambda: _edit(user_js, set_prefs),
     )
 
     if firefox_dir is not None:
         _add_loader_steps(plan, checkout, chrome, firefox_dir)
     return plan
+
+
+def _backup_note(path: Path, *, installing: bool) -> str:
+    """Said in the step: the user's file is copied once before it is edited, and the copy stays."""
+    name = backup_path(path).name
+    if installing:
+        return f"an existing file is first copied to {name}, once"
+    return f"if there is no {name} yet, the file is first copied to it; an existing copy is kept"
 
 
 def _names(files: tuple[str, ...]) -> str:
@@ -220,9 +376,11 @@ def plan_uninstall(profile: Path) -> Plan:
             _remove(chrome / name)
 
     plan.add(f"Remove {_names(FILES)} from {chrome}", remove_files)
+
+    css = chrome / "userChrome.css"
     plan.add(
-        f"Remove the @import line from {chrome / 'userChrome.css'}",
-        lambda: _edit_if_exists(chrome / "userChrome.css", userfiles.without_css_import),
+        f"Remove the @import line from {css} ({_backup_note(css, installing=False)})",
+        lambda: _edit_if_exists(css, userfiles.without_css_import),
     )
 
     def drop_prefs(text: str) -> str:
@@ -230,9 +388,10 @@ def plan_uninstall(profile: Path) -> Plan:
             text = userfiles.remove_pref(text, name)
         return text
 
+    user_js = profile / "user.js"
     plan.add(
-        f"Remove the autohide prefs from {profile / 'user.js'}",
-        lambda: _edit_if_exists(profile / "user.js", drop_prefs),
+        f"Remove the autohide prefs from {user_js} ({_backup_note(user_js, installing=False)})",
+        lambda: _edit_if_exists(user_js, drop_prefs),
     )
     return plan
 
