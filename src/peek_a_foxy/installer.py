@@ -313,8 +313,13 @@ def _remove_leftover(path: Path) -> str | None:
     return None
 
 
-def plan_install(profile: Path, firefox_dir: Path | None) -> Plan:
-    """Changes needed to install into ``profile``; ``firefox_dir=None`` skips the loader."""
+def plan_install(
+    profile: Path, firefox_dir: Path | None, *, allow_unverified: bool = False
+) -> Plan:
+    """Changes needed to install into ``profile``; ``firefox_dir=None`` skips the loader.
+
+    ``allow_unverified`` lets sudo copy a loader that is not the pinned one (``FXAC_REPO``).
+    """
     chrome = profile / "chrome"
     source = assets_dir()
     plan = Plan()
@@ -367,7 +372,7 @@ def plan_install(profile: Path, firefox_dir: Path | None) -> Plan:
     )
 
     if firefox_dir is not None:
-        _add_loader_steps(plan, checkout, chrome, firefox_dir)
+        _add_loader_steps(plan, checkout, chrome, firefox_dir, allow_unverified)
     return plan
 
 
@@ -390,7 +395,9 @@ def _ensure(path: Path) -> Path:
     return path
 
 
-def _add_loader_steps(plan: Plan, checkout: list[Path], chrome: Path, firefox_dir: Path) -> None:
+def _add_loader_steps(
+    plan: Plan, checkout: list[Path], chrome: Path, firefox_dir: Path, allow_unverified: bool
+) -> None:
     def install_utils() -> None:
         loader.install_utils(checkout[0], chrome)
 
@@ -404,7 +411,7 @@ def _add_loader_steps(plan: Plan, checkout: list[Path], chrome: Path, firefox_di
                 "not overwriting another autoconfig setup "
                 "(update it by hand if it is an older fx-autoconfig)"
             )
-        loader.install_loader(checkout[0], firefox_dir)
+        loader.install_loader(checkout[0], firefox_dir, allow_unverified=allow_unverified)
         return None
 
     plan.add(f"Copy fx-autoconfig's utils into {chrome / 'utils'}", install_utils)

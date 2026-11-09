@@ -105,6 +105,14 @@ def _looks_like_firefox(directory: Path) -> bool:
     return system() != "windows" or (directory / "firefox.exe").is_file()
 
 
+def is_firefox_dir(directory: Path) -> bool:
+    """Whether ``directory`` looks like a Firefox install folder (the rule discovery uses)."""
+    try:
+        return _looks_like_firefox(directory)
+    except (OSError, ValueError):
+        return False
+
+
 # --- Windows: registry and well-known folders ---------------------------------------------------
 
 

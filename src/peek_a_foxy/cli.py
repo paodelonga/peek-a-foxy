@@ -183,6 +183,14 @@ SkipLoaderOption = Annotated[
         help="Only install the profile files; leave the Firefox install directory alone.",
     ),
 ]
+AllowUnverifiedOption = Annotated[
+    bool,
+    typer.Option(
+        "--allow-unverified-loader",
+        help="With FXAC_REPO or FXAC_COMMIT set, let sudo copy that loader without checking it "
+        "against the pinned one. Only for a loader that you wrote or trust.",
+    ),
+]
 DryRunOption = Annotated[
     bool, typer.Option("--dry-run", help="Show what would be done without changing anything.")
 ]
@@ -313,6 +321,7 @@ def _prompt_profile(profiles: list[Profile], preferred: Profile | None) -> Path:
 def _resolve_firefox_dir(firefox_dir: Path | None, skip_loader: bool, yes: bool) -> Path | None:
     if skip_loader:
         return None
+    explicit = firefox_dir is not None
     if firefox_dir is None:
         firefox_dir = _choose_firefox_dir(yes)
     kind = platform.sandbox_kind(firefox_dir)
@@ -320,6 +329,13 @@ def _resolve_firefox_dir(firefox_dir: Path | None, skip_loader: bool, yes: bool)
         raise DiscoveryError(
             errors.FIREFOX_SANDBOXED,
             f"{kind} builds of Firefox are read-only and not supported ({firefox_dir})",
+        )
+    if explicit and not platform.is_firefox_dir(firefox_dir):
+        # A folder given by hand gets the test that the folders found by the search pass: the
+        # loader is copied into it, as root where it must be, so "any folder" is not good enough.
+        raise DiscoveryError(
+            errors.NOT_A_FIREFOX_FOLDER,
+            f"{firefox_dir} does not look like a Firefox install folder",
         )
     return firefox_dir
 
@@ -451,6 +467,7 @@ def install(
     profile: ProfileOption = None,
     firefox_dir: FirefoxDirOption = None,
     skip_loader: SkipLoaderOption = False,
+    allow_unverified_loader: AllowUnverifiedOption = False,
     dry_run: DryRunOption = False,
     yes: YesOption = False,
     verbose: VerboseOption = False,
@@ -461,7 +478,7 @@ def install(
     _begin(ctx, verbose, log_file, no_log)
     profile_path = _choose_profile(profile, yes)
     loader_dir = _resolve_firefox_dir(firefox_dir, skip_loader, yes)
-    plan = plan_install(profile_path, loader_dir)
+    plan = plan_install(profile_path, loader_dir, allow_unverified=allow_unverified_loader)
     warnings = _apply(plan, f"Install into {profile_path}", dry_run, yes)
 
     for warning in warnings:

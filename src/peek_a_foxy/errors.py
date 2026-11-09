@@ -105,6 +105,14 @@ INVALID_CHOICE = _register(
     "The number typed is not one of the numbers in the list.",
     "Run the command again and type one of the numbers shown.",
 )
+NOT_A_FIREFOX_FOLDER = _register(
+    "PAF-109",
+    "not-a-firefox-folder",
+    "The folder given with --firefox-dir does not look like the install folder of Firefox.",
+    "Give the folder that contains omni.ja, for example /usr/lib/firefox on Linux or "
+    "/Applications/Firefox.app/Contents/Resources on macOS. "
+    "If fx-autoconfig is already set up in your Firefox, use --skip-loader instead.",
+)
 
 # --- 2xx: the loader (git, network) -------------------------------------------------------------
 
@@ -147,6 +155,14 @@ ADMIN_CANNOT_WRITE = _register(
     "The Firefox folder cannot be written, even as administrator.",
     "Check that Firefox is not a Microsoft Store build and that no antivirus is blocking "
     "writes to the Firefox folder, then run the command again.",
+)
+LOADER_UNVERIFIED = _register(
+    "PAF-207",
+    "loader-unverified",
+    "The loader to copy as administrator is not the pinned one, so it was not copied.",
+    "Remove FXAC_REPO and FXAC_COMMIT from the environment and run the command again. "
+    "Only if you wrote that loader yourself or trust its source, add "
+    "--allow-unverified-loader to copy it without checking it.",
 )
 
 # --- 3xx: elevation and permissions -------------------------------------------------------------
@@ -214,6 +230,13 @@ FILE_EXISTS = _register(
     "file-exists",
     "A file with that name already exists, so nothing was saved.",
     "Choose another name with --save PATH, or move the old file away first.",
+)
+UTILS_IS_A_LINK = _register(
+    "PAF-404",
+    "utils-is-a-link",
+    "The chrome/utils folder in your profile is a link, so nothing was copied into it.",
+    "Replace the link with a real folder, or remove it, then run `peek-a-foxy install` again. "
+    "Peek-a-Foxy never writes through a link, because the files would end up somewhere else.",
 )
 
 # --- 5xx: platform and environment --------------------------------------------------------------

@@ -45,6 +45,7 @@ def firefox_dir(tmp_path: Path) -> Path:
     path = tmp_path / "firefox"
     path.mkdir()
     (path / "omni.ja").touch()
+    (path / "firefox.exe").touch()  # what Windows needs to take the folder for Firefox's
     return path
 
 

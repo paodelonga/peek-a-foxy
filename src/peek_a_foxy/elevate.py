@@ -44,8 +44,9 @@ TIMEOUT_SECONDS = 180
 # applied to the whole line that CreateProcessW is assumed to receive:
 #     quoted executable + one space + parameters + the terminating null <= 32,767
 # The executable is counted as always quoted ("<path>", two characters more than a path without
-# spaces), which is the pessimistic case. The real command is 4 to 5 KB, far below the limit; the
-# guard only turns a command that cannot work into a clear error instead of an opaque Win32 failure.
+# spaces), which is the pessimistic case. The real command is about 3.4 thousand characters (3,443
+# measured with the real payloads), a tenth of the limit; the guard only turns a command that cannot
+# work into a clear error instead of an opaque Win32 failure.
 MAX_COMMAND_LINE_CHARS = 32767
 
 # Exit codes of the elevated process.

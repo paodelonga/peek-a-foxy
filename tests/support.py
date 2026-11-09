@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -54,3 +55,26 @@ def flat(text: str) -> str:
     for border in "│╭╮╰╯─┃┏┓┗┛━┡┩┌┐└┘╞╡":
         text = plain(text).replace(border, " ")
     return " ".join(text.split())
+
+
+needs_posix_shell = pytest.mark.skipif(WINDOWS, reason="the fake sudo is a shell script")
+
+
+def fake_sudo(folder: Path, record: Path, *, exit_code: int = 0) -> Path:
+    """Put an executable ``sudo`` in ``folder`` that records what it was asked and ends with a code.
+
+    ``record`` gets one file per call: ``<n>.args`` (one argument per line) and ``<n>.stdin``.
+    Returns ``folder``, to be put first on ``PATH``. The real ``_sudo`` then runs against it, so
+    what it passes to ``subprocess.run`` (``check=True``, the input) is tested, not a stand-in.
+    """
+    record.mkdir(parents=True, exist_ok=True)
+    script = folder / "sudo"
+    script.write_text(
+        "#!/bin/sh\n"
+        f'n=$(ls "{record}" | grep -c args)\n'
+        f'printf "%s\\n" "$@" > "{record}/$n.args"\n'
+        f'cat > "{record}/$n.stdin"\n'
+        f"exit {exit_code}\n"
+    )
+    script.chmod(0o755)
+    return folder

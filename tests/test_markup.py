@@ -127,6 +127,8 @@ def test_warnings_show_odd_paths_literally(
     profile = odd_profile(tmp_path, "p")
     firefox = tmp_path / name
     firefox.mkdir(parents=True)
+    (firefox / "omni.ja").touch()
+    (firefox / "firefox.exe").touch()
     (firefox / "config.js").write_text("// somebody else's loader\n")
     result = runner.invoke(
         app, ["install", "--profile", str(profile), "--firefox-dir", str(firefox), "--yes"]
@@ -141,6 +143,8 @@ def test_git_output_with_brackets_is_shown_literally(
     profile = odd_profile(tmp_path, "p")
     firefox = tmp_path / "ff"
     firefox.mkdir(parents=True)
+    (firefox / "omni.ja").touch()
+    (firefox / "firefox.exe").touch()
     monkeypatch.setenv("FXAC_REPO", "no-such-[/bold]-repo")  # git repeats it in its error
     result = runner.invoke(
         app, ["install", "--profile", str(profile), "--firefox-dir", str(firefox), "--yes"]

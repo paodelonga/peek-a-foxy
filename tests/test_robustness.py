@@ -134,20 +134,43 @@ def test_a_read_only_profile_is_a_clean_error(profile: Path):
 
 
 def test_a_read_only_firefox_dir_falls_back_to_sudo(monkeypatch, tmp_path):
-    calls: list[tuple[str, ...]] = []
-    monkeypatch.setattr(loader, "_sudo", lambda *command: calls.append(command))
+    calls: list[tuple[tuple[str, ...], bytes | None]] = []
+    monkeypatch.setattr(loader, "_sudo", lambda *command, data=None: calls.append((command, data)))
 
     def denied(*args, **kwargs):
         raise PermissionError("read-only")
 
-    monkeypatch.setattr(loader.shutil, "copyfile", denied)
+    monkeypatch.setattr(loader, "_copy_direct", denied)
+    monkeypatch.setenv("FXAC_REPO", "x")  # not the pinned loader, so it has to be allowed
     source = tmp_path / "config.js"
     source.write_text("x")
     destination = tmp_path / "usr" / "lib" / "firefox" / "defaults" / "config.js"
-    loader._copy(source, destination)
+    loader._copy(source, destination, "config.js", allow_unverified=True)
     assert calls == [
-        ("mkdir", "-p", str(destination.parent)),
-        ("install", "-m", "644", str(source), str(destination)),
+        (("mkdir", "-p", str(destination.parent)), None),
+        (("install", "-m", "644", "/dev/stdin", str(destination)), b"x"),
+    ]
+
+
+def test_on_macos_the_verified_bytes_go_through_tee_and_chmod(monkeypatch, tmp_path):
+    """BSD ``install`` may refuse /dev/stdin, so macOS uses ``tee`` then ``chmod``."""
+    calls: list[tuple[tuple[str, ...], bytes | None]] = []
+    monkeypatch.setattr(loader, "_sudo", lambda *command, data=None: calls.append((command, data)))
+    monkeypatch.setattr(loader.platform, "system", lambda: "macos")
+
+    def denied(*args, **kwargs):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(loader, "_copy_direct", denied)
+    monkeypatch.setenv("FXAC_REPO", "x")
+    source = tmp_path / "config.js"
+    source.write_text("x")
+    destination = tmp_path / "Resources" / "config.js"
+    loader._copy(source, destination, "config.js", allow_unverified=True)
+    assert calls == [
+        (("mkdir", "-p", str(destination.parent)), None),
+        (("tee", str(destination)), b"x"),
+        (("chmod", "644", str(destination)), None),
     ]
 
 
@@ -171,7 +194,16 @@ def test_a_failing_sudo_is_a_clean_error(
     firefox_dir.chmod(0o555)  # not writable: the loader has to ask for sudo
     try:
         result = runner.invoke(
-            app, ["install", "--profile", str(profile), "--firefox-dir", str(firefox_dir), "--yes"]
+            app,
+            [
+                "install",
+                "--profile",
+                str(profile),
+                "--firefox-dir",
+                str(firefox_dir),
+                "--allow-unverified-loader",
+                "--yes",
+            ],
         )
     finally:
         firefox_dir.chmod(0o755)
@@ -183,9 +215,11 @@ def test_a_failing_sudo_is_a_clean_error(
 
 def test_sudo_runs_the_command_it_was_given(monkeypatch):
     calls: list[list[str]] = []
-    monkeypatch.setattr(loader.subprocess, "run", lambda command, **kw: calls.append(command))
+    monkeypatch.setattr(
+        loader.subprocess, "run", lambda command, **kw: calls.append([*command, str(kw)])
+    )
     loader._sudo("install", "-m", "644", "a", "b")
-    assert calls == [["sudo", "install", "-m", "644", "a", "b"]]
+    assert calls == [["sudo", "install", "-m", "644", "a", "b", "{'check': True, 'input': None}"]]
 
 
 def test_a_loader_identical_to_ours_is_not_a_conflict(profile, firefox_dir, fxac_repo):
