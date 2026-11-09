@@ -1,8 +1,8 @@
 name: Firefox weekly
 
 # The browser tests drive a real Firefox, and Firefox changes the chrome (its own UI) without notice.
-# Running them every week against the current release and the Beta tells us about a breaking change
-# before users hit it; a red run here means the script or the CSS needs attention.
+# Running them every week against the current release, the Beta and the ESR tells us about a
+# breaking change before users hit it; a red run here means the script or the CSS needs attention.
 on:
   schedule:
     - cron: "17 5 * * 1" # Mondays, 05:17 UTC
@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        firefox: [latest, latest-beta]
+        firefox: [latest, latest-beta, latest-esr]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
