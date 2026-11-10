@@ -10,10 +10,11 @@ from pathlib import Path
 from support import git
 
 
-def test_the_home_folder_of_a_test_is_an_empty_throwaway_one():
+def test_the_home_folder_of_a_test_is_an_empty_throwaway_one(tmp_path_factory):
     home = Path.home()
     assert home.is_dir() and not any(home.iterdir())
-    assert "pytest" in str(home)  # under the base directory pytest makes, never the real one
+    # Under the base directory of this run, whatever its name (--basetemp): never the real home.
+    assert home.parent == tmp_path_factory.getbasetemp()
     assert os.environ["APPDATA"] == os.environ["LOCALAPPDATA"] == str(home)
     for name in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"):
         assert name not in os.environ
