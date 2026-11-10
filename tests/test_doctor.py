@@ -1023,3 +1023,13 @@ def test_doctor_changes_nothing_on_disk(home: Path):
     after = {p: (p.stat().st_mtime_ns, p.read_bytes()) for p in home.rglob("*") if p.is_file()}
     assert after == before
     assert {p for p in home.rglob("*") if p.is_dir()} | {home} == dirs
+
+
+def test_a_long_health_note_is_cut_in_the_health_line(home: Path):
+    path = make_profile(home)
+    note = "n" * 500
+    health = {"nav-bar": f"fail: {note}"}
+    put_status(path, json.dumps({"schema": 1, "updated": at(-1000), "health": health}))
+    message = check_of(profile_report(home, path), "status.health").message
+    assert message == f"1 health check failed: nav-bar: {'n' * 97}...."
+    assert note not in message

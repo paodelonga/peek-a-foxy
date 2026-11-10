@@ -128,3 +128,19 @@ def test_old_names_still_point_at_the_new_families():
 
     assert profiles.NoProfilesError is DiscoveryError
     assert platform.UnsupportedPlatformError is PlatformError
+
+
+@pytest.mark.parametrize("size", [0, 1, errors.MAX_DETAIL - 1, errors.MAX_DETAIL])
+def test_a_text_that_fits_the_limit_is_not_clipped_and_gets_no_count(size: int):
+    text = "x" * size
+    assert errors.clip(text) == text
+
+
+def test_the_limit_is_inclusive_for_any_limit():
+    assert errors.clip("y" * 7, 7) == "y" * 7
+
+
+def test_a_text_one_character_over_the_limit_is_cut_and_the_rest_is_counted():
+    assert errors.clip("x" * (errors.MAX_DETAIL + 1)) == "x" * errors.MAX_DETAIL + (
+        "... (1 more characters)"
+    )

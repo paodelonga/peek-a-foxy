@@ -157,3 +157,18 @@ def test_a_denial_that_lasts_is_still_a_status_error(
 
 def test_the_file_name_is_the_documented_one():
     assert status.STATUS_FILE == "peekafoxy-status.json"
+
+
+@pytest.mark.parametrize(("extra", "bigger"), [(0, False), (1, True)])
+def test_a_status_file_of_exactly_the_size_limit_is_read_and_one_byte_more_is_not(
+    tmp_path: Path, extra: int, bigger: bool
+):
+    body = FIXTURE.read_text().rstrip()
+    padding = " " * (status.MAX_BYTES + extra - len(body.encode("utf-8")))
+    (tmp_path / status.STATUS_FILE).write_text(body + padding)
+    assert (tmp_path / status.STATUS_FILE).stat().st_size == status.MAX_BYTES + extra
+    if bigger:
+        with pytest.raises(StatusError, match="much bigger"):
+            read_status(tmp_path)
+    else:
+        assert read_status(tmp_path).windows == 2

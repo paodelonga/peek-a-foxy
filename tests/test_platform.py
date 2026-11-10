@@ -412,6 +412,17 @@ def test_is_windows_follows_the_platform(monkeypatch):
     assert not platform.is_windows()
 
 
+@needs_symlinks
+def test_two_spellings_of_one_install_through_a_link_are_one_candidate(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "platform", "linux")
+    real = _install(tmp_path, "lib", "firefox")
+    link = tmp_path / "firefox-link"
+    link.symlink_to(real, target_is_directory=True)
+    monkeypatch.setattr(platform.shutil, "which", lambda name: None)
+    monkeypatch.setattr(platform, "LINUX_INSTALL_DIRS", (str(real), str(link)))
+    assert platform.firefox_dir_candidates() == [real]  # the first spelling is the one kept
+
+
 # --- files that Windows holds for a moment (adversarial) ----------------------------------------
 
 
