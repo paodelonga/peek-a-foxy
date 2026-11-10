@@ -409,8 +409,9 @@ ODD_NAMES = [
     "pipe|and`tick`and<angle>",
     "[bold]markup[/bold]",
 ]
-# Windows refuses these in any file or folder name, so no path on it can hold them.
-WINDOWS_FORBIDDEN = set('<>:"/\\|?*') | {chr(code) for code in range(32)}
+# Windows refuses these in any file or folder name, so no path on it can hold them. ("/" and "\"
+# are left out: they only make the name a folder inside another, which Windows allows.)
+WINDOWS_FORBIDDEN = set('<>:"|?*') | {chr(code) for code in range(32)}
 ODD_PARAMS = [
     pytest.param(
         name,
