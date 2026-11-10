@@ -139,8 +139,11 @@ def test_a_file_that_is_missing_is_an_error_not_a_hash(host, tmp_path):
 
 
 def test_a_path_with_wildcards_is_taken_literally(host, tmp_path):
-    path = tmp_path / "[a]*?.sha256"
-    path.write_text(f"{DIGEST}\n", encoding="utf-8")
+    # "[a]" is a PowerShell wildcard that only matches "a", so read as a pattern this name finds
+    # nothing. Windows refuses "*" and "?" in a file name; elsewhere they are tried as well.
+    name = "[a]x.sha256" if sys.platform == "win32" else "[a]*?.sha256"
+    path = tmp_path / name
+    path.write_bytes(f"{DIGEST}\n".encode())
     done = run_ps(
         host, "[Console]::Out.Write((Read-PublishedHash $env:PAF_FILE))", PAF_FILE=str(path)
     )
