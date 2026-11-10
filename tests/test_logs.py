@@ -371,6 +371,48 @@ def test_the_log_rotates_at_the_size_limit_keeping_three_files(tmp_path: Path, m
     assert logs.log_files(target) == [target, tmp_path / "r.log.1", tmp_path / "r.log.2"]
 
 
+def test_every_file_of_the_log_is_opened_only_to_add_at_its_end(tmp_path: Path, monkeypatch):
+    """Adversarial: the first file and each one a rotation starts go through the append opener.
+
+    On Windows that opener asks the system for an append-only handle, so two runs sharing the log
+    cannot overwrite each other's lines; a file opened any other way would bring the race back.
+    """
+    opened: list[tuple[str, int]] = []
+    real = logs._append_opener
+
+    def recording(path: str, flags: int) -> int:
+        opened.append((path, flags))
+        return real(path, flags)
+
+    monkeypatch.setattr(logs, "_append_opener", recording)
+    monkeypatch.setattr(logs, "MAX_BYTES", 2000)
+    target = tmp_path / "a.log"
+    logs.start(target=target, verbose=False, argv=[], version="1")
+    logger = logging.getLogger("peek_a_foxy.test")
+    for number in range(100):
+        logger.info("line %d %s", number, "x" * 60)
+    logs.stop()
+    assert len(opened) >= 3  # the first file and at least two after a rotation
+    assert all(path == str(target) and flags & os.O_APPEND for path, flags in opened)
+    assert "line 99 " in target.read_text(encoding="utf-8")
+
+
+def test_a_log_held_open_by_another_program_only_warns(tmp_path: Path, monkeypatch):
+    """Adversarial: Windows refuses to open a file another program locked (a sharing violation)."""
+
+    def locked(path: str, flags: int) -> int:
+        raise PermissionError(13, "The process cannot access the file", path)
+
+    monkeypatch.setattr(logs, "_append_opener", locked)
+    warnings: list[str] = []
+    session = logs.start(
+        target=tmp_path / "x.log", verbose=False, argv=[], version="1", warn=warnings.append
+    )
+    logging.getLogger("peek_a_foxy.test").info("still works")  # must not raise
+    assert session.path is None and logs.active_path() is None
+    assert len(warnings) == 1 and "going on without it" in warnings[0]
+
+
 def test_the_real_limits_are_the_agreed_ones():
     assert logs.MAX_BYTES == 5 * 1024 * 1024 and logs.BACKUP_COUNT + 1 == 3
 

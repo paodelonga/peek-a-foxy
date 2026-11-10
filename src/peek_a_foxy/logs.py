@@ -30,7 +30,9 @@ import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from io import TextIOWrapper
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
+from typing import cast
 from urllib.parse import quote
 
 from peek_a_foxy import platform
@@ -283,6 +285,15 @@ CONSOLE_FORMAT = "%(levelname)-7s %(message)s"
 # --- handlers and the run -----------------------------------------------------------------------
 
 
+def _append_opener(path: str, flags: int) -> int:
+    """Open the log to add lines at its end, whole, even while another run adds its own."""
+    if sys.platform == "win32":  # pragma: no cover - Windows only
+        from peek_a_foxy._winapi import open_for_appending
+
+        return open_for_appending(path)
+    return os.open(path, flags, 0o666)  # O_APPEND already writes at the end in one step here
+
+
 class _SafeFileHandler(logging.handlers.RotatingFileHandler):
     """A rotating file that gives up quietly (after one warning) when it cannot be written."""
 
@@ -292,6 +303,17 @@ class _SafeFileHandler(logging.handlers.RotatingFileHandler):
         )  # the file is opened now: an unwritable place fails here, not at the first record
         self._on_failure = on_failure
         self.failed = False
+
+    def _open(self) -> TextIOWrapper:
+        # Also for the file that a rotation starts. (Two runs at once share the file.)
+        opened = open(  # noqa: SIM115 - the handler owns the stream and closes it
+            self.baseFilename,
+            self.mode,
+            encoding=self.encoding,
+            errors=self.errors,
+            opener=_append_opener,
+        )
+        return cast(TextIOWrapper, opened)
 
     def emit(self, record: logging.LogRecord) -> None:
         if not self.failed:
