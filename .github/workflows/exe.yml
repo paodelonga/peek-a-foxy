@@ -95,6 +95,8 @@ jobs:
           if (-not ($folders | Where-Object { $_ -like "*peek-a-foxy-smoke-firefox" })) {
             throw "the Firefox registered in the registry was not found; doctor listed: $($folders -join ', ')"
           }
+          # The runner ends the step with the last exit code it saw, doctor's 1, which is normal here.
+          exit 0
       - name: install.ps1 parses
         shell: pwsh
         run: |
