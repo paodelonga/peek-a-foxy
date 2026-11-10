@@ -516,6 +516,29 @@ def test_a_file_beyond_the_limit_is_refused_without_reading_it_all(tmp_path: Pat
     assert css.read_bytes() == b"x" * 5000 and leftovers(tmp_path) == []
 
 
+@pytest.mark.parametrize(("size", "refused"), [(1023, False), (1024, False), (1025, True)])
+def test_the_size_limit_refuses_one_byte_over_and_accepts_exactly_the_limit(
+    tmp_path: Path, monkeypatch, size: int, refused: bool
+):
+    """A file of exactly the limit is still a file that may be edited: ``larger than`` means it."""
+    monkeypatch.setattr(installer, "MAX_USER_FILE_BYTES", 1024)
+    css = tmp_path / "userChrome.css"
+    body = b"a{}" + b" " * (size - 3)  # of exactly ``size`` bytes
+    css.write_bytes(body)
+    if refused:
+        with pytest.raises(UserFileError, match="larger than"):
+            add_import(css)
+        assert css.read_bytes() == body
+    else:
+        add_import(css)
+        assert css.read_bytes() == f"{uf.CSS_IMPORT}\n".encode() + body
+        assert backup_path(css).read_bytes() == body
+
+
+def test_the_real_limit_is_64_mebibytes():
+    assert installer.MAX_USER_FILE_BYTES == 64 * 1024 * 1024  # the boundary above is this number
+
+
 def test_a_huge_sparse_file_does_not_exhaust_memory(tmp_path: Path):
     css = tmp_path / "userChrome.css"
     with css.open("wb") as handle:

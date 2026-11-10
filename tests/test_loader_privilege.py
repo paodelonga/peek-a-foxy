@@ -250,6 +250,32 @@ def test_a_copy_that_fails_half_way_leaves_the_old_file_and_no_temporary(
     assert [p.name for p in destination.parent.iterdir()] == ["config.js"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="file modes are advisory on Windows")
+@pytest.mark.parametrize("umask", [0o022, 0o077, 0o277, 0o777])
+@pytest.mark.parametrize("old_mode", [None, 0o600, 0o444])
+def test_the_copied_loader_is_readable_by_everyone_whatever_the_umask(
+    checkout: Path, tmp_path: Path, umask: int, old_mode: int | None
+):
+    """Firefox may be run by another user than the one who installed: ``config.js`` must be 0644.
+
+    The temporary file is created under the umask of whoever runs us (0600 under 077, no rights
+    at all under 777), so the mode is set on purpose and not left to chance.
+    """
+    destination = tmp_path / "firefox" / "config.js"
+    destination.parent.mkdir()
+    if old_mode is not None:
+        destination.write_bytes(b"old")
+        destination.chmod(old_mode)
+    previous = os.umask(umask)
+    try:
+        loader._copy_direct(checkout / "program" / "config.js", destination)
+    finally:
+        os.umask(previous)
+    assert destination.read_bytes() == CONFIG
+    assert (destination.stat().st_mode & 0o777) == 0o644
+    assert [p.name for p in destination.parent.iterdir()] == ["config.js"]
+
+
 # --- PF-22: git never waits for ever and never asks -----------------------------------------------
 
 

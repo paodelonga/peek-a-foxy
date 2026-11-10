@@ -306,6 +306,27 @@ def test_a_huge_file_of_unclosed_comments_is_masked():
     assert uf.with_css_import(text).startswith(IMPORT + "\n")
 
 
+def test_a_comment_that_never_closes_and_starts_inside_two_earlier_ones_is_found():
+    """Three comments chained over lines 0 to 3: each starts on the line where the one before it
+    ends. The last never closes, so a new line may only go in front of the line where the whole
+    chain begins; one step back from the last start would still be inside a comment."""
+    text = "/* a\nb */ /* b2\nc */ /* c2\nd"
+    assert uf._scan(text, line_comments=True)[2] == 0
+    assert uf._scan(text, line_comments=False)[2] == 0
+    result = uf.set_pref(text, PREF, True)
+    assert result == f'user_pref("{PREF}", true);\n{text}'
+    assert uf.get_bool_pref(result, PREF) is True
+    assert doctor.parse_prefs(result)[PREF] == "true"
+
+
+@pytest.mark.parametrize("depth", [1, 2, 3, 10, 200])
+def test_a_chain_of_comments_of_any_length_leaves_the_new_line_in_front_of_all_of_them(depth: int):
+    text = "/* a\n" + "".join(f"b{n} */ /* c{n}\n" for n in range(depth)) + "end"
+    result = uf.set_pref(text, PREF, True)
+    assert result.startswith(f'user_pref("{PREF}", true);\n/* a\n')
+    assert uf.get_bool_pref(result, PREF) is True
+
+
 def test_a_pref_that_cannot_be_changed_without_editing_a_comment_is_a_coded_error():
     """``/**/user_pref(..., false);/*``: the pref and a comment that never ends share a line."""
     text = f'/**/user_pref("{PREF}", false);/*'
