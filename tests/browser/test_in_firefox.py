@@ -392,12 +392,12 @@ BUTTON_TEXTS = """
 def test_the_buttons_are_in_english_by_default(browser):
     assert browser.js(BUTTON_TEXTS) == {
         "tabs-autohide-button": [
-            "Tabs autohide",
-            "Toggle tab bar autohide for this window (Ctrl+Alt+T)",
+            "Auto-hide the tab bar",
+            "Hide or show the tab bar in this window (Ctrl+Alt+T)",
         ],
         "urlbar-autohide-button": [
-            "Urlbar autohide",
-            "Toggle navigation bar autohide for this window (Ctrl+Alt+U)",
+            "Auto-hide the navigation bar",
+            "Hide or show the navigation bar in this window (Ctrl+Alt+U)",
         ],
     }
 
@@ -407,12 +407,12 @@ def test_the_buttons_and_the_greeting_are_in_portuguese_for_a_portuguese_firefox
 ):
     texts = browser_in_portuguese.js(BUTTON_TEXTS)
     assert texts["tabs-autohide-button"] == [
-        "Ocultar abas automaticamente",
-        "Alterna o ocultamento automático da barra de abas nesta janela (Ctrl+Alt+T)",
+        "Ocultar a barra de abas automaticamente",
+        "Oculta ou mostra a barra de abas nesta janela (Ctrl+Alt+T)",
     ]
     assert texts["urlbar-autohide-button"] == [
-        "Ocultar barra de endereço automaticamente",
-        "Alterna o ocultamento automático da barra de navegação nesta janela (Ctrl+Alt+U)",
+        "Ocultar a barra de navegação automaticamente",
+        "Oculta ou mostra a barra de navegação nesta janela (Ctrl+Alt+U)",
     ]
     notes = [
         n

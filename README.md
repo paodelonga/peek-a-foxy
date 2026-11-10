@@ -36,7 +36,7 @@ English · [Português (Brasil)](README.pt-BR.md)
 - **Navigation bar autohide** (urlbar, buttons, extensions). It opens from its own hover strip, whenever the URL bar gets focus (`Ctrl+L`, `Ctrl+K`, `F6`, `Alt+D`), and while its dropdown or a toolbar popup is open. The bookmarks bar hides and shows together with it, and the bars try to stay open while something is dragged out of them (for bookmarks this is not reliable yet, see the [roadmap](#roadmap)).
 - **Stays out of the way.** Customize Toolbar and full screen are left to Firefox: the bars are fully visible there.
 - **Opt-in and per window.** Both are off until you turn them on, and each window keeps its own state, saved with the session.
-- **Settings inside Firefox.** A Peek-a-Foxy section in the settings page changes the defaults, the strip size, the timings and the shortcuts for every open window at once ([details](#settings)).
+- **Settings inside Firefox.** A **Peek a Foxy 🦊** section in the settings page changes the defaults, the strip size, the timings and the shortcuts for every open window at once ([details](#settings)).
 - **A hello when it loads.** The first time the script runs in a profile, Firefox shows a one-time notification ("Instaalleeeeed PEEK A BOO!!! >.<"), so you know it is working. It follows Firefox's language: English, or Brazilian Portuguese when Firefox is in Portuguese. Its button opens the song the name is a nod to ([see below](#about-the-name)).
 - **Non-invasive installer.** Your own `userChrome.css` is left alone, an existing autoconfig setup is never overwritten, and everything can be removed with one command.
 
@@ -150,7 +150,7 @@ A Firefox update can remove the loader from its install directory; run `peek-a-f
 | Toggle for the current window | `Ctrl+Alt+T` or toolbar button | `Ctrl+Alt+U` or toolbar button |
 | Reveal temporarily | hover the top strip, switch or open a tab | hover its strip, focus the URL bar |
 
-The buttons are in *Customize Toolbar* as **Tabs autohide** and **Urlbar autohide** (in a Portuguese Firefox: **Ocultar abas automaticamente** and **Ocultar barra de endereço automaticamente**). The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
+The buttons are in *Customize Toolbar* as **Auto-hide the tab bar** and **Auto-hide the navigation bar** (in a Portuguese Firefox: **Ocultar a barra de abas automaticamente** and **Ocultar a barra de navegação automaticamente**). The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
 
 **`Ctrl+Alt+T` does not work on GNOME, Ubuntu and Linux Mint.** There it opens a terminal: the desktop takes the shortcut before Firefox sees it. Use the toolbar button, or give the shortcut up on that desktop (`Ctrl+Alt+U` is not affected). You can change it in Firefox's settings (see [Settings](#settings)).
 
@@ -165,7 +165,7 @@ peek-a-foxy --install-completion      # then restart your shell
 
 ## Settings
 
-Firefox's own settings page has a **Peek-a-Foxy** section (`about:preferences#peekafoxy`, or *Settings* in the menu). Everything below is applied to every open window at once, with no restart:
+Firefox's own settings page has a **Peek a Foxy 🦊** section (`about:preferences#peekafoxy`, or *Settings* in the menu). Everything below is applied to every open window at once, with no restart:
 
 - whether **new windows** start with the tab bar and the navigation bar hidden (windows that are already open keep their own state);
 - **what opens the tab bar for a moment**, each on its own switch: switching to another tab, opening a new tab (`Ctrl+T`, the `+` button), and a tab that opens straight to an address (a link you click, a bookmark, a page opening a window); plus **how long it stays open** afterwards. Hovering its strip always opens it. Firefox does not say how a tab was opened, so "straight to an address" means any tab that is going to load something other than the new-tab page or your home page;
@@ -258,7 +258,7 @@ Pure CSS cannot detect tab switches or keep a separate state per window, hence t
 ## Troubleshooting
 
 - **No button, no shortcut:** the loader did not run. Close every Firefox window, start it again, then clear the startup cache from `about:support`.
-- **No Peek-a-Foxy section in the settings:** run `peek-a-foxy install` again (it sets the pref the page needs) and restart Firefox. If it is still missing, Firefox may have changed the page; the reason is in the Browser Console, filtered by `peekafoxy settings`.
+- **No Peek a Foxy section in the settings:** run `peek-a-foxy install` again (it sets the pref the page needs) and restart Firefox. If it is still missing, Firefox may have changed the page; the reason is in the Browser Console, filtered by `peekafoxy settings`.
 - **Nothing after a Firefox update:** the update replaced the install directory; run `peek-a-foxy install` again.
 - **Errors:** open the Browser Console (`Ctrl+Shift+J`) and filter for `autohide`.
 

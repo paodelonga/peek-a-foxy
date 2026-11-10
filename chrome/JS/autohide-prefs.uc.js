@@ -47,6 +47,8 @@
     #peekafoxy-pane .pf-row > label { flex: 1 1 24em; }
     #peekafoxy-pane .pf-row input[type="number"] { width: 7em; }
     #peekafoxy-pane .pf-row input[type="text"] { width: 16em; }
+    #peekafoxy-pane .pf-reset { background: url("chrome://global/skin/icons/reset.svg") no-repeat 8px center / 16px;
+      padding-inline-start: 32px; -moz-context-properties: fill; fill: currentColor; }
     #peekafoxy-pane .pf-note { color: var(--text-color-deemphasized); margin-block: 4px; }
     #peekafoxy-pane .pf-problem { color: var(--text-color-error, #c50042); margin-block: 0 8px; min-height: 1.2em; }
     #peekafoxy-pane h2 { margin-block: 0 8px; font-size: 1.2em; }
@@ -76,7 +78,7 @@
   };
 
   const resetButton = (pref) => {
-    const button = el("button", { type: "button", text: TEXT.reset });
+    const button = el("button", { type: "button", class: "pf-reset", text: TEXT.reset });
     button.addEventListener("click", () => Peek.reset(pref));
     controls.push({ refresh: () => { button.disabled = !Peek.hasUserValue(pref); } });
     return button;
@@ -126,16 +128,6 @@
     controls.push({ refresh: () => { input.value = Peek.bindingFor(pref).text; } });
     return el("div", {},
       el("div", { class: "pf-row" }, el("label", { for: id, text: label }), input, resetButton(pref)), problem);
-  };
-
-  const greetingButton = () => {
-    const button = el("button", { type: "button", id: "peekafoxy-greeting", text: TEXT.greetingShow });
-    const done = el("p", { class: "pf-note", role: "status" });
-    button.addEventListener("click", () => {
-      Peek.write(PREFS.welcomed, false);
-      done.textContent = TEXT.greetingDone;
-    });
-    return el("div", { class: "pf-row" }, button, done);
   };
 
   // --- the Support group: how things stand, and the diagnostic info for a bug report ---
@@ -237,7 +229,6 @@
         shortcutField(PREFS.tabsShortcut, PREFS.urlbarShortcut, TEXT.tabsShortcut),
         shortcutField(PREFS.urlbarShortcut, PREFS.tabsShortcut, TEXT.urlbarShortcut),
         el("p", { class: "pf-note", text: Peek.shortcutHint(TEXT) })),
-      group(TEXT.greetingGroup, greetingButton()),
       group(TEXT.supportGroup, supportStatus(), supportCopy(), issuesNote()),
     );
   };
