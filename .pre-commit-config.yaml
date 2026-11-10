@@ -10,6 +10,9 @@ repos:
         args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
+        # Templates: placeholders such as @VERSION@ make them YAML only once render_manifests.py
+        # has filled them in, and tests/test_packaging.py parses the filled-in files.
+        exclude: ^packaging/templates/
       - id: check-merge-conflict
       - id: check-added-large-files
 

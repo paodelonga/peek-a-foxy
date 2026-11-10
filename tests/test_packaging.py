@@ -61,6 +61,21 @@ def test_bad_versions_and_hashes_are_refused(tmp_path, version, digest):
     assert not list(tmp_path.iterdir())
 
 
+def test_the_filled_in_winget_files_are_yaml_with_the_values_as_text(tmp_path):
+    """The templates are left out of the YAML check (``@VERSION@`` cannot start a value), so the
+    files they become are checked here, with the types winget reads."""
+    yaml = pytest.importorskip("yaml")
+    load_renderer().render("0.3.0", DIGEST, tmp_path)
+    for path in tmp_path.glob("*.yaml"):
+        manifest = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert manifest["PackageVersion"] == "0.3.0", path.name
+        assert manifest["PackageIdentifier"] == "paodelonga.PeekAFoxy"
+    installer = yaml.safe_load(
+        (tmp_path / "paodelonga.PeekAFoxy.installer.yaml").read_text(encoding="utf-8")
+    )
+    assert installer["Installers"][0]["InstallerSha256"] == DIGEST.upper()
+
+
 def test_no_placeholder_is_left_in_any_output(tmp_path):
     for path in load_renderer().render("1.2.3", DIGEST, tmp_path):
         assert "@VERSION@" not in path.read_text(encoding="utf-8")
