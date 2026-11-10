@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from support import needs_permissions, needs_symlinks
+from support import flat, needs_permissions, needs_symlinks
 
 from peek_a_foxy import errors, installer
 from peek_a_foxy import userfiles as uf
@@ -573,7 +573,8 @@ def test_uninstall_keeps_the_copies_and_says_so(profile: Path):
     result = CliRunner().invoke(app, ["uninstall", "--profile", str(profile), "--yes"])
     assert result.exit_code == 0
     assert backup_path(profile / "chrome" / "userChrome.css").read_text() == "body{}\n"
-    assert ".peek-a-foxy.bak" in result.output and "yours to keep or delete" in result.output
+    shown = flat(result.output)  # the closing sentence wraps wherever the terminal's width says
+    assert ".peek-a-foxy.bak" in shown and "yours to keep or delete" in shown
     assert (profile / "chrome" / "userChrome.css").read_text() == "body{}\n"
 
 
