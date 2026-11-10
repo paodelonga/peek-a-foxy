@@ -311,6 +311,53 @@ def test_a_name_that_the_listing_of_its_folder_does_not_give_back_is_refused(tmp
     assert not written(folder)
 
 
+# --- 15: a PowerShell that a policy keeps out of its normal mode ---------------------------------
+
+
+def in_mode(mode: str, script: str) -> str:
+    """``script`` run after the session was put into ``mode``, as a policy would have done."""
+    return f"$ExecutionContext.SessionState.LanguageMode = '{mode}'\n{script}"
+
+
+def test_a_session_that_is_not_in_full_language_mode_ends_with_its_own_code_and_writes_nothing(
+    tmp_path,
+):
+    folder = firefox(tmp_path)
+    script = adapt(elevate.helper_script(str(folder), [CONFIG, PREFS]))
+    assert run(in_mode("FullLanguage", script)) == elevate.OK  # the control: the wrapper is sound
+    assert_installed(folder)
+    (folder / "config.js").unlink()
+    shutil.rmtree(folder / "defaults")
+    for mode in ("ConstrainedLanguage", "RestrictedLanguage", "NoLanguage"):
+        assert run(in_mode(mode, script)) == elevate.LANGUAGE_MODE, mode
+        assert not written(folder), mode
+
+
+@pytest.mark.parametrize("problem", ["nowhere", "not-firefox", "wrong-files"])
+def test_the_language_mode_is_judged_before_any_argument_or_folder(tmp_path, problem):
+    """Whatever else is wrong, a restricted mode is what is reported: no step ran to blame."""
+    folder = (
+        firefox(tmp_path, product="Thunderbird") if problem == "not-firefox" else tmp_path / "x"
+    )
+    payloads = [CONFIG + b"x", PREFS] if problem == "wrong-files" else None
+    script = adapt(elevate.helper_script(str(folder), payloads or [CONFIG, PREFS]))
+    assert run(script) != elevate.LANGUAGE_MODE  # in FullLanguage the real step speaks
+    assert run(in_mode("ConstrainedLanguage", script)) == elevate.LANGUAGE_MODE
+
+
+def test_a_mode_that_blocks_the_dotnet_calls_is_what_the_guard_exists_for(tmp_path):
+    """Without the guard the same session ends with the code of a step it only broke by accident."""
+    folder = firefox(tmp_path)
+    script = adapt(elevate.helper_script(str(folder), [CONFIG, PREFS]))
+    guard = (
+        "if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {\n    exit 15\n}\n"
+    )
+    assert script.startswith(guard)
+    unguarded = run(in_mode("ConstrainedLanguage", script[len(guard) :]))
+    assert unguarded == elevate.USAGE  # "bad arguments": the first .NET call was refused
+    assert not written(folder)
+
+
 # --- 14: writing ----------------------------------------------------------------------------------
 
 

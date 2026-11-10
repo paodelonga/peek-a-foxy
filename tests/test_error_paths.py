@@ -195,6 +195,8 @@ def answer_of_the_prompt(monkeypatch: pytest.MonkeyPatch, outcome: object) -> li
         (14, errors.UAC_HELPER_FAILED),  # the helper's own "writing failed"
         (12, errors.UAC_HELPER_FAILED),  # "not the pinned files"
         (10, errors.UAC_HELPER_FAILED),
+        (15, errors.UAC_RESTRICTED_POWERSHELL),  # a policy keeps PowerShell out of FullLanguage
+        (16, errors.UAC_HELPER_FAILED),  # the first code the helper does not use
         (255, errors.UAC_HELPER_FAILED),  # a code that the helper never uses
     ],
 )
@@ -206,6 +208,7 @@ def test_the_end_of_the_administrator_prompt_is_a_coded_error_with_nothing_half_
     failed_with(result, code)
     assert len(seen) == 1  # asked once, never again in a loop
     assert "steps finished" in result.output  # the profile files before it are reported as done
+    assert code.hint in " ".join(result.output.split())  # the way forward, however it is wrapped
 
 
 def test_the_same_setup_succeeds_when_the_prompt_is_answered(

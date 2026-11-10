@@ -60,7 +60,7 @@ TIMEOUT_SECONDS = 180
 MAX_COMMAND_LINE_CHARS = 32767
 
 # Exit codes of the elevated process.
-OK, USAGE, NOT_FIREFOX, MISMATCH, LINKED, WRITE_FAILED = 0, 10, 11, 12, 13, 14
+OK, USAGE, NOT_FIREFOX, MISMATCH, LINKED, WRITE_FAILED, LANGUAGE_MODE = 0, 10, 11, 12, 13, 14, 15
 MESSAGES = {
     USAGE: "the elevated process was started with bad arguments",
     NOT_FIREFOX: "it is not a Firefox installation folder (firefox.exe, omni.ja or application.ini "
@@ -69,6 +69,8 @@ MESSAGES = {
     LINKED: "the folder is reached through a link, a junction, a short name or a substituted "
     "drive, so nothing was written; give the full path",
     WRITE_FAILED: "writing the files failed even with administrator rights",
+    LANGUAGE_MODE: "the system policy keeps PowerShell in a restricted mode, so the administrator "
+    "step cannot run",
 }
 
 # Where Windows PowerShell 5.1 lives under the system folder, and how it is started.
@@ -86,8 +88,13 @@ _SYSTEM_DIRECTORY = re.compile(r"[A-Za-z]:\\[^\x00-\x1f\"*<>?|]*")
 # Its steps are those of the former Python helper: the arguments (USAGE), the pinned hashes
 # (MISMATCH), a Firefox folder (NOT_FIREFOX), no link, junction or short (8.3) name from the drive
 # root to the files (LINKED), then each file written aside with CreateNew and renamed over the old
-# one (WRITE_FAILED).
-HELPER_SCRIPT = r"""Set-StrictMode -Version Latest
+# one (WRITE_FAILED). The very first statement is the language mode: a policy (Constrained Language
+# Mode by WDAC, AppLocker or __PSLockdownPolicy) that blocks the .NET calls below would otherwise be
+# reported as the code of whatever step it broke, so it has a code of its own (LANGUAGE_MODE).
+HELPER_SCRIPT = r"""if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
+    exit 15
+}
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $failure = 10
 $temporary = $null
@@ -424,7 +431,7 @@ def copy_as_administrator(
     if code != OK:
         reason = MESSAGES.get(code, f"the elevated process failed (exit code {code})")
         raise ElevationError(
-            errors.UAC_HELPER_FAILED,
+            errors.UAC_RESTRICTED_POWERSHELL if code == LANGUAGE_MODE else errors.UAC_HELPER_FAILED,
             f"could not install the loader into {firefox_dir}: {reason}",
             detail=f"the elevated process exited with code {code}",
         )

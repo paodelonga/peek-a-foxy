@@ -143,7 +143,7 @@ def test_the_command_is_the_system_powershell_with_the_encoded_script(pinned, tm
     assert len(command) == 5  # nothing else: no payload, no path on the command line itself
     assert decoded(command) == elevate.helper_script(str(tmp_path), [CONFIG, PREFS])
     raw = base64.b64decode(command[-1])
-    assert raw[:2] == b"S\x00" and not raw.startswith(b"\xff\xfe")  # UTF-16LE, no byte order mark
+    assert raw[:2] == b"i\x00" and not raw.startswith(b"\xff\xfe")  # UTF-16LE, no byte order mark
 
 
 def test_the_encoded_command_round_trips_any_text():
@@ -323,25 +323,44 @@ def test_the_script_exits_only_with_the_codes_the_parent_knows(pinned):
         elevate.MISMATCH,
         elevate.LINKED,
         elevate.WRITE_FAILED,
+        elevate.LANGUAGE_MODE,
     }
     exits = {int(code) for code in re.findall(r"\bexit (\d+)", script)}
     failures = {int(code) for code in re.findall(r"\$failure = (\d+)", script)}
-    assert exits <= known and failures == known - {0}  # WRITE_FAILED comes only from $failure
+    # WRITE_FAILED comes only from $failure, LANGUAGE_MODE only from the guard before any step
+    assert exits <= known and failures == known - {0, elevate.LANGUAGE_MODE}
     assert exits | failures == known and re.findall(r"\bexit (\S+)", script).count("$failure") == 1
     assert set(elevate.MESSAGES) == known - {0}
+
+
+LANGUAGE_GUARD = [
+    "if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {",
+    "    exit 15",
+    "}",
+]
+
+
+def test_the_language_mode_is_checked_before_anything_else_and_has_a_code_of_its_own(pinned):
+    """A locked-down PowerShell is not reported as the step that its policy happened to break."""
+    script = elevate.helper_script(REFERENCE_FOLDER, [CONFIG, PREFS])
+    assert script.splitlines()[:3] == LANGUAGE_GUARD  # nothing, not even Set-StrictMode, is first
+    assert script.count("LanguageMode") == 1
+    assert elevate.LANGUAGE_MODE == 15 and elevate.LANGUAGE_MODE not in range(10, 15)
+    assert "restricted mode" in elevate.MESSAGES[elevate.LANGUAGE_MODE]
 
 
 def test_every_step_of_the_script_is_inside_the_try_that_maps_exceptions_to_codes(pinned):
     """No exception may end the script with PowerShell's own exit code 1."""
     lines = elevate.helper_script(REFERENCE_FOLDER, [CONFIG, PREFS]).splitlines()
     opened, caught = lines.index("try {"), lines.index("} catch {")
-    assert lines[:4] == [
+    assert lines[:3] == LANGUAGE_GUARD
+    assert lines[3:7] == [
         "Set-StrictMode -Version Latest",
         "$ErrorActionPreference = 'Stop'",
         "$failure = 10",
         "$temporary = $null",
     ]
-    before = lines[4:opened]
+    before = lines[7:opened]
     assert before[0].startswith("function attributes(") and before[-1] == "}"  # only definitions
     assert lines[-2:] == ["    exit $failure", "}"]  # the catch ends with the step's code
     assert lines[caught - 1] == "    exit 0"
@@ -365,6 +384,7 @@ def test_the_parent_hands_the_elevator_the_helper_command(pinned, checkout, tmp_
         (elevate.NOT_FIREFOX, "not a Firefox"),
         (elevate.MISMATCH, "pinned"),
         (elevate.LINKED, "reached through a link, a junction, a short name or a substituted drive"),
+        (elevate.LANGUAGE_MODE, "restricted mode"),
         (elevate.WRITE_FAILED, "even with administrator"),
         (elevate.USAGE, "bad arguments"),
         (77, "exit code 77"),
@@ -675,6 +695,43 @@ def test_a_command_over_the_limit_is_refused_before_anything_is_started(
 def test_the_new_code_belongs_to_elevation_and_is_not_the_helper_failure_code():
     assert errors.COMMAND_TOO_LONG.area == 3
     assert errors.COMMAND_TOO_LONG is not errors.UAC_HELPER_FAILED
+
+
+def test_a_restricted_powershell_has_its_own_code_with_the_way_forward(pinned, checkout, tmp_path):
+    folder = firefox(tmp_path)
+    with pytest.raises(ElevationError) as caught:
+        elevate.copy_as_administrator(checkout, folder, lambda command: elevate.LANGUAGE_MODE)
+    restricted = errors.UAC_RESTRICTED_POWERSHELL
+    assert caught.value.code is restricted and restricted.code == "PAF-307" and restricted.area == 3
+    assert restricted is not errors.UAC_HELPER_FAILED
+    assert restricted.slug == "uac-restricted-powershell"
+    assert restricted.meaning == (
+        "The system policy keeps PowerShell in a restricted mode, so the administrator step "
+        "cannot run."
+    )
+    assert (
+        caught.value.hint
+        == restricted.hint
+        == (
+            "Ask whoever manages this computer to allow Windows PowerShell in its normal mode, or "
+            "copy config.js and defaults/pref/config-prefs.js into the Firefox folder by hand."
+        )
+    )
+    assert elevate.MESSAGES[elevate.LANGUAGE_MODE] in caught.value.message
+    assert "code 15" in caught.value.detail
+    assert not (folder / "config.js").exists()
+
+
+def test_only_the_language_mode_code_is_mapped_to_the_restricted_powershell_error(
+    pinned, checkout, tmp_path
+):
+    folder = firefox(tmp_path)
+    for code in (*elevate.MESSAGES, 1, 16, 255, -1):
+        if code == elevate.LANGUAGE_MODE:
+            continue
+        with pytest.raises(ElevationError) as caught:
+            elevate.copy_as_administrator(checkout, folder, lambda command, code=code: code)
+        assert caught.value.code is errors.UAC_HELPER_FAILED, code
 
 
 def test_a_quote_in_the_folder_costs_twice_and_the_guard_sees_the_final_length(
