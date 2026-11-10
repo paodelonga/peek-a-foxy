@@ -1,0 +1,106 @@
+"""The status file the Firefox script will write (schema 1): its reader and its fixture."""
+
+from __future__ import annotations
+
+import json
+from datetime import timezone
+from pathlib import Path
+
+import pytest
+
+from peek_a_foxy import status
+from peek_a_foxy.status import StatusError, parse_status, read_status
+
+FIXTURE = Path(__file__).parent / "fixtures" / "peekafoxy-status.json"
+
+
+def test_the_fixture_is_the_documented_example():
+    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    assert data["schema"] == status.STATUS_SCHEMA == 1
+    assert {"scriptVersion", "firefoxVersion", "buildID", "channel", "os", "locale"} <= set(data)
+    assert {"updated", "windows", "health", "errors"} <= set(data)
+    assert set(data["errors"][0]) == {"time", "level", "where", "message"}
+
+
+def test_the_fixture_is_read_completely():
+    result = parse_status(FIXTURE.read_text(encoding="utf-8"))
+    assert result.updated.tzinfo is timezone.utc and result.updated.year == 2026
+    assert (result.script_version, result.firefox_version) == ("0.2.0", "150.0")
+    assert (result.build_id, result.channel, result.os, result.locale) == (
+        "20261020000000",
+        "release",
+        "Linux",
+        "en-US",
+    )
+    assert result.windows == 2
+    assert result.failed() == [("nav-bar", "element #nav-bar not found")]
+    assert [e.level for e in result.errors] == ["info", "error"]
+    assert result.errors[1].where == "autohide.uc.js:reveal"
+
+
+def test_unknown_keys_are_ignored_so_the_writer_can_add_some():
+    data = json.loads(FIXTURE.read_text(encoding="utf-8")) | {"future": {"x": 1}}
+    assert parse_status(json.dumps(data)).script_version == "0.2.0"
+
+
+def test_only_the_latest_errors_are_kept():
+    items = [{"message": str(n)} for n in range(status.MAX_ERRORS + 5)]
+    text = json.dumps({"schema": 1, "updated": "2026-11-05T00:00:00Z", "errors": items})
+    kept = parse_status(text).errors
+    assert len(kept) == status.MAX_ERRORS and kept[-1].message == str(status.MAX_ERRORS + 4)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-11-05T12:00:00.000Z", True),
+        ("2026-11-05T12:00:00z", True),
+        ("2026-11-05T12:00:00", True),
+        ("2026-11-05T12:00:00+02:00", True),
+        ("not a time", False),
+        (12345, False),
+        (None, False),
+    ],
+)
+def test_times_are_read_as_iso_8601_in_any_common_form(value, expected):
+    assert (status.parse_time(value) is not None) is expected
+
+
+def test_a_time_without_a_zone_is_taken_as_utc():
+    assert status.parse_time("2026-11-05T12:00:00").tzinfo is timezone.utc
+
+
+def test_health_values_other_than_ok_are_failures_with_their_notes():
+    text = json.dumps(
+        {
+            "schema": 1,
+            "updated": "2026-11-05T00:00:00Z",
+            "health": {"a": "OK", "b": "fail", "c": "fail: gone: really", "d": 5},
+        }
+    )
+    assert parse_status(text).failed() == [
+        ("b", ""),
+        ("c", "gone: really"),
+        ("d", "unreadable value"),
+    ]
+
+
+def test_reading_a_folder_without_the_file_gives_none(tmp_path: Path):
+    assert read_status(tmp_path) is None
+
+
+def test_reading_a_folder_with_the_file(tmp_path: Path):
+    (tmp_path / status.STATUS_FILE).write_bytes(  # a BOM is tolerated
+        ("\ufeff" + FIXTURE.read_text(encoding="utf-8")).encode("utf-8")
+    )
+    assert read_status(tmp_path).windows == 2
+
+
+def test_an_unreadable_file_is_a_status_error(tmp_path: Path):
+    (tmp_path / status.STATUS_FILE).write_bytes(b"\xff\xfe\x00")
+    with pytest.raises(StatusError, match="not valid UTF-8"):
+        read_status(tmp_path)
+
+
+def test_the_file_name_is_the_documented_one():
+    assert status.STATUS_FILE == "peekafoxy-status.json"

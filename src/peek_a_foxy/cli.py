@@ -1,4 +1,4 @@
-"""Command line interface: ``peek-a-foxy install`` / ``uninstall``."""
+"""Command line interface: ``peek-a-foxy install``, ``uninstall``, ``doctor`` and ``logs``."""
 
 from __future__ import annotations
 
@@ -8,14 +8,15 @@ import os
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 from rich.panel import Panel
-from typer.core import TyperGroup
+from typer.core import TyperCommand, TyperGroup
 
-from peek_a_foxy import __version__, errors, logs, platform, ui
+from peek_a_foxy import __version__, doctor, errors, logs, platform, report, ui
 from peek_a_foxy.errors import DiscoveryError, PeekError, PlatformError
 from peek_a_foxy.installer import Plan, Step, plan_install, plan_uninstall
 from peek_a_foxy.profiles import Profile, default_profile, read_profiles
@@ -490,7 +491,12 @@ def logs_command(
     path = target.path
     if path is None:  # logging is off, but the default place is still where a log would be
         path = logs.resolve_target(env_value="").path
-        assert path is not None
+        if path is None:  # no home folder, so there is no default place either
+            ui.say(
+                "No log location is available, because this account has no home folder. "
+                "Use --log-file or PEEK_A_FOXY_LOG to choose one."
+            )
+            return
         ui.say("Logging is turned off here (PEEK_A_FOXY_LOG=off); this is where the log would be.")
     files = logs.log_files(path)
     ui.say(f"Log file: {path}")
@@ -532,3 +538,140 @@ def _clear(path: Path, files: list[Path], yes: bool) -> None:
         _confirm(f"Delete {len(files)} log file(s) ({_size(files)})?", default=False)
     removed = logs.clear(path)
     ui.say(f"Deleted {removed} log file(s).")
+
+
+SAVE_DEFAULT = "\0default"  # what --save stands for when no path follows it
+
+
+def _default_save_folder() -> Path:
+    """Next to the log: the folder the log goes to when nothing moves it (here, if unknown)."""
+    default = logs.resolve_target(env_value="").path
+    return default.parent if default is not None else Path.cwd()
+
+
+def _save_report(save: str, text: str, suffix: str, now: datetime) -> Path:
+    if save == SAVE_DEFAULT:
+        return report.save_new(text, _default_save_folder(), suffix, now)
+    path = Path(save).expanduser()
+    if path.is_dir():
+        return report.save_new(text, path, suffix, now)
+    return report.save(text, path)
+
+
+def _emit(text: str) -> bool:
+    """Write the report to stdout; ``False`` if the reader went away (``| head``), quietly."""
+    try:
+        typer.echo(text, nl=False)
+        if sys.stdout is not None:
+            sys.stdout.flush()
+    except BrokenPipeError:
+        _silence_stdout()
+        return False
+    return True
+
+
+def _silence_stdout() -> None:
+    """Point stdout at nowhere, so the interpreter's own flush at exit does not complain."""
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
+class _OptionalPathCommand(TyperCommand):
+    """A command whose ``--save`` may or may not be followed by a path.
+
+    Click's own optional-value option does not exist in Typer, so ``--save`` with nothing after it
+    (or with another option after it) is rewritten to ``--save=<SAVE_DEFAULT>`` before parsing.
+    """
+
+    def parse_args(self, ctx: Any, args: list[str]) -> list[str]:
+        rewritten: list[str] = []
+        for position, arg in enumerate(args):
+            following = args[position + 1] if position + 1 < len(args) else None
+            if arg == "--save" and (following is None or following.startswith("-")):
+                arg = f"--save={SAVE_DEFAULT}"
+            rewritten.append(arg)
+        return super().parse_args(ctx, rewritten)
+
+
+@app.command("doctor", cls=_OptionalPathCommand)
+def doctor_command(
+    ctx: typer.Context,
+    profile: ProfileOption = None,
+    firefox_dir: FirefoxDirOption = None,
+    markdown: Annotated[
+        bool,
+        typer.Option(
+            "--markdown", help="Prints the report as Markdown, ready to paste into an issue."
+        ),
+    ] = False,
+    as_json: Annotated[
+        bool,
+        typer.Option(
+            "--json", help="Prints the report as JSON (format version 1), meant for programs."
+        ),
+    ] = False,
+    copy: Annotated[
+        bool,
+        typer.Option(
+            "--copy",
+            help="Also copies the report to the clipboard, when a clipboard tool is available.",
+        ),
+    ] = False,
+    save: Annotated[
+        str | None,
+        typer.Option(
+            "--save",
+            metavar="[PATH]",
+            help="Also saves the report to PATH without ever replacing an existing file; without a "
+            "PATH, it is saved next to the log.",
+        ),
+    ] = None,
+    verbose: VerboseOption = False,
+    log_file: LogFileOption = None,
+    no_log: NoLogOption = False,
+) -> None:
+    """Checks this computer, tells you what is in the way of Peek-a-Foxy, and changes and sends
+    nothing."""
+    if markdown and as_json:
+        raise typer.BadParameter("Use either --markdown or --json, but not both.")
+    _begin(ctx, verbose, log_file, no_log)
+    machine = doctor.Context.detect(log_target=logs.active_path())
+    found = doctor.collect(machine, profile=profile, firefox_dir=firefox_dir)
+    # Whatever leaves the program (terminal, clipboard, file) is redacted, in every format.
+    redactor = logs.Redactor.for_this_machine(
+        machine.environ, machine.home, machine.kind, profile_names=found.profile_names
+    )
+    safe = found.redacted(redactor)
+
+    shared = report.to_json(safe) if as_json else report.to_markdown(safe)
+    plain = as_json or markdown or not machine.is_tty
+    delivered = True
+    if plain:
+        delivered = _emit(shared)
+    else:
+        for part in report.to_rich(safe, verbose=logs.is_verbose()):
+            ui.show(part)
+
+    suffix = "json" if as_json else "md"
+    if save is not None:
+        saved = _save_report(save, shared, suffix, machine.now())
+        ui.note(f"The report was saved to {saved}.")
+    if copy:
+        tool = report.copy_to_clipboard(shared, machine.kind, machine.environ, which=machine.which)
+        if tool:
+            ui.note(
+                f"The report was copied to the clipboard with {tool}; paste it into your issue."
+            )
+        else:
+            if not plain:
+                delivered = _emit(shared) and delivered
+            ui.note(
+                "The report could not be copied to the clipboard because no working clip, pbcopy, "
+                "wl-copy or xclip was found. It is printed above, so select it and copy it "
+                "yourself."
+            )
+    if not safe.ok or not delivered:
+        raise typer.Exit(errors.EXIT_FAILURE)

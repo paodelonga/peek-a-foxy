@@ -2,6 +2,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from support import FORCING_COLOR, TEST_COLUMNS, TEST_LINES
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -49,13 +50,30 @@ def firefox_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def plain_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No colors, whatever the environment (CI sets FORCE_COLOR): tests compare plain text."""
+    """The same plain, wide terminal for every test, whatever the environment it runs in.
+
+    Typer reads ``GITHUB_ACTIONS``, ``FORCE_COLOR`` and ``PY_COLORS`` once, when it is imported
+    (long before this fixture runs), and Rich reads ``COLUMNS`` once when a console is created;
+    changing the environment afterwards does not undo that, so the values they kept are replaced.
+    """
+    from typer import rich_utils
+
     from peek_a_foxy import ui
 
-    monkeypatch.delenv("FORCE_COLOR", raising=False)
-    monkeypatch.setenv("NO_COLOR", "1")  # Typer's own output and subprocesses
-    monkeypatch.setattr(ui.console, "_color_system", None)
-    monkeypatch.setattr(ui.errors, "_color_system", None)
+    for name in FORCING_COLOR:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NO_COLOR", "1")  # Rich and the subprocesses
+    monkeypatch.setenv("TERM", "dumb")
+    monkeypatch.setenv("COLUMNS", str(TEST_COLUMNS))
+    monkeypatch.setenv("LINES", str(TEST_LINES))
+    monkeypatch.setenv("_TYPER_FORCE_DISABLE_TERMINAL", "1")  # for a Typer imported by a subprocess
+    monkeypatch.setattr(rich_utils, "FORCE_TERMINAL", False, raising=False)
+    monkeypatch.setattr(rich_utils, "COLOR_SYSTEM", None, raising=False)
+    monkeypatch.setattr(rich_utils, "MAX_WIDTH", TEST_COLUMNS, raising=False)
+    for console in (ui.console, ui.errors):
+        monkeypatch.setattr(console, "_color_system", None)
+        monkeypatch.setattr(console, "_width", TEST_COLUMNS)
+        monkeypatch.setattr(console, "_height", TEST_LINES)
 
 
 @pytest.fixture(autouse=True)

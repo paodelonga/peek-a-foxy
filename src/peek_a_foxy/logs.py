@@ -30,7 +30,9 @@ import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from io import TextIOWrapper
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
+from typing import cast
 from urllib.parse import quote
 
 from peek_a_foxy import platform
@@ -77,7 +79,7 @@ class Target:
     """Where this run logs: ``path`` is ``None`` when logging is off; ``source`` says why."""
 
     path: Path | None
-    source: str  # "default", "flag", "env", "off-flag" or "off-env"
+    source: str  # "default", "flag", "env", "off-flag", "off-env" or "no-home"
 
 
 def _file_for(value: str) -> Path:
@@ -103,11 +105,11 @@ def resolve_target(
         if env_value.strip().lower() == "off":
             return Target(None, "off-env")
         return Target(_file_for(env_value.strip()), "env")
-    folder = log_dir(
-        kind or default_kind(),
-        os.environ if environ is None else environ,
-        Path.home() if home is None else home,
-    )
+    try:
+        base_home = Path.home() if home is None else home
+    except (RuntimeError, OSError):  # no home folder to put a log in: go without one
+        return Target(None, "no-home")
+    folder = log_dir(kind or default_kind(), os.environ if environ is None else environ, base_home)
     return Target(Path(str(folder)) / LOG_NAME, "default")
 
 
@@ -151,6 +153,21 @@ def _folder_pattern(path: str) -> str:
     return lead + r"[\\/]+".join(_name(part) for part in parts)
 
 
+def _home_text(home: Path | None) -> str | None:
+    """The home folder as text; ``None`` when the system cannot say where it is."""
+    if home is not None:
+        return str(home)
+    try:
+        return str(Path.home())
+    except (RuntimeError, OSError):
+        return None
+
+
+STANDARD_PROFILE_NAMES = frozenset(
+    {"default", "default-release", "default-esr", "default-nightly", "dev-edition-default"}
+)
+
+
 class Redactor:
     """Hides what identifies the person or grants access, in any text."""
 
@@ -161,6 +178,7 @@ class Redactor:
         user: str | None,
         extra_homes: Sequence[str] = (),
         ignore_case: bool = False,
+        profile_names: Sequence[str] = (),
     ) -> None:
         # A home that is just "/" or "C:\" would blank out every path. The longest goes first, so
         # that a folder inside another is not cut short.
@@ -175,6 +193,14 @@ class Redactor:
             if homes
             else None
         )
+        # A profile name chosen by the person may be personal: each becomes ``<profile N>`` (N is
+        # its place in profiles.ini, so a report stays readable). Standard names Firefox itself
+        # gives, and names too short to tell apart from ordinary words, are kept.
+        self._names: list[tuple[re.Pattern[str], str]] = []
+        for number, name in enumerate(profile_names, start=1):
+            if len(name) >= 3 and name not in STANDARD_PROFILE_NAMES:
+                pattern = re.compile(rf"(?<!\w){re.escape(name)}(?!\w)", flags)
+                self._names.append((pattern, f"<profile {number}>"))
         # Short names would also match inside ordinary words, so only distinctive ones are hidden
         # on their own; the home folder (which contains the name) is always hidden.
         self._user = (
@@ -190,6 +216,7 @@ class Redactor:
         home: Path | None = None,
         kind: str | None = None,
         short_path: Callable[[str], str | None] | None = None,
+        profile_names: Sequence[str] = (),
     ) -> Redactor:
         """``short_path`` gives a folder's 8.3 name on Windows (``C:\\Users\\ANAMAR~1``)."""
         env = os.environ if environ is None else environ
@@ -200,8 +227,8 @@ class Redactor:
             user = None
         names = [env.get(name) for name in ("USERNAME", "USER", "LOGNAME")]
         user = user or next((name for name in names if name), None)
-        main = str(Path.home() if home is None else home)
-        homes = [main, *(value for value in (env.get("USERPROFILE"), env.get("HOME")) if value)]
+        main = _home_text(home)
+        homes = [value for value in (main, env.get("USERPROFILE"), env.get("HOME")) if value]
         if short_path is None and sys.platform == "win32":  # pragma: no cover - Windows only
             from peek_a_foxy._winapi import short_path
         # The same folders as the system itself may spell them: with links resolved, and (the
@@ -211,11 +238,19 @@ class Redactor:
             if system == "windows" and short_path:
                 with contextlib.suppress(Exception):
                     homes.append(short_path(folder) or "")
-        return cls(home=main, user=user, extra_homes=homes, ignore_case=system == "windows")
+        return cls(
+            home=main,
+            user=user,
+            extra_homes=homes,
+            ignore_case=system == "windows",
+            profile_names=profile_names,
+        )
 
     def __call__(self, text: str) -> str:
         if self._home:
             text = self._home.sub("~", text)
+        for pattern, placeholder in self._names:
+            text = pattern.sub(placeholder, text)
         if self._user:
             text = self._user.sub("<user>", text)
         text = _URL_CREDENTIALS.sub(r"\g<scheme>***@", text)
@@ -223,6 +258,9 @@ class Redactor:
         text = _QUERY_SECRET.sub(r"\g<name>=***", text)
         text = _GITHUB_TOKEN.sub("***", text)
         return _PROFILE_FOLDER.sub("<profile>", text)
+
+
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")  # all but \t \n \r
 
 
 class _Formatter(logging.Formatter):
@@ -237,13 +275,23 @@ class _Formatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         record.run_id = self._run_id
-        return self._redact(super().format(record))
+        # Escape sequences from a file's content must not reach a terminal when the log is shown.
+        return _CONTROL.sub("\ufffd", self._redact(super().format(record)))
 
 
 FILE_FORMAT = "%(asctime)sZ %(levelname)-7s %(run_id)s %(message)s"
 CONSOLE_FORMAT = "%(levelname)-7s %(message)s"
 
 # --- handlers and the run -----------------------------------------------------------------------
+
+
+def _append_opener(path: str, flags: int) -> int:
+    """Open the log to add lines at its end, whole, even while another run adds its own."""
+    if sys.platform == "win32":  # pragma: no cover - Windows only
+        from peek_a_foxy._winapi import open_for_appending
+
+        return open_for_appending(path)
+    return os.open(path, flags, 0o666)  # O_APPEND already writes at the end in one step here
 
 
 class _SafeFileHandler(logging.handlers.RotatingFileHandler):
@@ -255,6 +303,17 @@ class _SafeFileHandler(logging.handlers.RotatingFileHandler):
         )  # the file is opened now: an unwritable place fails here, not at the first record
         self._on_failure = on_failure
         self.failed = False
+
+    def _open(self) -> TextIOWrapper:
+        # Also for the file that a rotation starts. (Two runs at once share the file.)
+        opened = open(  # noqa: SIM115 - the handler owns the stream and closes it
+            self.baseFilename,
+            self.mode,
+            encoding=self.encoding,
+            errors=self.errors,
+            opener=_append_opener,
+        )
+        return cast(TextIOWrapper, opened)
 
     def emit(self, record: logging.LogRecord) -> None:
         if not self.failed:

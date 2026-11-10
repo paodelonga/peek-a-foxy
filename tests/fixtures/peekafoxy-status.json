@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "scriptVersion": "0.2.0",
+  "firefoxVersion": "150.0",
+  "buildID": "20261020000000",
+  "channel": "release",
+  "os": "Linux",
+  "locale": "en-US",
+  "updated": "2026-11-05T12:00:00.000Z",
+  "windows": 2,
+  "health": {
+    "navigator-toolbox": "ok",
+    "nav-bar": "fail: element #nav-bar not found",
+    "prefs": "ok"
+  },
+  "errors": [
+    {"time": "2026-11-05T11:59:58.000Z", "level": "info", "where": "autohide.uc.js:init", "message": "started"},
+    {"time": "2026-11-05T11:59:59.000Z", "level": "error", "where": "autohide.uc.js:reveal", "message": "TypeError: x is null in file:///home/someone/.mozilla/firefox/abcd1234.default/chrome/JS/autohide.uc.js"}
+  ]
+}
