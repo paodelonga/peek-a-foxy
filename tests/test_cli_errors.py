@@ -289,7 +289,11 @@ def test_the_log_never_holds_the_home_folder(profile: Path, log_file: Path, monk
     )
     install(profile)
     text = log_file.read_text(encoding="utf-8")
-    assert str(tmp_path) not in text and "~/profile/chrome" in text
+    # Whatever the spelling (either slash, doubled backslashes, any case) and the system's
+    # separator: on Windows the redacted path is "~\\profile\\chrome", not "~/profile/chrome".
+    flat = re.sub(r"[\\/]+", "/", text).lower()
+    assert re.sub(r"[\\/]+", "/", str(tmp_path)).lower() not in flat
+    assert "~/profile/chrome" in flat
 
 
 # --- the logs command ---------------------------------------------------------------------------
