@@ -11,7 +11,7 @@ import re
 import time
 
 import pytest
-from hypothesis import assume, given, settings
+from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 
 from peek_a_foxy import doctor, errors
@@ -159,6 +159,10 @@ tokens = st.sampled_from(
 )
 
 
+# The falsifying example that the property found once, by chance, on a CI run: kept so that every
+# run checks it. A CRLF-majority file with no final line break, whose only lines after @charset are
+# inside the comment that @charset opens, so the import goes at the very end.
+@example(parts=['@charset "x";', "/*", "\n", "\r\n", "\r\n", "*/"])
 @settings(max_examples=300, deadline=None)
 @given(parts=st.lists(tokens, max_size=30))
 def test_adding_and_removing_the_import_gives_the_original_back(parts):
@@ -175,6 +179,36 @@ def test_the_added_import_is_never_inside_a_comment(parts):
     assert IMPORT in uf.mask_comments(result)  # still there once comments are taken away
     lines = uf.mask_comments(result).split("\n")
     assert any(line.strip() == IMPORT for line in lines)
+
+
+LONE_CR = re.compile(r"\r(?!\n)")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '@charset "x";/*\n\r\n\r\n*/',  # the example that the property found
+        '@charset "UTF-8"; /* notes\r\nmore */',  # CRLF, comment to the end, no final break
+        '@charset "x";/*\nmore\n*/',  # the same in a file that is LF
+        '@charset "x"; /*\r\n\r\n*/',  # CRLF with nothing but blank comment lines
+    ],
+)
+def test_an_import_added_as_the_last_line_leaves_no_lone_cr_and_is_stable(text: str):
+    """The import goes after the comment that @charset opens; that can be the end of a file that
+    has no final line break. The old last line then needs no ``\r`` of its own."""
+    added = uf.with_css_import(text)
+    assert IMPORT in uf.mask_comments(added)
+    assert not LONE_CR.search(added), repr(added)  # the text has none, so the result has none
+    assert uf.with_css_import(added) == added  # a second run changes nothing
+    assert uf.without_css_import(added) == text  # and taking it out gives the original back
+
+
+def test_the_import_at_the_end_of_a_file_that_ends_in_a_line_break_keeps_the_file_style():
+    text = '@charset "x"; /* a\r\nb */\r\n'
+    assert uf.with_css_import(text) == f'@charset "x"; /* a\r\nb */\r\n{IMPORT}\r\n'
+    assert uf.with_css_import(text.replace("\r\n", "\n")) == (
+        f'@charset "x"; /* a\nb */\n{IMPORT}\n'
+    )
 
 
 # --- two readers of user.js must agree -----------------------------------------------------------

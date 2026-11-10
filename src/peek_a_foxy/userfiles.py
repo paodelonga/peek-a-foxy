@@ -192,7 +192,14 @@ def with_css_import(text: str) -> str:
             0 if unclosed is not None else len(rest),
         )
     lines = [line for line, _, _ in rest]
-    lines.insert(position, document.new_line(CSS_IMPORT))
+    if position == len(lines) and not document.trailing_newline:
+        # The import becomes the last line of a file that has no final line break. The line above
+        # it keeps its own ending (as written) and gets a plain "\n": a "\r" at the end of the
+        # file would be a line ending that nothing follows, and the next run, which reads the file
+        # differently, would move it.
+        lines.append(CSS_IMPORT)
+    else:
+        lines.insert(position, document.new_line(CSS_IMPORT))
     if lines == document.lines:
         return text
     return document.with_lines(lines).render()
