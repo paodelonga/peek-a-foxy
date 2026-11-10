@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from support import git
@@ -53,3 +54,43 @@ def test_the_git_helper_works_with_a_hostile_global_configuration(tmp_path: Path
     assert (
         subprocess.run(["git", "-C", str(repo), "log", "-1"], capture_output=True).returncode == 0
     )
+
+
+DEVELOPER_VARIABLES = {
+    "FXAC_REPO": "/nonexistent/fx-autoconfig",
+    "FXAC_COMMIT": "not-a-hash",
+    "DISPLAY": ":99",
+    "WAYLAND_DISPLAY": "wayland-99",
+}
+
+
+def test_the_variables_of_a_developer_machine_are_gone_inside_a_test():
+    """Run by the test below with the variables set; on its own it only shows their absence."""
+    for name in DEVELOPER_VARIABLES:
+        assert name not in os.environ, name
+    # What reads them sees the defaults.
+    from peek_a_foxy import loader
+
+    assert (
+        loader.pinned_commit() == loader.DEFAULT_COMMIT and loader.repo_url() == loader.DEFAULT_REPO
+    )
+    assert not loader.overridden()
+
+
+def test_a_polluted_environment_does_not_reach_the_tests():
+    """The real proof: start pytest with the variables set and see the test above still pass."""
+    root = Path(__file__).resolve().parents[1]
+    node = (
+        f"{Path(__file__).name}::test_the_variables_of_a_developer_machine_are_gone_inside_a_test"
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", node],
+        cwd=root / "tests",
+        env={**os.environ, **DEVELOPER_VARIABLES, "PYTHONPATH": str(root / "src")},
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout
