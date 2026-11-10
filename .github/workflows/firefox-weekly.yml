@@ -14,6 +14,7 @@ permissions:
 jobs:
   browser:
     name: browser (${{ matrix.os }}, Firefox ${{ matrix.firefox }})
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:

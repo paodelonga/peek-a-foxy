@@ -122,6 +122,59 @@ def test_dependabot_still_updates_the_actions_and_the_python_packages():
     assert {"github-actions", "pip"} <= kinds  # pinned commits are moved by it, with the comment
 
 
+# --- nothing hangs for six hours, a superseded run stops, the newest Python is tried (review 3) ---
+
+ALL_WORKFLOWS = ["ci.yml", "firefox-weekly.yml"]
+
+
+@pytest.mark.parametrize("name", ALL_WORKFLOWS)
+def test_every_job_has_a_time_limit_that_is_neither_missing_nor_the_default_of_six_hours(name):
+    """A hung Firefox or a stalled network call would otherwise burn 360 minutes of a runner."""
+    for job_name, job in load(name)["jobs"].items():
+        limit = job.get("timeout-minutes")
+        assert isinstance(limit, int) and not isinstance(limit, bool), (name, job_name)
+        assert 0 < limit <= 60, (name, job_name, limit)
+
+
+def test_the_browser_jobs_get_more_time_than_the_unit_jobs_but_not_unlimited():
+    jobs = load("ci.yml")["jobs"]
+    assert jobs["browser"]["timeout-minutes"] > jobs["test"]["timeout-minutes"]
+
+
+def test_a_newer_push_to_a_pull_request_cancels_the_older_run_but_pushes_to_branches_are_kept():
+    concurrency = load("ci.yml")["concurrency"]
+    assert "github.workflow" in concurrency["group"]
+    assert "github.event.pull_request.number" in concurrency["group"]  # one group per PR
+    cancel = concurrency["cancel-in-progress"]
+    assert isinstance(cancel, str)  # an expression; a plain true would also cancel pushes
+    assert "github.event_name == 'pull_request'" in cancel  # an expression, not a plain true
+
+
+def test_the_test_matrix_covers_the_oldest_and_the_newest_python_the_suite_was_tried_on():
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    floor = re.search(r'requires-python\s*=\s*">=\s*(\d+\.\d+)"', text)
+    assert floor, "requires-python is no longer a plain floor: update this test"
+    versions = load("ci.yml")["jobs"]["test"]["strategy"]["matrix"]["python"]
+    assert floor.group(1) in versions
+    assert all(isinstance(v, str) for v in versions)  # unquoted, 3.10 would be read as 3.1
+    newest = max(tuple(map(int, v.split("."))) for v in versions)
+    assert newest >= (3, 14)
+
+
+def test_the_lowest_job_runs_the_whole_suite_and_says_what_it_does_not_lower():
+    job = load("ci.yml")["jobs"]["lowest"]
+    runs = [step.get("run", "") for step in job["steps"]]
+    assert "python -m pytest" in [run.strip() for run in runs]  # no -k, -m or path: all of it
+    assert any("pip check" in run for run in runs)
+    comment = [
+        line
+        for line in (WORKFLOWS / "ci.yml").read_text(encoding="utf-8").splitlines()
+        if line.lstrip().startswith("#")
+    ]
+    wording = " ".join(line.lstrip("# ") for line in comment)
+    assert "Typer and Rich" in wording and "stays at the newest" in wording
+
+
 def floor_of(requirement: str) -> str:
     match = re.search(r">=\s*([0-9][0-9.]*)", requirement)
     assert match, requirement
