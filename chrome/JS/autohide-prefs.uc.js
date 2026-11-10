@@ -16,7 +16,8 @@
 
   const CATEGORY = "panePeekafoxy"; // what Firefox derives from the address about:preferences#peekafoxy
   const FRIENDLY = "peekafoxy";
-  const TEXT = Peek.textFor(Services.locale.appLocaleAsBCP47).settings;
+  const LOCALE = Services.locale.appLocaleAsBCP47;
+  const TEXT = Peek.textFor(LOCALE).settings;
   const startedOnOurPage = document.location.hash === `#${FRIENDLY}`;
 
   // What the page needs from Firefox. Names are checked, not assumed.
@@ -27,6 +28,7 @@
     if (typeof gCategoryInits === "undefined" || typeof gCategoryInits?.set !== "function") missing.push("gCategoryInits");
     if (typeof gCategoryModules === "undefined" || typeof gCategoryModules?.set !== "function") missing.push("gCategoryModules");
     if (typeof gotoPref !== "function") missing.push("gotoPref");
+    if (typeof gLastCategory === "undefined") missing.push("gLastCategory");
     return missing;
   };
 
@@ -44,13 +46,14 @@
   const STYLE = `
     #peekafoxy-pane .pf-card { margin-block: 0 16px; }
     #peekafoxy-pane .pf-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 8px; }
-    #peekafoxy-pane .pf-row > label { flex: 1 1 24em; }
+    #peekafoxy-pane .pf-row > label { flex: 1 1 10em; }
     #peekafoxy-pane .pf-row input[type="number"] { width: 7em; }
-    #peekafoxy-pane .pf-row input[type="text"] { width: 16em; }
-    #peekafoxy-pane .pf-reset { background: url("chrome://global/skin/icons/reset.svg") no-repeat 8px center / 16px;
+    #peekafoxy-pane .pf-row input[type="text"] { width: 12em; }
+    #peekafoxy-pane .pf-reset { flex: none; background: url("chrome://global/skin/icons/reset.svg") no-repeat 8px center / 16px;
       padding-inline-start: 32px; -moz-context-properties: fill; fill: currentColor; }
     #peekafoxy-pane .pf-note { color: var(--text-color-deemphasized); margin-block: 4px; }
-    #peekafoxy-pane .pf-problem { color: var(--text-color-error, #c50042); margin-block: 0 8px; min-height: 1.2em; }
+    #peekafoxy-pane .pf-problem { color: var(--text-color-error, #c50042); margin-block: 0; }
+    #peekafoxy-pane .pf-problem:not(:empty) { margin-block: 0 8px; }
     #peekafoxy-pane h2 { margin-block: 0 8px; font-size: 1.2em; }
     #peekafoxy-pane .pf-status { margin-block: 0 8px; padding: 8px 12px; border-inline-start: 4px solid var(--border-color-success, #058b00); border-radius: 4px; background: var(--background-color-box, transparent); }
     #peekafoxy-pane .pf-status[data-state="errors"] { border-color: var(--border-color-warning, #cc9900); }
@@ -77,16 +80,32 @@
     return el("div", { class: "pf-row" }, el("label", {}, input, ` ${label}`));
   };
 
-  const resetButton = (pref) => {
+  // A live region only announces a change, so the text is cleared first and set a moment later (also
+  // when it is the same text again). A text still waiting is dropped, so it cannot come back after a
+  // newer call has cleared the line.
+  const announcing = new WeakMap();
+  const announce = (node, text) => {
+    window.clearTimeout(announcing.get(node));
+    node.textContent = "";
+    if (text) announcing.set(node, window.setTimeout(() => { node.textContent = text; }, 50));
+  };
+
+  // The button gets the focus back on its field once it is pressed: it disables itself when the
+  // default is back, and focus must not stay on a disabled button.
+  const resetButton = (pref, field, label) => {
     const button = el("button", { type: "button", class: "pf-reset", text: TEXT.reset });
-    button.addEventListener("click", () => Peek.reset(pref));
+    button.setAttribute("aria-label", fill(TEXT.resetFor, { label })); // else the six buttons share one name
+    button.addEventListener("click", () => {
+      Peek.reset(pref);
+      field.focus();
+    });
     controls.push({ refresh: () => { button.disabled = !Peek.hasUserValue(pref); } });
     return button;
   };
 
   const problemLine = () => el("p", { class: "pf-problem", role: "alert" });
   const showProblem = (line, reason, values = {}) => {
-    line.textContent = reason ? fill(TEXT.problems[reason], values) : "";
+    announce(line, reason ? fill(TEXT.problems[reason], values) : "");
   };
 
   const numberField = (pref, label) => {
@@ -107,27 +126,56 @@
     });
     controls.push({ refresh });
     return el("div", {},
-      el("div", { class: "pf-row" }, el("label", { for: id, text: label }), input, resetButton(pref)), problem);
+      el("div", { class: "pf-row" }, el("label", { for: id, text: label }), input, resetButton(pref, input, label)),
+      problem);
+  };
+
+  // The keys that are only the start of a shortcut: the recorder waits for the key that follows.
+  const MODIFIER_KEYS = ["Control", "Alt", "Shift", "Meta", "AltGraph", "OS"];
+
+  // Firefox already uses the shortcut that was just saved: say what for. It is only a warning, the
+  // shortcut stays.
+  const warnAboutFirefox = (problem, text) => {
+    const used = Peek.firefoxShortcut(ownerWindow(), text);
+    if (!used) return;
+    showProblem(problem, used.label ? "firefoxUses" : "firefoxUsesUnnamed", { name: used.label });
   };
 
   const shortcutField = (pref, other, label) => {
     const id = `peekafoxy-${pref.name}`;
-    const input = el("input", { type: "text", id, readonly: "", placeholder: TEXT.shortcutPrompt });
+    const input = el("input", { type: "text", id, readonly: "", "aria-describedby": `${id}-prompt` });
+    const prompt = el("p", { class: "pf-note", id: `${id}-prompt`, text: TEXT.shortcutPrompt });
     const problem = problemLine();
     input.addEventListener("keydown", (event) => {
       if (event.key === "Tab" || event.key === "Escape") return showProblem(problem, null); // leave
-      if (["Control", "Alt", "Shift", "Meta", "AltGraph", "OS"].includes(event.key)) return; // wait for the key
+      if (MODIFIER_KEYS.includes(event.key)) return; // wait for the key
+      if (event.key === "Enter" || event.key === " ") return showProblem(problem, null); // nothing to record
       event.preventDefault();
       event.stopPropagation();
+      if ((event.key === "Backspace" || event.key === "Delete") && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        showProblem(problem, null);
+        Peek.reset(pref); // the natural way to clear a field: the default comes back
+        return;
+      }
       const text = Peek.shortcutFromEvent(event);
       const reason = text ? Peek.shortcutProblem(text, other) : "unsupported";
       showProblem(problem, reason);
-      if (!reason) Peek.write(pref, text);
+      if (reason) return;
+      Peek.write(pref, text);
+      warnAboutFirefox(problem, text);
     });
-    input.addEventListener("blur", () => showProblem(problem, null));
+    // The windows' own shortcut handler ignores the keys while a field is recording (see
+    // Peek.Recorder); a page that goes away with the focus in it stops recording too.
+    input.addEventListener("focus", () => Peek.Recorder.focused(input));
+    input.addEventListener("blur", () => {
+      Peek.Recorder.blurred(input);
+      showProblem(problem, null);
+    });
+    window.addEventListener("pagehide", () => Peek.Recorder.blurred(input));
     controls.push({ refresh: () => { input.value = Peek.bindingFor(pref).text; } });
     return el("div", {},
-      el("div", { class: "pf-row" }, el("label", { for: id, text: label }), input, resetButton(pref)), problem);
+      el("div", { class: "pf-row" }, el("label", { for: id, text: label }), input, resetButton(pref, input, label)),
+      prompt, problem);
   };
 
   // --- the Support group: how things stand, and the diagnostic info for a bug report ---
@@ -142,7 +190,7 @@
   };
 
   const supportStatus = () => {
-    const line = el("div", { class: "pf-status", id: "peekafoxy-status" });
+    const line = el("div", { class: "pf-status", id: "peekafoxy-status", role: "status" });
     const refresh = () => {
       const { state, version, failed } = Diag.summary(ownerWindow());
       const lines = [];
@@ -163,10 +211,25 @@
     return line;
   };
 
-  // A live region only announces a change, so the text is cleared first and set a moment later.
-  const announce = (node, text) => {
-    node.textContent = "";
-    if (text) window.setTimeout(() => { node.textContent = text; }, 50);
+  // With vertical tabs Firefox has no tab bar to hide, so the tab bar options do nothing: say so, but
+  // only while the pref is on, and follow it live.
+  const VERTICAL_TABS = "sidebar.verticalTabs";
+  const verticalTabsNote = () => {
+    const note = el("p", { class: "pf-note", id: "peekafoxy-vertical-tabs-note", text: TEXT.verticalTabsNote, hidden: "" });
+    const refresh = () => {
+      let on = false;
+      try {
+        on = Services.prefs.getBoolPref(VERTICAL_TABS, false);
+      } catch (e) {
+        Diag.warn("settings:verticalTabs", e); // the pref holds another type: not on
+      }
+      note.hidden = !on;
+    };
+    const observer = { observe: refresh };
+    Services.prefs.addObserver(VERTICAL_TABS, observer);
+    window.addEventListener("unload", () => Services.prefs.removeObserver(VERTICAL_TABS, observer), { once: true });
+    controls.push({ refresh });
+    return note;
   };
 
   const issuesNote = () => {
@@ -211,6 +274,7 @@
       : el("div", {}, el("h1", { text: TEXT.category }), el("p", { text: TEXT.description }));
     return el("section", {},
       header,
+      verticalTabsNote(),
       group(TEXT.startGroup,
         checkbox(PREFS.tabsAutohide, TEXT.startTabs),
         checkbox(PREFS.urlbarAutohide, TEXT.startUrlbar),
@@ -246,7 +310,11 @@
     const button = el("moz-page-nav-button", {
       id: "category-peekafoxy", view: CATEGORY, iconsrc: "chrome://browser/skin/tabs.svg", text: TEXT.category,
     });
-    const pane = el("div", { id: "peekafoxy-pane", "data-category": CATEGORY, hidden: "" },
+    // The texts are in the language Peek.textFor chose, which is English for a Firefox in a language
+    // that has no texts: the pane says so, so a right-to-left Firefox does not lay them out as such.
+    const pane = el("div", {
+      id: "peekafoxy-pane", "data-category": CATEGORY, hidden: "", lang: Peek.languageFor(LOCALE), dir: Peek.directionFor(LOCALE),
+    },
       el("style", { text: STYLE }), buildPage());
     const separator = document.getElementById("nav-separator");
 

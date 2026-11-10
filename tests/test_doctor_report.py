@@ -274,7 +274,9 @@ def test_the_home_user_profile_folder_and_profile_name_never_appear_in_any_forma
     user, folder, tail, pname
 ):
     name = f"zq{user}"
-    chosen = f"zq{pname}".strip()  # the name a person chose for a profile (a personal one)
+    # The name a person chose for a profile (a personal one). A name of one or two characters is
+    # never hidden (it would blank ordinary words), so the generated one always has three or more.
+    chosen = f"zq{pname.strip() or 'n'}"
     with tempfile.TemporaryDirectory() as root:
         home = Path(root) / "users" / name
         profile = make_profile(home, folder=f"{folder}.qx{tail}", name=chosen)

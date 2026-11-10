@@ -6,22 +6,11 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from support import needs_permissions, needs_symlinks
+from support import git, needs_permissions, needs_symlinks
 
 from peek_a_foxy import errors, loader
 from peek_a_foxy.errors import PlatformError
 from peek_a_foxy.loader import LoaderError, fetch_loader
-
-
-def git(repo: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
 
 
 def add_commit(repo: Path, message: str) -> str:

@@ -5,7 +5,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from peek_a_foxy import cli, errors, report, status, userfiles
+import pytest
+
+from peek_a_foxy import cli, errors, logs, report, status, userfiles
 from peek_a_foxy.assets import FILES, MODULE_NAME, PREFS_SCRIPT_NAME, SCRIPT_NAME, assets_dir
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,10 +35,29 @@ def test_the_legacy_prefs_map_onto_current_names():
 
 def test_the_default_shortcuts_the_cli_announces_are_the_ones_in_the_module():
     module = source(f"resources/{MODULE_NAME}")
-    defaults = re.findall(
-        r'name: "peekafoxy\.\w+\.shortcut", type: "string", default: "([^"]+)"', module
-    )
-    assert sorted(defaults) == sorted([cli.TABS_SHORTCUT, cli.URLBAR_SHORTCUT])
+    assert _module_constant("DEFAULT_TABS_SHORTCUT") == cli.TABS_SHORTCUT
+    assert _module_constant("DEFAULT_TABS_SHORTCUT_LINUX") == cli.TABS_SHORTCUT_LINUX
+    assert _module_constant("DEFAULT_URLBAR_SHORTCUT") == cli.URLBAR_SHORTCUT
+    # the prefs take their defaults from those constants, not from a literal that could drift
+    assert re.findall(
+        r'name: "peekafoxy\.\w+\.shortcut", type: "string", default: ([^}]+) \}', module
+    ) == [
+        "defaultTabsShortcut(Services.appinfo.OS)",
+        "DEFAULT_URLBAR_SHORTCUT",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [("win32", cli.TABS_SHORTCUT), ("darwin", cli.TABS_SHORTCUT)]
+    + [
+        (p, cli.TABS_SHORTCUT_LINUX)
+        for p in ("linux", "linux2", "freebsd14", "", "cygwin", "WIN32")
+    ],
+)
+def test_the_cli_announces_the_tab_bar_shortcut_of_the_system(monkeypatch, platform, expected):
+    monkeypatch.setattr(cli.sys, "platform", platform)
+    assert cli.tabs_shortcut() == expected
 
 
 def test_every_installed_file_exists_in_the_sources():
@@ -74,6 +95,19 @@ def test_the_script_version_is_the_package_version():
     version = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE)
     assert version
     assert _module_constant("SCRIPT_VERSION") == version.group(1)
+
+
+def test_the_script_file_endings_that_redaction_keeps_are_the_same_in_both_languages():
+    """``_SCRIPT_SUFFIX`` (logs.py) and ``SCRIPT_SUFFIX`` (the module) must stay equal (PF-27)."""
+    js = re.search(r"const SCRIPT_SUFFIX = /\^\(\?:([^)]*)\)", source(f"resources/{MODULE_NAME}"))
+    py = re.search(r"\(\?i:([^)]*)\)", logs._SCRIPT_SUFFIX)
+    assert js and py
+    assert js.group(1).split("|") == py.group(1).split("|")
+    # And the rest of the pattern: not followed by more name characters, case-insensitive.
+    assert "(?![A-Za-z0-9_-])" in logs._SCRIPT_SUFFIX
+    assert re.search(
+        r"SCRIPT_SUFFIX = /[^\n]*\(\?!\[A-Za-z0-9_-\]\)/i;", source(f"resources/{MODULE_NAME}")
+    )
 
 
 def test_the_status_file_the_script_writes_is_the_one_the_doctor_reads():

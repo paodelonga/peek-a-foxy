@@ -1,18 +1,21 @@
 """Failure modes and unusual-but-plausible setups; none may corrupt user files or crash."""
 
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
-from support import needs_permissions, needs_symlinks
+from support import fake_sudo, needs_permissions, needs_posix_shell, needs_symlinks
 from typer.testing import CliRunner
 
-from peek_a_foxy import cli, loader
+from peek_a_foxy import cli, errors, loader
 from peek_a_foxy import userfiles as uf
 from peek_a_foxy.cli import app
 from peek_a_foxy.installer import UserFileError, plan_install, plan_uninstall
 
 runner = CliRunner()
+SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 
 def tree(*roots: Path) -> dict[Path, bytes]:
@@ -134,58 +137,96 @@ def test_a_read_only_profile_is_a_clean_error(profile: Path):
 
 
 def test_a_read_only_firefox_dir_falls_back_to_sudo(monkeypatch, tmp_path):
-    calls: list[tuple[str, ...]] = []
-    monkeypatch.setattr(loader, "_sudo", lambda *command: calls.append(command))
+    calls: list[tuple[tuple[str, ...], bytes | None]] = []
+    monkeypatch.setattr(loader, "_sudo", lambda *command, data=None: calls.append((command, data)))
 
     def denied(*args, **kwargs):
         raise PermissionError("read-only")
 
-    monkeypatch.setattr(loader.shutil, "copyfile", denied)
+    monkeypatch.setattr(loader, "_copy_direct", denied)
+    monkeypatch.setattr(loader.platform, "system", lambda: "linux")  # GNU install, on any system
+    monkeypatch.setenv("FXAC_REPO", "x")  # not the pinned loader, so it has to be allowed
     source = tmp_path / "config.js"
     source.write_text("x")
     destination = tmp_path / "usr" / "lib" / "firefox" / "defaults" / "config.js"
-    loader._copy(source, destination)
+    loader._copy(source, destination, "config.js", allow_unverified=True)
     assert calls == [
-        ("mkdir", "-p", str(destination.parent)),
-        ("install", "-m", "644", str(source), str(destination)),
+        (("mkdir", "-p", str(destination.parent)), None),
+        (("install", "-m", "644", "/dev/stdin", str(destination)), b"x"),
+    ]
+
+
+def test_on_macos_the_verified_bytes_go_through_tee_and_chmod(monkeypatch, tmp_path):
+    """BSD ``install`` may refuse /dev/stdin, so macOS uses ``tee`` then ``chmod``."""
+    calls: list[tuple[tuple[str, ...], bytes | None]] = []
+    monkeypatch.setattr(loader, "_sudo", lambda *command, data=None: calls.append((command, data)))
+    monkeypatch.setattr(loader.platform, "system", lambda: "macos")
+
+    def denied(*args, **kwargs):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(loader, "_copy_direct", denied)
+    monkeypatch.setenv("FXAC_REPO", "x")
+    source = tmp_path / "config.js"
+    source.write_text("x")
+    destination = tmp_path / "Resources" / "config.js"
+    loader._copy(source, destination, "config.js", allow_unverified=True)
+    assert calls == [
+        (("mkdir", "-p", str(destination.parent)), None),
+        (("tee", str(destination)), b"x"),
+        (("chmod", "644", str(destination)), None),
     ]
 
 
 @needs_permissions
-@pytest.mark.parametrize(
-    "failure",
-    [subprocess.CalledProcessError(1, "sudo"), FileNotFoundError("no sudo here")],
-    ids=["sudo-refused", "sudo-missing"],
-)
+@needs_posix_shell
+@pytest.mark.parametrize("sudo", ["refuses", "missing"])
 def test_a_failing_sudo_is_a_clean_error(
-    profile: Path, firefox_dir: Path, fxac_repo, monkeypatch, failure
+    profile: Path, firefox_dir: Path, fxac_repo, monkeypatch, tmp_path, sudo: str
 ):
-    real_run = subprocess.run
+    """The real ``_sudo`` runs against a ``sudo`` that exits 1, or against no ``sudo`` at all.
 
-    def sudo_fails(command, *args, **kwargs):
-        if command[0] == "sudo":
-            raise failure
-        return real_run(command, *args, **kwargs)  # git still has to work
-
-    monkeypatch.setattr(loader.subprocess, "run", sudo_fails)
+    The old test made ``subprocess.run`` itself raise, so ``check=True`` was never exercised: a
+    ``check=False`` mutant of ``_sudo`` survived and a refused sudo would have counted as success.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    if sudo == "refuses":
+        fake_sudo(bin_dir, tmp_path / "calls", exit_code=1)
+    git_path = shutil.which("git")
+    assert git_path is not None
+    (bin_dir / "git").symlink_to(git_path)  # git still has to work
+    monkeypatch.setenv("PATH", str(bin_dir))
     firefox_dir.chmod(0o555)  # not writable: the loader has to ask for sudo
     try:
         result = runner.invoke(
-            app, ["install", "--profile", str(profile), "--firefox-dir", str(firefox_dir), "--yes"]
+            app,
+            [
+                "install",
+                "--profile",
+                str(profile),
+                "--firefox-dir",
+                str(firefox_dir),
+                "--allow-unverified-loader",
+                "--yes",
+            ],
         )
     finally:
         firefox_dir.chmod(0o755)
-    assert result.exit_code == 1 and "sudo" in result.output and "Traceback" not in result.output
+    assert result.exit_code == 1 and "PAF-205" in result.output and "Traceback" not in result.output
     assert not (firefox_dir / "config.js").exists()
     assert (profile / "chrome" / "autohide.css").is_file()  # the earlier steps did run
     assert "Running the same command again is safe" in result.output
+    assert "Done" not in result.output  # a refused sudo is never reported as a success
 
 
 def test_sudo_runs_the_command_it_was_given(monkeypatch):
     calls: list[list[str]] = []
-    monkeypatch.setattr(loader.subprocess, "run", lambda command, **kw: calls.append(command))
+    monkeypatch.setattr(
+        loader.subprocess, "run", lambda command, **kw: calls.append([*command, str(kw)])
+    )
     loader._sudo("install", "-m", "644", "a", "b")
-    assert calls == [["sudo", "install", "-m", "644", "a", "b"]]
+    assert calls == [["sudo", "install", "-m", "644", "a", "b", "{'check': True, 'input': None}"]]
 
 
 def test_a_loader_identical_to_ours_is_not_a_conflict(profile, firefox_dir, fxac_repo):
@@ -226,14 +267,32 @@ def test_declining_the_confirmation_changes_nothing(tmp_path: Path, monkeypatch,
     assert tree(profile) == before
 
 
-@pytest.mark.parametrize("answer", ["0", "3", "x"])
-def test_an_invalid_profile_number_is_rejected(tmp_path: Path, monkeypatch, answer):
-    _profiles_ini(tmp_path)
+@pytest.mark.parametrize("answer", ["0", "3", "-1", "99999999999999999999", "2147483648"])
+def test_a_number_outside_the_list_is_the_invalid_choice_error_and_nothing_changes(
+    tmp_path: Path, monkeypatch, answer
+):
+    """The check itself must refuse it. (The first version of this test only looked at profile
+    "one", and "0" passed with the check broken: index -1 picked the last profile, and the
+    confirmation that followed then read "0" until the input ended.)"""
+    one, two = _profiles_ini(tmp_path)
+    monkeypatch.setattr(cli.platform, "profiles_root", lambda: tmp_path)
+    monkeypatch.setattr(cli, "_interactive", lambda yes: True)
+    result = runner.invoke(app, ["install", "--skip-loader"], input=f"{answer}\ny\n")
+    assert result.exit_code == 1, result.output
+    assert errors.INVALID_CHOICE.code in result.output and "between 1 and 2" in result.output
+    assert not (one / "chrome").exists() and not (two / "chrome").exists()
+
+
+@pytest.mark.parametrize("answer", ["x", "1.5", "", " "])
+def test_an_answer_that_is_not_a_number_is_asked_again_and_nothing_changes(
+    tmp_path: Path, monkeypatch, answer
+):
+    one, two = _profiles_ini(tmp_path)
     monkeypatch.setattr(cli.platform, "profiles_root", lambda: tmp_path)
     monkeypatch.setattr(cli, "_interactive", lambda yes: True)
     result = runner.invoke(app, ["install", "--skip-loader"], input=f"{answer}\n" * 3)
-    assert result.exit_code != 0
-    assert not (tmp_path / "Profiles" / "one" / "chrome").exists()
+    assert result.exit_code != 0 and errors.UNEXPECTED.code not in result.output
+    assert not (one / "chrome").exists() and not (two / "chrome").exists()
 
 
 def test_interactive_firefox_choice(profile: Path, tmp_path: Path, monkeypatch, fxac_repo):
@@ -301,6 +360,72 @@ def test_without_a_terminal_and_without_yes_nothing_is_applied(
     assert result.exit_code == 1 and "--yes" in result.output
     assert "Traceback" not in result.output
     assert tree(profile) == before
+
+
+class Stream:
+    """A stand-in for a standard stream that only says whether it is a terminal."""
+
+    def __init__(self, terminal: bool) -> None:
+        self.terminal = terminal
+
+    def isatty(self) -> bool:
+        return self.terminal
+
+
+@pytest.mark.parametrize(
+    ("stdin", "stdout", "yes", "expected"),
+    [
+        (True, True, False, True),  # the only case in which anybody can answer
+        (True, False, False, False),  # `peek-a-foxy install | tee out.txt`: the question would go
+        (False, True, False, False),  # into the pipe, where nobody reads it
+        (False, False, False, False),
+        (True, True, True, False),  # --yes: nothing to ask
+    ],
+)
+def test_the_person_is_only_asked_when_both_ends_are_a_terminal(
+    monkeypatch, stdin: bool, stdout: bool, yes: bool, expected: bool
+):
+    monkeypatch.setattr(cli.sys, "stdin", Stream(stdin))
+    monkeypatch.setattr(cli.sys, "stdout", Stream(stdout))
+    assert cli._interactive(yes) is expected
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs a pseudo-terminal")
+def test_a_terminal_in_and_a_pipe_out_refuses_to_prompt_into_the_pipe(profile: Path):
+    """The real thing, ``peek-a-foxy install | tee``: stdin is a terminal, stdout is a pipe.
+
+    The terminal is kept open and holds an end-of-input (Ctrl-D), so a prompt that went ahead
+    would read it and abort ("Aborted!", no code); only the refusal ends in PAF-502.
+    """
+    import os
+    import pty
+
+    master, slave = pty.openpty()
+    try:
+        os.write(master, b"\x04")  # Ctrl-D, waiting in the terminal for whoever reads it first
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "peek_a_foxy",
+                "install",
+                "--profile",
+                str(profile),
+                "--skip-loader",
+            ],
+            stdin=slave,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={**os.environ, "PYTHONPATH": SRC, "PEEK_A_FOXY_LOG": "off", "NO_COLOR": "1"},
+        )
+        stdout, stderr = process.communicate(timeout=120)
+    finally:
+        os.close(slave)
+        os.close(master)
+    assert process.returncode == errors.EXIT_FAILURE, (stdout, stderr)
+    assert errors.NO_TERMINAL.code in stderr, stderr
+    assert not (profile / "chrome" / "autohide.css").exists()
 
 
 def test_a_dry_run_needs_no_terminal_and_no_yes(profile: Path):

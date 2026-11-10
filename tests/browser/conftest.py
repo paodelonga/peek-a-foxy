@@ -87,6 +87,21 @@ def _stop(process: subprocess.Popen) -> None:
         process.kill()
 
 
+# A keydown for a shortcut, as a dispatchEvent on the window. ``arguments``: the key code, then
+# whether Shift is held (null: as in the default shortcut of that bar, which depends on the system).
+KEYDOWN = """
+  const prefs = {KeyT: 'peekafoxy.tabs.shortcut', KeyU: 'peekafoxy.urlbar.shortcut'};
+  let shift = arguments[1];
+  if (shift === null) {
+    const name = prefs[arguments[0]];
+    shift = !!name && Services.prefs.getDefaultBranch('').getStringPref(name).includes('Shift');
+  }
+  window.dispatchEvent(new KeyboardEvent('keydown',
+    {code: arguments[0], ctrlKey: true, altKey: true, shiftKey: shift,
+     bubbles: true, cancelable: true}));
+"""
+
+
 class Browser:
     """Thin helper around a Marionette session in the browser's chrome (privileged) context."""
 
@@ -244,6 +259,52 @@ class Browser:
             elif time.monotonic() - since >= quiet:
                 return current
         raise AssertionError(f"layout never settled: {last}")
+
+    def move_pointer(self, x: float, y: float) -> None:
+        """A real pointer move (Marionette actions), so that :hover is updated like for a person."""
+        self.client.set_context(self.client.CONTEXT_CHROME)
+        self.client.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(
+            int(x), int(y), duration=0
+        ).perform()
+        self.client.actions.release()
+
+    def default_shortcut(self, bar: str) -> str:
+        """The default shortcut of ``tabs`` or ``urlbar`` as registered in about:config."""
+        return self.js(
+            "return Services.prefs.getDefaultBranch('').getStringPref(arguments[0]);",
+            f"peekafoxy.{bar}.shortcut",
+        )
+
+    def keydown(self, code: str, shift: bool | None = None) -> None:
+        """A synthetic Ctrl+Alt keydown, with Shift as the default shortcut of KeyT / KeyU has it
+        unless ``shift`` says otherwise (use ``shift=False`` for a shortcut that was recorded)."""
+        self.js(KEYDOWN, code, shift)
+
+    def real_shortcut(self, bar: str) -> None:
+        """Press the default shortcut of ``tabs`` or ``urlbar`` with real keys."""
+        from marionette_driver.keys import Keys
+
+        text = self.default_shortcut(bar)
+        modifiers = {"Ctrl": Keys.CONTROL, "Alt": Keys.ALT, "Shift": Keys.SHIFT}
+        *held, letter = text.split("+")
+        self.real_keys(letter.lower(), *(modifiers[name] for name in held))
+
+    def real_keys(self, key: str, *modifiers: str) -> None:
+        """Press ``key`` with ``modifiers`` the way a keyboard does: through Firefox's key handling.
+
+        A ``dispatchEvent`` on the window skips that path (the capture phase, ``preventDefault``
+        and what a page gets to see); a chain of Marionette key actions takes it.
+        """
+        self.client.set_context(self.client.CONTEXT_CHROME)
+        self.js("window.focus();")
+        keys = self.client.actions.sequence("key", "keyboard")
+        for modifier in modifiers:
+            keys.key_down(modifier)
+        keys.key_down(key).key_up(key)
+        for modifier in reversed(modifiers):
+            keys.key_up(modifier)
+        keys.perform()
+        self.client.actions.release()
 
     def tabs_height(self) -> int:
         """Height of whatever collapses with the tab bar (see TABS_HOLDER)."""
@@ -439,5 +500,25 @@ def browser_with_a_changed_settings_page(
     root = tmp_path_factory.mktemp("changed-settings")
     with launched(
         firefox_install, root, edit_script=_after_firefox_renames_the_pane_container
+    ) as helper:
+        yield helper
+
+
+def _after_firefox_renames_the_last_category(source: str) -> str:
+    """Pretend Firefox renamed ``gLastCategory``: the settings page asks for a name that is gone."""
+    if "@include        about:preferences*" not in source:
+        return source  # the script for the browser window is left alone
+    assert "gLastCategory" in source, "gLastCategory is not in the settings script"
+    return source.replace("gLastCategory", "gLastCategoryRenamedByFirefox")
+
+
+@pytest.fixture(scope="session")
+def browser_with_a_renamed_last_category(
+    firefox_install: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[Browser]:
+    """A Firefox whose about:preferences has no ``gLastCategory`` any more."""
+    root = tmp_path_factory.mktemp("renamed-last-category")
+    with launched(
+        firefox_install, root, edit_script=_after_firefox_renames_the_last_category
     ) as helper:
         yield helper

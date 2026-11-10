@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from doctor_support import make_firefox, make_profile
 from support import WINDOWS
 from typer.testing import CliRunner
 
@@ -64,13 +65,13 @@ def work(profile: Path) -> list[str]:
 
 def run_with_closed_reader(home: Path, args: list[str]) -> tuple[int, str]:
     """stdout is a pipe whose reading end is closed before the program writes anything."""
-    process = subprocess.Popen(
+    with subprocess.Popen(
         command(*args), env=env(home), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
-    assert process.stdout is not None and process.stderr is not None
-    process.stdout.close()
-    stderr = process.stderr.read()
-    return process.wait(timeout=120), stderr
+    ) as process:
+        assert process.stdout is not None and process.stderr is not None
+        process.stdout.close()
+        stderr = process.stderr.read()
+        return process.wait(timeout=120), stderr
 
 
 # --- the work still gets done ------------------------------------------------------------------
@@ -94,17 +95,23 @@ def test_head_c1_does_not_cut_an_install_short(home: Path, profile: Path, work: 
     """The real thing: ``peek-a-foxy install ... | head -c1``."""
     if shutil.which("head") is None:
         pytest.skip("no head")
-    producer = subprocess.Popen(
-        command(*work), env=env(home), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
-    head = subprocess.Popen(
-        ["head", "-c1"], stdin=producer.stdout, stdout=subprocess.PIPE, text=True
-    )
-    assert producer.stdout is not None
-    producer.stdout.close()
-    shown = head.communicate(timeout=120)[0]
-    stderr = producer.stderr.read() if producer.stderr else ""
-    assert producer.wait(timeout=120) == 0 and len(shown) == 1
+    with (
+        subprocess.Popen(
+            command(*work),
+            env=env(home),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ) as producer,
+        subprocess.Popen(
+            ["head", "-c1"], stdin=producer.stdout, stdout=subprocess.PIPE, text=True
+        ) as head,
+    ):
+        assert producer.stdout is not None
+        producer.stdout.close()
+        shown = head.communicate(timeout=120)[0]
+        stderr = producer.stderr.read() if producer.stderr else ""
+        assert producer.wait(timeout=120) == 0 and len(shown) == 1
     quiet(stderr)
     assert (profile / "chrome" / CSS).is_file()
     assert (profile / "chrome" / "userChrome.css").is_file()
@@ -125,17 +132,17 @@ def test_an_uninstall_whose_output_nobody_reads_still_uninstalls(home: Path, pro
 def test_verbose_output_on_a_closed_stderr_pipe_does_not_stop_the_work(
     home: Path, profile: Path, work: list[str]
 ):
-    process = subprocess.Popen(
+    with subprocess.Popen(
         command("-v", *work),
         env=env(home),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-    )
-    assert process.stderr is not None and process.stdout is not None
-    process.stderr.close()  # the verbose log goes to stderr: nobody reads it
-    stdout = process.stdout.read()
-    assert process.wait(timeout=120) == 0
+    ) as process:
+        assert process.stderr is not None and process.stdout is not None
+        process.stderr.close()  # the verbose log goes to stderr: nobody reads it
+        stdout = process.stdout.read()
+        assert process.wait(timeout=120) == 0
     quiet(stdout)
     assert (profile / "chrome" / CSS).is_file()
 
@@ -175,13 +182,13 @@ def test_an_error_whose_message_cannot_be_written_keeps_its_exit_code_and_is_qui
     home: Path, profile: Path, work: list[str]
 ):
     (profile / "chrome" / "userChrome.css").write_bytes(b"\xff\xfe")  # PAF-401
-    process = subprocess.Popen(
+    with subprocess.Popen(
         command(*work), env=env(home), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
-    assert process.stderr is not None and process.stdout is not None
-    process.stderr.close()
-    stdout = process.stdout.read()
-    assert process.wait(timeout=120) == errors.EXIT_FAILURE
+    ) as process:
+        assert process.stderr is not None and process.stdout is not None
+        process.stderr.close()
+        stdout = process.stdout.read()
+        assert process.wait(timeout=120) == errors.EXIT_FAILURE
     quiet(stdout)
 
 
@@ -194,6 +201,21 @@ def test_an_error_whose_message_cannot_be_written_keeps_its_exit_code_and_is_qui
     [["logs"], ["doctor", "--markdown"], ["doctor", "--json"]],
 )
 def test_a_report_nobody_reads_ends_quietly_with_the_failure_code(home: Path, args: list[str]):
+    """The failure code must come from the lost output and from nothing else.
+
+    In an empty home ``doctor`` exits 1 by itself (no Firefox, no profile), so this test used to
+    pass for the wrong reason. Here the machine is healthy and a control run with a reader that
+    stays proves that the same command exits 0.
+    """
+    if args[0] == "doctor":
+        firefox = make_firefox(home / "firefox-install")
+        profile = make_profile(home)
+        args = [*args, "--profile", str(profile), "--firefox-dir", str(firefox)]
+    control = subprocess.run(
+        command(*args), env=env(home), capture_output=True, text=True, timeout=120, check=False
+    )
+    assert control.returncode == 0, control.stderr  # nothing wrong but the missing reader, below
+    quiet(control.stderr)
     code, stderr = run_with_closed_reader(home, args)
     quiet(stderr)
     assert code == errors.EXIT_FAILURE, stderr
@@ -221,17 +243,17 @@ def test_what_click_prints_itself_ends_quietly_too(home: Path, args: list[str]):
 
 @posix_only
 def test_a_usage_error_on_a_closed_stderr_pipe_is_quiet(home: Path):
-    process = subprocess.Popen(
+    with subprocess.Popen(
         command("install", "--bogus"),
         env=env(home),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-    )
-    assert process.stderr is not None and process.stdout is not None
-    process.stderr.close()
-    stdout = process.stdout.read()
-    code = process.wait(timeout=60)
+    ) as process:
+        assert process.stderr is not None and process.stdout is not None
+        process.stderr.close()
+        stdout = process.stdout.read()
+        code = process.wait(timeout=60)
     quiet(stdout)
     assert code in (errors.EXIT_USAGE, errors.EXIT_FAILURE)
 

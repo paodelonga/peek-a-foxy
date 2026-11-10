@@ -25,7 +25,7 @@ are ignored, so the writer can add keys without breaking the reader::
       },
       "errors": [                           the most recent errors, newest last
         {"time": "2026-11-04T12:00:01.000Z", "level": "error",
-         "where": "autohide.uc.js:init", "message": "text"}
+         "where": "autohide:init", "message": "text"}
       ]
     }
 
@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from peek_a_foxy import platform
+from peek_a_foxy import fileio, platform
 
 STATUS_FILE = "peekafoxy-status.json"
 STATUS_SCHEMA = 1
@@ -158,8 +158,7 @@ def parse_status(text: str) -> Status:
 
 
 def _read_file(path: Path) -> bytes:
-    with open(path, "rb") as handle:
-        return handle.read(MAX_BYTES + 1)
+    return fileio.read_regular(path, MAX_BYTES)
 
 
 def read_status(chrome_dir: Path) -> Status | None:
@@ -171,6 +170,8 @@ def read_status(chrome_dir: Path) -> Status | None:
         raw = platform.retry_if_denied(lambda: _read_file(path))
     except (FileNotFoundError, NotADirectoryError):
         return None
+    except fileio.NotARegularFileError as error:
+        raise StatusError(error.strerror or "it is not a regular file") from error
     except OSError as error:
         raise StatusError(
             f"it could not be read ({error.strerror or type(error).__name__})"

@@ -38,6 +38,26 @@ def test_the_fixture_is_read_completely():
     assert result.errors[1].where == "autohide.uc.js:reveal"
 
 
+@pytest.mark.parametrize(
+    ("windows", "expected"),
+    [
+        (2, 2),
+        (0, 0),
+        (True, None),  # a boolean is an int to Python, but not a number of windows
+        (False, None),
+        (1.5, None),
+        (2.0, None),
+        ("3", None),
+        ([2], None),
+        (None, None),
+        (-1, -1),  # odd, but it is a number: showing it is the doctor's job, not the reader's
+    ],
+)
+def test_the_number_of_windows_is_an_integer_or_nothing(windows, expected):
+    text = json.dumps({"schema": 1, "updated": "2026-11-05T00:00:00Z", "windows": windows})
+    assert parse_status(text).windows == expected
+
+
 def test_unknown_keys_are_ignored_so_the_writer_can_add_some():
     data = json.loads(FIXTURE.read_text(encoding="utf-8")) | {"future": {"x": 1}}
     assert parse_status(json.dumps(data)).script_version == "0.2.0"
@@ -137,3 +157,19 @@ def test_a_denial_that_lasts_is_still_a_status_error(
 
 def test_the_file_name_is_the_documented_one():
     assert status.STATUS_FILE == "peekafoxy-status.json"
+
+
+@pytest.mark.parametrize(("extra", "bigger"), [(0, False), (1, True)])
+def test_a_status_file_of_exactly_the_size_limit_is_read_and_one_byte_more_is_not(
+    tmp_path: Path, extra: int, bigger: bool
+):
+    body = FIXTURE.read_text(encoding="utf-8").rstrip()
+    padding = " " * (status.MAX_BYTES + extra - len(body.encode("utf-8")))
+    # Bytes: text mode on Windows would add a CR to every line and miss the size by 20 bytes.
+    (tmp_path / status.STATUS_FILE).write_bytes((body + padding).encode("utf-8"))
+    assert (tmp_path / status.STATUS_FILE).stat().st_size == status.MAX_BYTES + extra
+    if bigger:
+        with pytest.raises(StatusError, match="much bigger"):
+            read_status(tmp_path)
+    else:
+        assert read_status(tmp_path).windows == 2

@@ -444,12 +444,80 @@ def test_secrets_in_urls_and_headers_are_hidden_like_the_python_side_does(browse
         ("/home/pedro", False, "failed for pedro at https://pedro:pw@example.org/p?key=1&token=2"),
         ("/home/pedro", False, "the user pedro, again pedro, and pedrolino in /home/pedrolino"),
         ("C:\\Users\\Pedro", True, "c:/users/pedro/AppData and C:\\\\Users\\\\PEDRO\\x for Pedro"),
+        # Adversarial: the home is a whole folder name, never the start, the end or the middle of
+        # another one (a hyphen counts as part of a name, a dot or a slash ends it).
+        (
+            "/home/pedro",
+            False,
+            "/home/pedro-bob/x /home/pedro_x /home/pedro2 /home/pedro. /home/pedro,",
+        ),
+        (
+            "/home/pedro",
+            False,
+            "/var/home/pedro/x /srv/home/pedro /xhome/pedro /home/pedro/home/pedro",
+        ),
+        ("/home/pedro", False, "/home/PEDRO/x on a case-sensitive system, /home/pedro/x"),
+        (
+            "/home/pedro",
+            False,
+            "/home/pedro\u0301x /home/pedro\U0001d400 /home/pedro\u00b2 /home/pedro\u0663",
+        ),
+        # ... with the trailing separators a home may come with.
+        ("/home/pedro/", False, "/home/pedro/a /home/pedrolino/a /home/pedro"),
+        ("/home/pedro//", False, "/home/pedro/a /home/pedro-x"),
+        ("/home/pedro\\", False, "/home/pedro\\a /home/pedro/a /home/pedrolino"),
+        # ... with letters that are not ASCII.
+        (
+            "/home/Jos\u00e9",
+            False,
+            "/home/Jos\u00e9/x /home/Jos\u00e9phine /home/\u00e9Jos\u00e9 /home/Jos\u00e9_",
+        ),
+        (
+            "/home/\u05d3\u05e0\u05d9",
+            False,
+            "/home/\u05d3\u05e0\u05d9/x /home/\u05d3\u05e0\u05d9\u05d0 \u05d3\u05e0\u05d9",
+        ),
+        ("/home/a(b)+[c]", False, "/home/a(b)+[c]/x /home/a(b)+[c]x /home/a(b)+[c]-"),
+        # ... on Windows, in either case and with either slash.
+        ("C:\\Users\\x", True, "C:\\Users\\x\\a C:\\Users\\xavier\\a c:/users/X/a C:\\Users\\x-y"),
+        ("C:\\Users\\Pedro\\", True, "C:\\Users\\Pedro\\a c:/users/pedrolino C:\\Users\\PedroX"),
+        ("C:\\Users\\Jos\u00c9", True, "c:/users/jos\u00e9/a C:\\Users\\JOS\u00c9phine"),
     ],
 )
 def test_the_script_and_the_python_side_hide_the_same_things(browser, home, ignore_case, text):
     options = {"homes": [home], "user": "pedro", "ignoreCase": ignore_case}
     python = Redactor(home=home, user="pedro", ignore_case=ignore_case)
     assert redact(browser, options, text) == python(text)
+
+
+@pytest.mark.parametrize(
+    ("home", "text", "expected"),
+    [
+        # Adversarial: the same cases as in tests/test_redaction_hostile.py, with the answer spelled
+        # out, so that both sides doing nothing (or both doing too much) cannot pass as "the same".
+        ("/home/al", "/home/alice/x", "/home/alice/x"),
+        ("/home/al", "/home/al/x", "~/x"),
+        ("/home/al", "a /home/al.", "a ~."),
+        ("/home/al", "/home/al-bob/x", "/home/al-bob/x"),
+        ("/home/jo", "/var/home/jo/x", "/var/home/jo/x"),
+        ("/home/pedro", "/home/pedrolino and /home/pedro", "/home/pedrolino and ~"),
+        ("/home/pedro/", "/home/pedro/a /home/pedrolino/a", "~/a /home/pedrolino/a"),
+        (
+            "/home/Jos\u00e9",
+            "/home/Jos\u00e9phine/a /home/Jos\u00e9/b",
+            "/home/Jos\u00e9phine/a ~/b",
+        ),
+        # The script also knows the address spelling (percent-encoded), which Python does not print.
+        (
+            "/home/Jos\u00e9",
+            "file:///home/Jos%C3%A9/x file:///home/Jos%C3%A9phine/x",
+            "file://~/x file:///home/Jos%C3%A9phine/x",
+        ),
+        ("C:\\Users\\x", "C:\\Users\\xavier\\a C:\\Users\\x\\a", "C:\\Users\\xavier\\a ~\\a"),
+    ],
+)
+def test_a_home_folder_is_hidden_only_as_a_whole_folder_name(browser, home, text, expected):
+    assert redact(browser, {"homes": [home]}, text) == expected
 
 
 # --- the health check ---------------------------------------------------------------------------
@@ -560,7 +628,7 @@ def test_values_outside_their_range_are_reported_with_the_value_actually_used(br
     assert "peekafoxy.strip.px is 99999" in note and "1 to 40" in note and "uses 40" in note
     browser.js("Services.prefs.setIntPref('peekafoxy.show.ms', -5);")
     note = failed_health(checked(browser))["settings-values"]
-    assert "1 more setting(s) are out of range" in note
+    assert "More settings are out of range too (1)" in note
 
 
 def test_a_shortcut_that_does_not_parse_is_reported_with_the_default_in_use(browser):
@@ -568,7 +636,10 @@ def test_a_shortcut_that_does_not_parse_is_reported_with_the_default_in_use(brow
         "Services.prefs.setStringPref('peekafoxy.tabs.shortcut', 'Ctrl+Alt+Nonsense\\u0000');"
     )
     note = failed_health(checked(browser))["shortcuts"]
-    assert "peekafoxy.tabs.shortcut" in note and "default Ctrl+Alt+T is used" in note
+    assert (
+        "peekafoxy.tabs.shortcut" in note
+        and f"default {browser.default_shortcut('tabs')} is used" in note
+    )
     assert "\x00" not in note
 
 
@@ -582,7 +653,7 @@ def test_two_bars_with_the_same_shortcut_are_reported(browser):
 
 
 def test_changing_a_setting_rechecks_by_itself(browser):
-    browser.js("Services.prefs.setStringPref('peekafoxy.tabs.shortcut', 'Ctrl+Alt+U');")
+    browser.js("Services.prefs.setStringPref('peekafoxy.tabs.shortcut', 'Ctrl+Alt+Shift+U');")
     browser.wait(
         "ChromeUtils.importESModule('chrome://userchrome/content/peekafoxy.sys.mjs')"
         ".Diag.health().some(r => r.name === 'shortcuts-distinct' && !r.ok)",
@@ -725,9 +796,7 @@ def test_a_status_file_that_cannot_be_written_is_recorded_and_changes_nothing_el
     # The script works as if nothing had happened.
     assert browser.js("return !!document.getElementById('tabs-autohide-button');")
     browser.js("document.documentElement.removeAttribute('autohide-tabs');")
-    browser.js(
-        "window.dispatchEvent(new KeyboardEvent('keydown', {code: 'KeyT', ctrlKey: true, altKey: true, bubbles: true, cancelable: true}));"
-    )
+    browser.keydown("KeyT")
     assert browser.js("return document.documentElement.hasAttribute('autohide-tabs');")
     browser.js("document.documentElement.removeAttribute('autohide-tabs');")
     # And it does not try again in a loop: the failure is recorded without queueing another write.
@@ -846,6 +915,61 @@ WINDOWS_OPEN = (
     "ChromeUtils.importESModule('chrome://userchrome/content/peekafoxy.sys.mjs')"
     ".Diag.status().windows"
 )
+CHECK_SKIPPED = (
+    "ChromeUtils.importESModule('chrome://userchrome/content/peekafoxy.sys.mjs')"
+    ".Diag.stats().skippedClosed === 1"
+)
+
+
+def _close_the_new_window_keeping_a_handle_on_it(browser, stash: str) -> None:
+    """Close the current (new) window; the first window keeps ``window.<stash>`` = its root element."""
+    browser.js(
+        """const first = [...Services.wm.getEnumerator('navigator:browser')].find(w => w !== window);
+           first[arguments[0]] = document.documentElement;""",
+        stash,
+    )
+    browser.js("window.close();")
+    browser.switch_to(browser.first_window)
+    browser.wait(f"{WINDOWS_OPEN} === 1", 10, "the closed window was still counted")
+
+
+def test_a_closed_window_no_longer_hears_about_changed_settings(browser):
+    """Adversarial: the closed window's root is still reachable, so a leftover observer shows."""
+    browser.new_window()
+    _close_the_new_window_keeping_a_handle_on_it(browser, "__closedRoot")
+    browser.diag("Diag.reset();")
+    browser.js("Services.prefs.setIntPref('peekafoxy.strip.px', 12);")
+    browser.wait(
+        "document.documentElement.style.getPropertyValue('--autohide-strip') === '12px'",
+        5,
+        "a live window did not apply the setting",  # the control: the observer machinery works
+    )
+    time.sleep(0.5)  # a leftover observer would have run by now, and so would the check it asks for
+    assert (
+        browser.js("return window.__closedRoot.style.getPropertyValue('--autohide-strip');") == ""
+    )
+    assert not [
+        e for e in browser.diag("return Diag.events();") if e["where"] == "autohide:tooltip"
+    ]
+    assert status_of(browser).windows == 1
+    browser.js("delete window.__closedRoot;")
+
+
+def test_a_check_asked_for_as_a_window_closes_does_not_bring_it_back(browser):
+    """Adversarial: ``checkSoon`` runs 300 ms later, when the window is gone and already forgotten."""
+    before = browser.diag("return Diag.stats().checkedWindows;")
+    browser.new_window()
+    # Asked for in the window's own unload, after Diag has forgotten the window.
+    browser.diag(
+        "Diag.check(window);"
+        "window.addEventListener('unload', () => Diag.checkSoon(window), {once: true});"
+    )
+    assert browser.diag("return Diag.stats().checkedWindows;") == before + 1
+    browser.js("window.close();")
+    browser.switch_to(browser.first_window)
+    browser.wait(f"{WINDOWS_OPEN} === 1", 10, "the closed window was still counted")
+    browser.wait(CHECK_SKIPPED, 5, "the late check never ran")  # it saw a closed window
+    assert browser.diag("return Diag.stats().checkedWindows;") == before
 
 
 def test_windows_writing_at_once_never_leave_a_torn_file(browser):
@@ -1348,8 +1472,15 @@ CONTRAST = """
     }
     return `rgb(${back.slice(0, 3).join(',')})`;
   };
+  // A control that is dimmed (a disabled button is, with opacity) shows its text that much fainter.
+  const opacity = (node) => {
+    let value = 1;
+    for (let n = node; n; n = n.parentElement) value *= Number(win.getComputedStyle(n).opacity);
+    return value;
+  };
   const ratio = (node) => {
     const back = parse(background(node)), front = parse(win.getComputedStyle(node).color);
+    front[3] *= opacity(node);
     const mixed = [0, 1, 2].map((i) => front[i] * front[3] + back[i] * (1 - front[3]));
     const a = lum(mixed), b = lum(back);
     return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
@@ -1359,6 +1490,10 @@ CONTRAST = """
   for (const id of ids) out[id] = ratio(doc.getElementById(id));
   out.note = ratio(doc.querySelector('#peekafoxy-pane a[href]').closest('p'));
   out.link = ratio(doc.querySelector('#peekafoxy-pane a[href]'));
+  // Every element the page styles itself (the pf-* classes), each of the six reset buttons (some
+  // disabled), the fields and the labels; the three states of the page are the same in each.
+  const own = [...doc.querySelectorAll('#peekafoxy-pane [class*="pf-"], #peekafoxy-pane input, #peekafoxy-pane label')];
+  own.forEach((node, i) => { out[`${node.localName}.${node.className || '-'}#${i}${node.disabled ? ' (disabled)' : ''}`] = ratio(node); });
   out.dark = win.matchMedia('(prefers-color-scheme: dark)').matches;
   out.forced = win.matchMedia('(forced-colors: active)').matches;
   return out;
@@ -1382,10 +1517,17 @@ def test_the_support_group_stays_readable_in_light_dark_and_high_contrast(browse
     open_support(browser)
     time.sleep(0.5)
     ratios = browser.settings(CONTRAST)
+    # Not a test that measures nothing: the six reset buttons and the message lines are in it.
+    assert sum(name.startswith("button.pf-reset") for name in ratios) == 6, ratios
+    assert sum(name.startswith("p.pf-problem") for name in ratios) == 7, ratios
+    assert sum(name.startswith("p.pf-note") for name in ratios) >= 5, ratios
     for name, ratio in ratios.items():
         if name in ("dark", "forced"):
             continue
-        assert ratio >= 4.5, f"{name} has a contrast of {ratio:.1f}:1 ({ratios})"
+        # A disabled control is exempt from the 4.5:1 of WCAG 1.4.3; the page still holds it to 3:1
+        # (what the standard asks of a control's outline), so that it can be found.
+        floor = 3.0 if "(disabled)" in name else 4.5
+        assert ratio >= floor, f"{name} has a contrast of {ratio:.1f}:1 ({ratios})"
 
 
 def test_portuguese_firefox_labels_survive_a_missing_language(browser):

@@ -18,6 +18,7 @@ that take the environment and the home folder as arguments, so every platform is
 from __future__ import annotations
 
 import contextlib
+import copy
 import getpass
 import logging
 import logging.handlers
@@ -25,6 +26,7 @@ import os
 import platform as py_platform
 import re
 import secrets
+import stat
 import subprocess
 import sys
 import time
@@ -35,7 +37,9 @@ from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import cast
 from urllib.parse import quote
 
-from peek_a_foxy import platform, ui
+import peek_a_foxy
+from peek_a_foxy import doctor, errors, fileio, platform, ui
+from peek_a_foxy.errors import UserFileError
 
 ENV_VAR = "PEEK_A_FOXY_LOG"  # "off", or the path of the log file
 LOG_NAME = "peek-a-foxy.log"
@@ -79,11 +83,24 @@ class Target:
     """Where this run logs: ``path`` is ``None`` when logging is off; ``source`` says why."""
 
     path: Path | None
-    source: str  # "default", "flag", "env", "off-flag", "off-env" or "no-home"
+    source: str  # "default", "flag", "env", "off-flag", "off-env", "env-unusable" or "no-home"
+
+
+def expand_user(value: str) -> Path:
+    """``value`` as a path with ``~`` expanded; a ``~name`` that cannot be expanded is an error."""
+    try:
+        return Path(value).expanduser()
+    except RuntimeError as error:  # an unknown user, or no home folder to expand ``~`` to
+        raise UserFileError(
+            errors.FILE_IO,
+            f"the path {value!r} starts with ~, which cannot be expanded here",
+            hint="Write the full path, or remove the ~ at its start.",
+            detail=repr(error),
+        ) from error
 
 
 def _file_for(value: str) -> Path:
-    path = Path(value).expanduser()
+    path = expand_user(value)
     return path / LOG_NAME if path.is_dir() else path  # a folder is accepted for convenience
 
 
@@ -104,7 +121,10 @@ def resolve_target(
     if env_value is not None and env_value.strip():
         if env_value.strip().lower() == "off":
             return Target(None, "off-env")
-        return Target(_file_for(env_value.strip()), "env")
+        try:
+            return Target(_file_for(env_value.strip()), "env")
+        except UserFileError:  # a wrong variable must not stop the command that diagnoses it
+            return Target(None, "env-unusable")
     try:
         base_home = Path.home() if home is None else home
     except (RuntimeError, OSError):  # no home folder to put a log in: go without one
@@ -115,7 +135,19 @@ def resolve_target(
 
 # --- redaction ----------------------------------------------------------------------------------
 
-_URL_CREDENTIALS = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^/\s:@]+(?::[^/\s@]*)?@")
+# Anchored on "://" and bounded: a scheme that is looked for in front of every letter makes a long
+# run of letters take time quadratic in its length, and the user and password parts of a real URL
+# are short. Nothing before the "://" is needed to hide what follows it.
+_URL_CREDENTIALS = re.compile(r"(?P<scheme>://)[^/\s:@]{1,256}(?::[^/\s@]{0,256})?@")
+# A secret that is named: ``GITHUB_TOKEN=x``, ``password: x``, ``"api_key": "x"``, ``x-api-key: x``.
+# The part of the name before the keyword is not matched (it would have to be looked for at every
+# letter); everything after the separator up to a space, quote or ``&`` is hidden. Every repeat is
+# bounded.
+_NAMED_SECRET = re.compile(
+    r"(?i)(?P<name>(?:access[_-]?key|api[_-]?key|private[_-]?key|token|secret|passw(?:or)?d"
+    r"|credential)[\w-]{0,40}[\"']?[ \t]{0,8}[:=][ \t]{0,8}[\"']?)[^\s\"'&;,}]+"
+)
+_BEARER = re.compile(r"(?i)\b(?P<head>bearer[ \t]+)[A-Za-z0-9._~+/=-]{8,}")
 _QUERY_SECRET = re.compile(
     r"(?i)\b(?P<name>access_token|token|api[_-]?key|key|secret|password|passwd|auth|sig|signature)"
     r"=[^&\s\"']+"
@@ -169,6 +201,17 @@ def _folder_pattern(path: str) -> str:
     return lead + r"[\\/]+".join(_name(part) for part in parts)
 
 
+def _real(path: str | None) -> str | None:
+    """``path`` with links resolved; ``None`` when that fails or changes nothing."""
+    if not path:
+        return None
+    try:
+        resolved = os.path.realpath(path)
+    except (OSError, ValueError):
+        return None
+    return resolved if resolved != path else None
+
+
 def _home_text(home: Path | None) -> str | None:
     """The home folder as text; ``None`` when the system cannot say where it is."""
     if home is not None:
@@ -177,6 +220,17 @@ def _home_text(home: Path | None) -> str | None:
         return str(Path.home())
     except (RuntimeError, OSError):
         return None
+
+
+def _short_name(user: str) -> str | None:
+    """The first six letters of ``user`` as Windows writes them in an 8.3 name (before the ``~1``).
+
+    Only a name that Windows has to shorten has one: longer than eight characters, or with a space
+    or a dot in it.
+    """
+    usable = re.sub(r"[^A-Za-z0-9_$%'`@{}!#()&^-]", "", user)[:6]
+    needs_short = len(user) > 8 or " " in user or "." in user
+    return usable.upper() if needs_short and len(usable) >= 3 else None
 
 
 STANDARD_PROFILE_NAMES = frozenset(
@@ -210,8 +264,10 @@ class Redactor:
         if homes:
             # The longest goes first, so that a folder inside another is not cut short.
             longest_first = sorted(homes, key=len, reverse=True)
+            # Whole path components only: the home ``/home/al`` is not the start of ``/home/alice``,
+            # whose name would otherwise be left half visible after the ``~``.
             alternatives = "|".join(_folder_pattern(h.rstrip("/\\")) for h in longest_first)
-            pieces.append("(?P<home>" + scoped.format(alternatives) + ")")
+            pieces.append("(?P<home>" + scoped.format(rf"(?<!\w)(?:{alternatives})(?![\w-])") + ")")
         # A profile name chosen by the person may be personal: each becomes ``<profile N>`` (N is
         # its place in profiles.ini, so a report stays readable). Standard names Firefox itself
         # gives, and names too short to tell apart from ordinary words, are kept.
@@ -225,6 +281,11 @@ class Redactor:
         # on their own; the home folder (which contains the name) is always hidden.
         if user and len(user) >= 3:
             pieces.append("(?P<user>" + scoped.format(rf"(?<!\w){re.escape(user)}(?!\w)") + ")")
+            short = _short_name(user)
+            if short:  # Windows also spells a long name as JOHNSM~1, in temporary folders for one
+                spelled = rf"(?i:(?<![\w~]){re.escape(short)}~[0-9]{{1,4}}(?![\w~]))"
+                pieces.append(f"(?P<short>{spelled})")
+                self._replacements["short"] = "<user>"
         self._replacements["folder"] = "<profile>"
         pieces.append(f"(?P<folder>{_PROFILE_FOLDER})")
         self._placeholders = re.compile("|".join(pieces))
@@ -251,10 +312,12 @@ class Redactor:
         homes = [value for value in (main, env.get("USERPROFILE"), env.get("HOME")) if value]
         if short_path is None and sys.platform == "win32":  # pragma: no cover - Windows only
             from peek_a_foxy._winapi import short_path
-        # The same folders as the system itself may spell them: with links resolved, and (the
-        # temporary folder is often spelled that way) by their 8.3 short names.
+        # The same folders as the system itself may spell them: with links resolved
+        # (``/var/home/jo`` for ``/home/jo``), and (the temporary folder is often spelled that way)
+        # by their 8.3 short names.
         for folder in list(homes):
-            homes.append(os.path.realpath(folder))
+            if (real := _real(folder)) is not None:
+                homes.append(real)
             if system == "windows" and short_path:
                 with contextlib.suppress(Exception):
                     homes.append(short_path(folder) or "")
@@ -262,7 +325,9 @@ class Redactor:
             home=main,
             user=user,
             extra_homes=homes,
-            ignore_case=system == "windows",
+            # Windows and macOS file systems do not care about case, so a path may be spelled
+            # either way in a message.
+            ignore_case=system in ("windows", "macos"),
             profile_names=profile_names,
         )
 
@@ -274,10 +339,13 @@ class Redactor:
         text = self._placeholders.sub(self._replace, text)
         text = _URL_CREDENTIALS.sub(r"\g<scheme>***@", text)
         text = _AUTH_HEADER.sub(r"\g<head>***", text)
+        text = _BEARER.sub(r"\g<head>***", text)
+        text = _NAMED_SECRET.sub(r"\g<name>***", text)
         text = _QUERY_SECRET.sub(r"\g<name>=***", text)
         return _GITHUB_TOKEN.sub("***", text)
 
 
+_RECORD_START = re.compile(r"(?m)^(?=\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ )")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")  # all but \t \n \r
 
 
@@ -293,8 +361,17 @@ class _Formatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         record.run_id = self._run_id
+        # A file name or an error text with a line break in it must not be able to start a line of
+        # its own that looks like a record (a forged "run started:"): the message is one line.
+        # The record is copied because the console and the file format the same one.
+        one_line = copy.copy(record)
+        one_line.msg = record.getMessage().replace("\r", "\\r").replace("\n", "\\n")
+        one_line.args = None
+        head, _, rest = super().format(one_line).partition("\n")
+        # Whatever follows (a traceback) is indented where it looks like the start of a record.
+        text = head + "\n" + _RECORD_START.sub("  ", rest) if rest else head
         # Escape sequences from a file's content must not reach a terminal when the log is shown.
-        return _CONTROL.sub("\ufffd", self._redact(super().format(record)))
+        return _CONTROL.sub("\ufffd", self._redact(text))
 
 
 FILE_FORMAT = "%(asctime)sZ %(levelname)-7s %(run_id)s %(message)s"
@@ -309,7 +386,9 @@ def _append_opener(path: str, flags: int) -> int:
         from peek_a_foxy._winapi import open_for_appending
 
         return open_for_appending(path)
-    return os.open(path, flags, 0o666)  # O_APPEND already writes at the end in one step here
+    # O_APPEND already writes at the end in one step here. Readable by this account only: the
+    # text is redacted but still describes this machine.
+    return os.open(path, flags, 0o600)
 
 
 class _SafeFileHandler(logging.handlers.RotatingFileHandler):
@@ -351,9 +430,20 @@ class Session:
     path: Path | None  # the file being written, or None
     started: float
     verbose: bool = False
+    redact: Callable[[str], str] | None = None  # the redaction that the records go through
 
 
 _session: Session | None = None
+
+
+def redact_text(text: str) -> str:
+    """``text`` as the log would write it: the same redaction, for what is printed to the terminal.
+
+    A person who is asked to re-run a command with ``--verbose`` pastes what the terminal shows, so
+    that must hide the user name and the home folder just as the log does.
+    """
+    redactor = _session.redact if _session and _session.redact else Redactor.for_this_machine()
+    return _CONTROL.sub("\ufffd", redactor(text))
 
 
 def active_path() -> Path | None:
@@ -390,9 +480,12 @@ def start(
             _session.path = None
 
     path: Path | None = None
-    if target is not None:
+    unusable = unusable_reason(target) if target is not None else None
+    if unusable and warn:
+        warn(f"could not write the log file ({unusable}); going on without it")
+    if target is not None and not unusable:
         try:
-            target.parent.mkdir(parents=True, exist_ok=True)
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)  # private, if it is new
             handler = _SafeFileHandler(target, warn_once)
             handler.setFormatter(_Formatter(FILE_FORMAT, redact, run))
             logger.addHandler(handler)
@@ -406,13 +499,13 @@ def start(
         logger.addHandler(console)
 
     global _session
-    _session = Session(run, path, time.monotonic(), verbose)
-    frozen = "standalone program" if getattr(sys, "frozen", False) else "installed with pip"
+    _session = Session(run, path, time.monotonic(), verbose, redact)
+    how = doctor.how_it_runs(bool(getattr(sys, "frozen", False)), peek_a_foxy.__file__)
     logger.info(
-        "%s peek-a-foxy %s (%s), Python %s, %s %s, args: %s",
+        "%s peek-a-foxy %s, %s, Python %s, %s %s, args: %s",
         RUN_MARKER,
         version,
-        frozen,
+        how,
         py_platform.python_version(),
         py_platform.platform(),
         py_platform.machine(),
@@ -443,10 +536,47 @@ def stop(exit_code: int | None = None) -> None:
 # --- reading and clearing the log (the ``logs`` command) ----------------------------------------
 
 
+_RECORD = re.compile(rb"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ [A-Z]+ +\S+ ")
+_RUN_LINE = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ INFO +\S+ " + re.escape(RUN_MARKER))
+
+
+def unusable_reason(path: Path) -> str | None:
+    """Why ``path`` must not be written as a log, or ``None`` when it may be.
+
+    A path that names anything but a log (a settings file, a device, a named pipe) is refused: a
+    wrong ``PEEK_A_FOXY_LOG`` or ``--log-file`` would add text to it, and opening a named pipe
+    waits for a reader for good.
+    """
+    try:
+        found = os.stat(path)
+    except OSError:  # missing (the usual case) or not reachable: opening it will say which
+        return None
+    if not stat.S_ISREG(found.st_mode):
+        return f"{path} is not a regular file"
+    if found.st_size and not looks_like_log(path):
+        return f"{path} already exists and is not a log of Peek-a-Foxy"
+    return None
+
+
+def looks_like_log(path: Path) -> bool:
+    """Whether the first line of the file is a record as :data:`FILE_FORMAT` writes it."""
+    try:
+        return _RECORD.match(fileio.read_regular(path, 200)) is not None
+    except OSError:
+        return False
+
+
 def log_files(path: Path) -> list[Path]:
-    """The log file and its rotated copies that exist, newest first."""
+    """The log file and its rotated copies that exist, newest first.
+
+    Only files that are logs: a file that has the name but other contents is not one.
+    """
     names = [path, *(path.with_name(f"{path.name}.{n}") for n in range(1, BACKUP_COUNT + 1))]
-    return [candidate for candidate in names if candidate.is_file()]
+    return [
+        candidate
+        for candidate in names
+        if candidate.is_file() and (candidate.stat().st_size == 0 or looks_like_log(candidate))
+    ]
 
 
 def last_run(path: Path) -> list[str]:
@@ -456,7 +586,7 @@ def last_run(path: Path) -> list[str]:
     except OSError:
         return []
     for index in range(len(lines) - 1, -1, -1):
-        if RUN_MARKER in lines[index]:
+        if _RUN_LINE.match(lines[index]):
             return lines[index:]
     return []
 

@@ -24,8 +24,16 @@ from peek_a_foxy.profiles import Profile, default_profile, read_profiles
 log = logging.getLogger(__name__)
 
 # Shown to the user as the way to toggle each bar; they must match the script's TARGETS.
-TABS_SHORTCUT = "Ctrl+Alt+T"
-URLBAR_SHORTCUT = "Ctrl+Alt+U"
+# Ctrl+Alt+T opens a terminal on GNOME, Ubuntu and Linux Mint, and Ctrl+Alt+U is Firefox's own.
+TABS_SHORTCUT = "Ctrl+Alt+T"  # Windows and macOS
+TABS_SHORTCUT_LINUX = "Ctrl+Alt+Shift+T"  # Linux, and any other system
+URLBAR_SHORTCUT = "Ctrl+Alt+Shift+U"  # everywhere
+
+
+def tabs_shortcut() -> str:
+    """The default tab bar shortcut on this system (the script picks it the same way)."""
+    return TABS_SHORTCUT if sys.platform in ("win32", "darwin") else TABS_SHORTCUT_LINUX
+
 
 # The arguments of this run, as given (the log records them, redacted).
 _argv: list[str] = sys.argv[1:]
@@ -114,10 +122,10 @@ def _handle_failure(error: Exception) -> int:
         log.error("failed [%s] %s", error.code.code, error.message, exc_info=error)
         if error.detail:
             log.error("detail: %s", error.detail)
-        ui.report(error, verbose=verbose, log_path=path)
+        ui.report(error, verbose=verbose, log_path=path, redact=logs.redact_text)
         return errors.EXIT_FAILURE
     log.error("unexpected error [%s]", errors.UNEXPECTED.code, exc_info=error)
-    ui.report_unexpected(error, verbose=verbose, log_path=path)
+    ui.report_unexpected(error, log_path=path)
     return errors.EXIT_UNEXPECTED
 
 
@@ -154,26 +162,71 @@ def _complete_firefox_dir(incomplete: str) -> list[str]:
     return [str(path) for path in candidates if str(path).startswith(incomplete)]
 
 
+def _folder_argument(value: str, *, must_exist: bool) -> Path:
+    """A folder given on the command line, made absolute with its links resolved.
+
+    Click's own ``resolve_path`` asks ``Path.resolve()``, which raises a plain ``RuntimeError``
+    for a symbolic link that loops (before Python 3.13) and so ended in "this is a bug".
+    ``realpath`` never raises; a loop is just a path that does not exist as a folder.
+    """
+    path = Path(os.path.realpath(value))
+    if path.is_file():
+        raise typer.BadParameter(f"Directory '{value}' is a file.")
+    if must_exist and not path.is_dir():
+        raise typer.BadParameter(f"Directory '{value}' does not exist.")
+    return path
+
+
+def _existing_folder(value: str) -> Path:
+    return _folder_argument(value, must_exist=True)
+
+
+def _any_folder(value: str) -> Path:
+    return _folder_argument(value, must_exist=False)
+
+
+PROFILE_HELP = "Firefox profile directory. Default: the default profile from profiles.ini."
+FIREFOX_DIR_HELP = "Firefox install directory for the loader. Default: auto-detected."
 ProfileOption = Annotated[
     Path | None,
     typer.Option(
         "--profile",
-        help="Firefox profile directory. Default: the default profile from profiles.ini.",
+        help=PROFILE_HELP,
         autocompletion=_complete_profile,
-        exists=True,
-        file_okay=False,
-        resolve_path=True,
+        parser=_existing_folder,
+        metavar="DIRECTORY",
     ),
 ]
 FirefoxDirOption = Annotated[
     Path | None,
     typer.Option(
         "--firefox-dir",
-        help="Firefox install directory for the loader. Default: auto-detected.",
+        help=FIREFOX_DIR_HELP,
         autocompletion=_complete_firefox_dir,
-        exists=True,
-        file_okay=False,
-        resolve_path=True,
+        parser=_existing_folder,
+        metavar="DIRECTORY",
+    ),
+]
+# The diagnostic command takes any path: a profile or Firefox folder that does not exist is a
+# finding of the report, with its own code, not a usage error that stops it.
+DoctorProfileOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--profile",
+        help=PROFILE_HELP,
+        autocompletion=_complete_profile,
+        parser=_any_folder,
+        metavar="DIRECTORY",
+    ),
+]
+DoctorFirefoxDirOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--firefox-dir",
+        help=FIREFOX_DIR_HELP,
+        autocompletion=_complete_firefox_dir,
+        parser=_any_folder,
+        metavar="DIRECTORY",
     ),
 ]
 SkipLoaderOption = Annotated[
@@ -183,8 +236,17 @@ SkipLoaderOption = Annotated[
         help="Only install the profile files; leave the Firefox install directory alone.",
     ),
 ]
+AllowUnverifiedOption = Annotated[
+    bool,
+    typer.Option(
+        "--allow-unverified-loader",
+        help="With FXAC_REPO or FXAC_COMMIT set, let sudo copy that loader without checking it "
+        "against the pinned one. Only for a loader that you wrote or trust.",
+    ),
+]
 DryRunOption = Annotated[
-    bool, typer.Option("--dry-run", help="Show what would be done without changing anything.")
+    bool,
+    typer.Option("--dry-run", help="Show what would be done without changing any of your files."),
 ]
 YesOption = Annotated[
     bool,
@@ -247,6 +309,11 @@ def _begin(
         version=__version__,
         warn=ui.warn,
     )
+    if target.source == "env-unusable":
+        ui.warn(
+            f"{logs.ENV_VAR} could not be used, because it starts with ~ that cannot be expanded "
+            "here; going on without a log file"
+        )
 
 
 def _version(value: bool) -> None:
@@ -313,6 +380,7 @@ def _prompt_profile(profiles: list[Profile], preferred: Profile | None) -> Path:
 def _resolve_firefox_dir(firefox_dir: Path | None, skip_loader: bool, yes: bool) -> Path | None:
     if skip_loader:
         return None
+    explicit = firefox_dir is not None
     if firefox_dir is None:
         firefox_dir = _choose_firefox_dir(yes)
     kind = platform.sandbox_kind(firefox_dir)
@@ -320,6 +388,13 @@ def _resolve_firefox_dir(firefox_dir: Path | None, skip_loader: bool, yes: bool)
         raise DiscoveryError(
             errors.FIREFOX_SANDBOXED,
             f"{kind} builds of Firefox are read-only and not supported ({firefox_dir})",
+        )
+    if explicit and not platform.is_firefox_dir(firefox_dir):
+        # A folder given by hand gets the test that the folders found by the search pass: the
+        # loader is copied into it, as root where it must be, so "any folder" is not good enough.
+        raise DiscoveryError(
+            errors.NOT_A_FIREFOX_FOLDER,
+            f"{firefox_dir} does not look like a Firefox install folder",
         )
     return firefox_dir
 
@@ -383,7 +458,7 @@ def _apply(plan: Plan, title: str, dry_run: bool, yes: bool) -> list[str]:
     """Show the plan, ask for confirmation when interactive, then run it."""
     _show_plan(plan, title)
     if dry_run:
-        ui.show("[dim]Dry run: nothing was changed.[/]")
+        ui.show("[dim]Dry run: none of your files was changed.[/]")
         raise typer.Exit()
     if not yes:
         _confirm()
@@ -397,18 +472,28 @@ def _apply(plan: Plan, title: str, dry_run: bool, yes: bool) -> list[str]:
         # Whatever went wrong, the person should know what the earlier steps already changed.
         errors.set_context(error, _progress(plan))
         raise
+    except KeyboardInterrupt:
+        # Ctrl-C is not an error that gets reported with a message, so say it here.
+        ui.note(_progress(plan, interrupted=True))
+        raise
 
 
-def _progress(plan: Plan) -> str:
-    """What a failed plan already changed, and that running it again is safe."""
+def _progress(plan: Plan, *, interrupted: bool = False) -> str:
+    """What a failed or interrupted plan already changed, and that running it again is safe."""
     finished = len(plan.completed)
     if finished:
         done = "; ".join(step.description for step in plan.completed)
         progress = f"{finished} of {len(plan.steps)} steps finished: {done}."
     else:
         progress = "No step had finished."
+    step = (
+        "The step that was running was interrupted. If it was copying files,"
+        if interrupted
+        else "If the failed step was copying files,"
+    )
     return (
-        f"{progress} The failed step may have changed part of its files. "
+        f"{progress} {step} some of them may already be in place; "
+        "your own files (userChrome.css and user.js) are never left half written. "
         "Running the same command again is safe: every step can be repeated."
     )
 
@@ -435,7 +520,8 @@ def done_summary(skipped_loader: bool, loader_conflict: bool) -> tuple[str, str]
         return "Installed, with a caveat", "\n\n".join(cautions)
     return "Done", (
         "Close [bold]all[/] Firefox windows and start it again.\n\n"
-        f"Both autohides start [bold]off[/]. Turn them on with [bold]{TABS_SHORTCUT}[/] (tabs) and "
+        f"Both autohides start [bold]off[/]. Turn them on with "
+        f"[bold]{tabs_shortcut()}[/] (tabs) and "
         f"[bold]{URLBAR_SHORTCUT}[/] (urlbar), or add the buttons from Customize Toolbar. "
         "The shortcuts, sizes and timings can be changed in Firefox's settings, under "
         "[bold]Peek a Foxy[/].\n\n"
@@ -451,6 +537,7 @@ def install(
     profile: ProfileOption = None,
     firefox_dir: FirefoxDirOption = None,
     skip_loader: SkipLoaderOption = False,
+    allow_unverified_loader: AllowUnverifiedOption = False,
     dry_run: DryRunOption = False,
     yes: YesOption = False,
     verbose: VerboseOption = False,
@@ -461,7 +548,7 @@ def install(
     _begin(ctx, verbose, log_file, no_log)
     profile_path = _choose_profile(profile, yes)
     loader_dir = _resolve_firefox_dir(firefox_dir, skip_loader, yes)
-    plan = plan_install(profile_path, loader_dir)
+    plan = plan_install(profile_path, loader_dir, allow_unverified=allow_unverified_loader)
     warnings = _apply(plan, f"Install into {profile_path}", dry_run, yes)
 
     for warning in warnings:
@@ -539,7 +626,15 @@ def _logs(
                 "Use --log-file or PEEK_A_FOXY_LOG to choose one."
             )
             return
-        ui.say("Logging is turned off here (PEEK_A_FOXY_LOG=off); this is where the log would be.")
+        if target.source == "env-unusable":
+            ui.say(
+                f"{logs.ENV_VAR} could not be used, because it starts with ~ that cannot be "
+                "expanded here; this is where the log would be otherwise."
+            )
+        else:
+            ui.say(
+                "Logging is turned off here (PEEK_A_FOXY_LOG=off); this is where the log would be."
+            )
     files = logs.log_files(path)
     ui.say(f"Log file: {path}")
 
@@ -553,7 +648,7 @@ def _logs(
         _clear(path, files, yes)
         return
     if not files:
-        ui.say("No log yet. It is created the first time you run install or uninstall.")
+        ui.say("No log yet. It is created the first time you run a command.")
         return
     ui.say(f"Size: {_size(files)} in {len(files)} file(s), at most 5 MB each.")
     lines = logs.last_run(path)
@@ -594,7 +689,7 @@ def _default_save_folder() -> Path:
 def _save_report(save: str, text: str, suffix: str, now: datetime) -> Path:
     if save == SAVE_DEFAULT:
         return report.save_new(text, _default_save_folder(), suffix, now)
-    path = Path(save).expanduser()
+    path = logs.expand_user(save)
     if path.is_dir():
         return report.save_new(text, path, suffix, now)
     return report.save(text, path)
@@ -625,10 +720,16 @@ class _OptionalPathCommand(TyperCommand):
     """
 
     def parse_args(self, ctx: Any, args: list[str]) -> list[str]:
+        options = {
+            name for param in self.get_params(ctx) for name in (*param.opts, *param.secondary_opts)
+        }
         rewritten: list[str] = []
         for position, arg in enumerate(args):
             following = args[position + 1] if position + 1 < len(args) else None
-            if arg == "--save" and (following is None or following.startswith("-")):
+            # Only another option ends --save: a path may start with "-" (``-report.json``).
+            if arg == "--save" and (
+                following is None or following == "--" or following.split("=")[0] in options
+            ):
                 arg = f"--save={SAVE_DEFAULT}"
             rewritten.append(arg)
         return super().parse_args(ctx, rewritten)
@@ -637,8 +738,8 @@ class _OptionalPathCommand(TyperCommand):
 @app.command("doctor", cls=_OptionalPathCommand)
 def doctor_command(
     ctx: typer.Context,
-    profile: ProfileOption = None,
-    firefox_dir: FirefoxDirOption = None,
+    profile: DoctorProfileOption = None,
+    firefox_dir: DoctorFirefoxDirOption = None,
     markdown: Annotated[
         bool,
         typer.Option(
@@ -671,10 +772,12 @@ def doctor_command(
     log_file: LogFileOption = None,
     no_log: NoLogOption = False,
 ) -> None:
-    """Checks this computer, tells you what is in the way of Peek-a-Foxy, and changes and sends
-    nothing."""
+    """Checks this computer and tells you what is in the way of Peek-a-Foxy. Nothing is changed or
+    sent anywhere; only the local log is written (use --no-log to avoid that)."""
     if markdown and as_json:
         raise typer.BadParameter("Use either --markdown or --json, but not both.")
+    if save not in (None, SAVE_DEFAULT):
+        logs.expand_user(save)  # a path that cannot be used is refused before the report is made
     _begin(ctx, verbose, log_file, no_log)
     machine = doctor.Context.detect(log_target=logs.active_path())
     found = doctor.collect(machine, profile=profile, firefox_dir=firefox_dir)

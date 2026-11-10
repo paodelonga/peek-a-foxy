@@ -1,6 +1,8 @@
 """``peek-a-foxy doctor``: look at this computer and say, in plain words, what is in the way.
 
-Read-only: nothing here writes, deletes or runs anything but ``git --version``. The result is a
+Read-only as far as your files go: nothing here changes or deletes them, and the only program that
+is run is ``git --version``. The one thing written is the local log (see :mod:`peek_a_foxy.logs`),
+unless it is turned off. The result is a
 :class:`~peek_a_foxy.report.Report` of checks in four groups:
 
 * Program: version, how it runs, Python, system, rights, terminal, git, the pinned loader, the log.
@@ -32,7 +34,17 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from peek_a_foxy import __version__, assets, elevate, errors, loader, platform, ui, userfiles
+from peek_a_foxy import (
+    __version__,
+    assets,
+    elevate,
+    errors,
+    fileio,
+    loader,
+    platform,
+    ui,
+    userfiles,
+)
 from peek_a_foxy.errors import DiscoveryError, ErrorCode, PeekError
 from peek_a_foxy.profiles import Profile, read_profiles
 from peek_a_foxy.report import FAIL, OK, WARN, Check, Report, Section
@@ -181,7 +193,7 @@ def _guarded(id: str, title: str, make: Callable[[], Check | list[Check]]) -> li
                 WARN,
                 errors.UNEXPECTED,
                 "This check could not run because of a bug in Peek-a-Foxy.",
-                detail=f"{type(error).__name__}: {error}",
+                detail=errors.clip(f"{type(error).__name__}: {error}"),
             )
         ]
     return result if isinstance(result, list) else [result]
@@ -216,8 +228,7 @@ def _short(text: str, limit: int = MAX_SHOWN) -> str:
 def _read_bytes(path: Path, limit: int = MAX_FILE) -> bytes | None:
     """The bytes of a file; ``None`` if it cannot be read or is far bigger than it should be."""
     try:
-        with open(path, "rb") as handle:
-            data = handle.read(limit + 1)
+        data = fileio.read_regular(path, limit)
     except (OSError, ValueError):
         return None
     return data if len(data) <= limit else None
@@ -226,12 +237,13 @@ def _read_bytes(path: Path, limit: int = MAX_FILE) -> bytes | None:
 def _read_text(path: Path) -> tuple[str | None, str]:
     """The text of a file, or ``None`` and why not (a missing file is not a problem here)."""
     try:
-        with open(path, "rb") as handle:
-            data = handle.read(MAX_TEXT + 1)
+        data = fileio.read_regular(path, MAX_TEXT)
     except (FileNotFoundError, NotADirectoryError):
         return None, ""
     except IsADirectoryError:
         return None, "it is a folder"
+    except fileio.NotARegularFileError as error:
+        return None, error.strerror or "it is not a regular file"
     except (OSError, ValueError) as error:
         return None, getattr(error, "strerror", None) or type(error).__name__
     if len(data) > MAX_TEXT:
@@ -371,19 +383,33 @@ def _git_check(ctx: Context) -> Check:
 
 
 def _pin(ctx: Context) -> Check:
-    commit = ctx.environ.get("FXAC_COMMIT", loader.DEFAULT_COMMIT)
+    commit = ctx.environ.get("FXAC_COMMIT")
     repo = ctx.environ.get("FXAC_REPO")
-    if "FXAC_COMMIT" in ctx.environ or repo:
+    title = "Pinned loader (fx-autoconfig)"
+    if commit is not None and not loader.is_commit_hash(commit):
+        # What `install` does with it, an empty value included: it refuses before any download.
         return _bad(
             "program.loader_pin",
-            "Pinned loader (fx-autoconfig)",
+            title,
             WARN,
-            errors.UAC_ENV_OVERRIDE,
+            errors.BAD_PINNED_COMMIT,
+            errors.BAD_PINNED_COMMIT.meaning,
+            value=_short(commit),
+        )
+    if commit or repo:
+        # Only Windows copies the loader through the administrator step (305); elsewhere the
+        # same refusal belongs to the copy with sudo (207).
+        code = errors.UAC_ENV_OVERRIDE if ctx.kind == "windows" else errors.LOADER_UNVERIFIED
+        return _bad(
+            "program.loader_pin",
+            title,
+            WARN,
+            code,
             "The FXAC_REPO or FXAC_COMMIT environment variable is set, so the loader would not be "
             "downloaded from the usual place.",
-            value=commit,
+            value=commit or loader.DEFAULT_COMMIT,
         )
-    return _ok("program.loader_pin", "Pinned loader (fx-autoconfig)", f"commit {commit}")
+    return _ok("program.loader_pin", title, f"commit {loader.DEFAULT_COMMIT}")
 
 
 def _assets_check(ctx: Context) -> Check:
@@ -592,8 +618,7 @@ def _loader_check(folder: Path) -> Check:
             FAIL,
             errors.LOADER_MISSING,
             f"These loader files are missing from the Firefox folder: {', '.join(missing)}. "
-            "Firefox cannot run the script without them."
-            "run the script.",
+            "Firefox cannot run the script without them.",
             detail=detail,
         )
     if unreadable:
@@ -731,7 +756,9 @@ OWN_PREFIX = "peekafoxy."
 def parse_prefs(text: str) -> dict[str, str]:
     """``user_pref("name", value);`` lines of ``user.js`` or ``prefs.js`` as name to raw value."""
     found: dict[str, str] = {}
-    for line in text.splitlines():
+    # Comments are skipped as Firefox skips them; lines end at "\n" only, as in userfiles, because
+    # splitlines() would also break at U+2028, \x0b and \x1c and read other lines than Firefox does.
+    for line in userfiles.mask_comments(text, line_comments=True).split("\n"):
         if len(line) > MAX_LINE:
             continue
         match = _PREF_LINE.match(line)
@@ -1204,7 +1231,7 @@ def _read_profile_list(ctx: Context) -> list[Profile]:
         return read_profiles(root)
     except (OSError, ValueError) as error:
         raise DiscoveryError(
-            errors.PROFILES_UNREADABLE, f"could not read {ini}", detail=repr(error)
+            errors.PROFILES_UNREADABLE, f"could not read {ini}", detail=errors.clip(repr(error))
         ) from error
 
 

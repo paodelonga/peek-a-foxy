@@ -268,6 +268,89 @@ def test_a_cancelled_prompt_keeps_its_own_error_code(
     assert caught.value.code is errors.UAC_CANCELLED
 
 
+# --- what the Win32 failures of the prompt are called (review 3, F-M5, E8) --------------------
+# ``windows_elevator`` is the one place that turns a Win32 error into PAF-301/302/303. Only
+# ``run_elevated`` is replaced; the module and its constants are the real ones, on every OS.
+
+
+@pytest.fixture
+def winapi(monkeypatch: pytest.MonkeyPatch):
+    from peek_a_foxy import _winapi
+
+    calls: list[tuple[str, str, float]] = []
+    outcome: list = [0]
+
+    def run_elevated(executable: str, parameters: str, timeout_seconds: float) -> int:
+        calls.append((executable, parameters, timeout_seconds))
+        result = outcome[0]
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+    monkeypatch.setattr(_winapi, "run_elevated", run_elevated)
+    return _winapi, calls, outcome
+
+
+def test_the_win32_constants_are_the_documented_values(winapi):
+    module = winapi[0]
+    assert (
+        module.ERROR_CANCELLED == 1223
+    )  # ERROR_CANCELLED: "The operation was canceled by the user"
+    assert module.WAIT_TIMEOUT == 0x102  # WAIT_TIMEOUT: what WaitForSingleObject gives back
+    assert module.WAIT_OBJECT_0 == 0
+
+
+@pytest.mark.parametrize(
+    ("number", "code"),
+    [
+        (1223, errors.UAC_CANCELLED),  # the person said no
+        (0x102, errors.UAC_TIMEOUT),  # nobody answered in three minutes
+        (5, errors.UAC_UNAVAILABLE),  # access denied: some policy took the prompt away
+        (1155, errors.UAC_UNAVAILABLE),  # no application is associated (a locked-down system)
+        (0, errors.UAC_UNAVAILABLE),  # "no handle" and other failures that carry no Win32 error
+        (1224, errors.UAC_UNAVAILABLE),  # one more than the cancel code is not a cancel
+        (0x101, errors.UAC_UNAVAILABLE),  # nor is one less than the timeout
+    ],
+)
+def test_a_failure_of_the_prompt_is_named_by_its_win32_error(winapi, number, code):
+    module, _, outcome = winapi
+    outcome[0] = module.ElevationFailed(number, "the system said no")
+    with pytest.raises(ElevationError) as caught:
+        elevate.windows_elevator([sys.executable, "-c", "x"])
+    assert caught.value.code is code
+    assert isinstance(caught.value.__cause__, module.ElevationFailed)  # the original stays visible
+    if code is errors.UAC_UNAVAILABLE:
+        assert "the system said no" in caught.value.message and caught.value.detail
+
+
+def test_the_exit_code_of_the_elevated_process_passes_through_and_the_call_is_exact(winapi):
+    _, calls, outcome = winapi
+    command = [sys.executable, "-I", "-S", "-c", "code", 'a "folder"', "payload"]
+    for value in (0, 7, 14, 4294967295):
+        outcome[0] = value
+        assert elevate.windows_elevator(command) == value
+    assert calls[0] == (sys.executable, elevate.parameters_of(command), elevate.TIMEOUT_SECONDS)
+
+
+@pytest.mark.parametrize(
+    ("number", "code"),
+    [
+        (1223, errors.UAC_CANCELLED),
+        (0x102, errors.UAC_TIMEOUT),
+        (5, errors.UAC_UNAVAILABLE),
+    ],
+)
+def test_the_mapping_is_what_copy_as_administrator_hands_on(
+    winapi, pinned, checkout, tmp_path, number, code
+):
+    """End to end through the default elevator, not a fake that raises the coded error itself."""
+    module, _, outcome = winapi
+    outcome[0] = module.ElevationFailed(number, "no")
+    with pytest.raises(ElevationError) as caught:
+        elevate.copy_as_administrator(checkout, firefox(tmp_path))
+    assert caught.value.code is code
+
+
 def test_the_step_description_names_the_right_mechanism(monkeypatch):
     monkeypatch.setattr(loader.platform, "is_windows", lambda: True)
     assert "administrator" in loader.privilege_hint() and "sudo" not in loader.privilege_hint()

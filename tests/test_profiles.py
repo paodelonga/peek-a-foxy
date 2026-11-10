@@ -93,3 +93,13 @@ def test_entries_without_a_path_are_skipped_and_name_falls_back_to_the_path(tmp_
 def test_duplicate_sections_do_not_crash(tmp_path: Path):
     (tmp_path / "profiles.ini").write_text("[Profile0]\nPath=a\n[Profile0]\nPath=b\nDefault=1\n")
     assert read_profiles(tmp_path)
+
+
+def test_a_folder_named_profiles_ini_is_not_found_rather_than_listing_no_profile(tmp_path: Path):
+    from peek_a_foxy import errors
+    from peek_a_foxy.errors import DiscoveryError
+
+    (tmp_path / "profiles.ini").mkdir()
+    with pytest.raises(DiscoveryError) as caught:
+        read_profiles(tmp_path)
+    assert caught.value.code is errors.NO_PROFILES_INI

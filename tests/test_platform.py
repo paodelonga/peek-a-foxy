@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 from support import needs_symlinks
 
-from peek_a_foxy import platform
+from peek_a_foxy import errors, platform
+from peek_a_foxy.errors import DiscoveryError
 
 
 def fake_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
@@ -215,6 +216,57 @@ def test_profiles_root_windows_falls_back_to_the_home_folder(windows, monkeypatc
     assert platform.profiles_root() == windows / "AppData" / "Roaming" / "Mozilla" / "Firefox"
 
 
+# --- a person with no home folder (a service account, a container, a task with no profile) ----
+
+
+def no_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    def cannot(cls):
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(Path, "home", classmethod(cannot))
+
+
+@pytest.mark.parametrize("name", ["linux", "darwin", "win32"])
+def test_no_home_folder_is_a_coded_error_not_a_crash(monkeypatch, name):
+    monkeypatch.setattr(sys, "platform", name)
+    monkeypatch.delenv("APPDATA", raising=False)
+    no_home(monkeypatch)
+    with pytest.raises(DiscoveryError) as caught:
+        platform.profiles_root()
+    assert caught.value.code is errors.NO_PROFILES_INI
+    assert "RuntimeError" in caught.value.detail  # what the system said, for the log
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("x"), OSError(5, "I/O error"), KeyError("HOME")])
+def test_whatever_the_home_lookup_raises_it_is_the_same_coded_error(monkeypatch, failure):
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    def cannot(cls):
+        raise failure
+
+    monkeypatch.setattr(Path, "home", classmethod(cannot))
+    with pytest.raises(DiscoveryError):
+        platform.profiles_root()
+
+
+def test_windows_with_appdata_never_asks_for_the_home_folder(windows, monkeypatch):
+    """USERPROFILE and HOMEDRIVE unset, APPDATA set: the profiles are found all the same."""
+    monkeypatch.setenv("APPDATA", str(windows / "Roaming"))
+    no_home(monkeypatch)
+    assert platform.profiles_root() == windows / "Roaming" / "Mozilla" / "Firefox"
+
+
+def test_windows_with_an_empty_appdata_falls_back_to_the_home_folder_or_says_so(
+    windows, monkeypatch
+):
+    monkeypatch.setenv("APPDATA", "")
+    fake_home(monkeypatch, windows)
+    assert platform.profiles_root() == windows / "AppData" / "Roaming" / "Mozilla" / "Firefox"
+    no_home(monkeypatch)
+    with pytest.raises(DiscoveryError):
+        platform.profiles_root()
+
+
 def test_the_registry_install_directory_is_found(windows, monkeypatch):
     ff = firefox_install(windows / "pf" / "Mozilla Firefox")
     registry = reg(("HKLM", 64, MOZ, {"Install Directory": str(ff)}))
@@ -358,6 +410,17 @@ def test_is_windows_follows_the_platform(monkeypatch):
     assert platform.is_windows()
     monkeypatch.setattr(sys, "platform", "linux")
     assert not platform.is_windows()
+
+
+@needs_symlinks
+def test_two_spellings_of_one_install_through_a_link_are_one_candidate(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "platform", "linux")
+    real = _install(tmp_path, "lib", "firefox")
+    link = tmp_path / "firefox-link"
+    link.symlink_to(real, target_is_directory=True)
+    monkeypatch.setattr(platform.shutil, "which", lambda name: None)
+    monkeypatch.setattr(platform, "LINUX_INSTALL_DIRS", (str(real), str(link)))
+    assert platform.firefox_dir_candidates() == [real]  # the first spelling is the one kept
 
 
 # --- files that Windows holds for a moment (adversarial) ----------------------------------------

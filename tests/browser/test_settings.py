@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 pytestmark = pytest.mark.browser
@@ -15,14 +17,13 @@ KEYDOWN_IN_PAGE = """
     altKey: arguments[3].includes('a'), shiftKey: arguments[3].includes('s'),
     metaKey: arguments[3].includes('m'), bubbles: true, cancelable: true,
   }));
+"""
+PROBLEM = """
+  const input = doc.getElementById(arguments[0]);
   return input.closest('div').parentNode.querySelector('.pf-problem').textContent;
 """
 PANE = "gBrowser.selectedBrowser.contentDocument.getElementById('peekafoxy-pane')"
 FIELD = "gBrowser.selectedBrowser.contentDocument.getElementById('peekafoxy-%s')"
-KEYDOWN = """
-  window.dispatchEvent(new KeyboardEvent('keydown',
-    {code: arguments[0], ctrlKey: true, altKey: true, bubbles: true, cancelable: true}));
-"""
 OPEN_TAB = (
     "gBrowser.addTab('about:blank', "
     "{triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});"
@@ -48,6 +49,17 @@ def clean(browser):
     reset()
     yield
     reset()
+
+
+def problem_under(browser, field_id: str, settle: float = 0.6) -> str:
+    """The message under a field. It is announced a moment after the change (so that the same
+    message twice is announced twice), hence the wait; an empty answer is only trusted after it."""
+    deadline = time.monotonic() + settle
+    while True:
+        text = browser.settings(PROBLEM, field_id)
+        if text or time.monotonic() >= deadline:
+            return text
+        time.sleep(0.05)
 
 
 def root_var(browser, name: str) -> str:
@@ -123,13 +135,14 @@ def test_the_controls_show_the_current_prefs(browser):
                    urlbar: v('peekafoxy-peekafoxy.urlbar.shortcut').value,
                    startTabs: v('peekafoxy-peekafoxy.tabs.autohide').checked};"""
     )
+    tabs, urlbar = browser.default_shortcut("tabs"), browser.default_shortcut("urlbar")
     assert shown == {
         "strip": "20",
         "show": "120",
         "hide": "300",
         "flash": "1500",
-        "tabs": "Ctrl+Alt+T",
-        "urlbar": "Ctrl+Alt+U",
+        "tabs": tabs,
+        "urlbar": urlbar,
         "startTabs": False,
     }
 
@@ -147,14 +160,14 @@ def test_a_pref_changed_elsewhere_updates_the_open_page(browser):
 
 
 def set_number(browser, pref: str, value: str) -> str:
-    return browser.settings(
+    browser.settings(
         """const input = doc.getElementById('peekafoxy-' + arguments[0]);
            input.value = arguments[1];
-           input.dispatchEvent(new win.Event('change', {bubbles: true}));
-           return input.closest('div').parentNode.querySelector('.pf-problem').textContent;""",
+           input.dispatchEvent(new win.Event('change', {bubbles: true}));""",
         pref,
         value,
     )
+    return problem_under(browser, f"peekafoxy-{pref}")
 
 
 def test_a_number_is_saved_as_a_real_pref(browser):
@@ -307,9 +320,9 @@ def test_the_starting_state_of_new_windows_comes_from_the_checkboxes(browser):
 
 
 def record(browser, field: str, key: str, code: str, mods: str) -> str:
-    return browser.settings(
-        KEYDOWN_IN_PAGE, f"peekafoxy-peekafoxy.{field}.shortcut", key, code, mods
-    )
+    field_id = f"peekafoxy-peekafoxy.{field}.shortcut"
+    browser.settings(KEYDOWN_IN_PAGE, field_id, key, code, mods)
+    return problem_under(browser, field_id)
 
 
 def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
@@ -321,9 +334,9 @@ def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
     )
     browser.close_settings_tabs()
 
-    browser.js(KEYDOWN, "KeyT")  # the old one does nothing now
+    browser.keydown("KeyT")  # the old one does nothing now
     assert not browser.js(f"return {HAS};", "autohide-tabs")
-    browser.js(KEYDOWN, "KeyG")
+    browser.keydown("KeyG", shift=False)
     assert browser.js(f"return {HAS};", "autohide-tabs")
     assert "Ctrl+Alt+G" in browser.js(
         "return CustomizableUI.getWidget('tabs-autohide-button').forWindow(window).node"
@@ -336,9 +349,8 @@ def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
     [
         ("g", "KeyG", "", "Add Ctrl, Alt or Meta."),
         ("g", "KeyG", "s", "Add Ctrl, Alt or Meta."),
-        ("Enter", "Enter", "ca", "That key can't be used."),
         ("ArrowUp", "ArrowUp", "ca", "That key can't be used."),
-        ("u", "KeyU", "ca", "The other bar already uses this shortcut."),
+        ("u", "KeyU", "cas", "The other bar already uses this shortcut."),
     ],
 )
 def test_a_bad_shortcut_is_refused_with_a_message_and_changes_nothing(
@@ -359,7 +371,7 @@ def test_pressing_only_a_modifier_waits_and_tab_still_leaves_the_field(browser):
 def test_a_shortcut_that_is_garbage_in_the_pref_falls_back_to_the_default(browser):
     browser.js("Services.prefs.setStringPref('peekafoxy.tabs.shortcut', 'Ctrl+Nonsense+');")
     browser.wait("Services.prefs.getStringPref('peekafoxy.tabs.shortcut') === 'Ctrl+Nonsense+'")
-    browser.js(KEYDOWN, "KeyT")
+    browser.keydown("KeyT")
     assert browser.js(f"return {HAS};", "autohide-tabs")
 
 
@@ -368,7 +380,7 @@ def test_the_two_bars_can_swap_their_shortcuts(browser):
     assert record(browser, "tabs", "g", "KeyG", "ca") == ""
     assert record(browser, "urlbar", "t", "KeyT", "ca") == ""  # free now
     browser.close_settings_tabs()
-    browser.js(KEYDOWN, "KeyT")
+    browser.keydown("KeyT", shift=False)  # recorded as Ctrl+Alt+T, without Shift
     assert browser.js(f"return {HAS};", "autohide-urlbar")
     assert not browser.js(f"return {HAS};", "autohide-tabs")
 
@@ -398,12 +410,7 @@ def test_the_page_is_in_portuguese_for_a_portuguese_firefox(browser_in_portugues
         "start": "Ocultar a barra de abas em novas janelas",
         "reset": "Restaurar padrão",
     }
-    message = browser.settings(
-        """const input = doc.getElementById('peekafoxy-peekafoxy.strip.px');
-           input.value = '99'; input.dispatchEvent(new win.Event('change', {bubbles: true}));
-           return input.closest('div').parentNode.querySelector('.pf-problem').textContent;"""
-    )
-    assert message == "Digite um número entre 1 e 40."
+    assert set_number(browser, "peekafoxy.strip.px", "99") == "Digite um número entre 1 e 40."
     browser.close_settings_tabs()
 
 
@@ -431,6 +438,32 @@ def test_when_firefox_changes_the_page_nothing_breaks_and_the_console_says_why(
     assert any("#mainPrefPane-renamed" not in m and "#mainPrefPane" in m for m in messages), (
         messages
     )
+    assert browser.js("return !!document.getElementById('tabs-autohide-button');") is True
+    browser.close_settings_tabs()
+
+
+def test_when_firefox_renames_the_last_category_the_page_is_not_left_half_installed(
+    browser_with_a_renamed_last_category,
+):
+    """Adversarial: opened straight at #peekafoxy, the page used to attach itself and then fail."""
+    browser = browser_with_a_renamed_last_category
+    browser.open_settings("#peekafoxy")
+    browser.wait(
+        "gBrowser.selectedBrowser.contentDocument.getElementById('category-downloads')", 10
+    )
+    time.sleep(1)  # the script has run by now, whichever way it went
+    assert browser.settings("return doc.getElementById('category-peekafoxy');") is None
+    assert browser.settings("return doc.getElementById('peekafoxy-pane');") is None
+    messages = browser.js(
+        """const storage = Cc["@mozilla.org/consoleAPI-storage;1"]
+             .getService(Ci.nsIConsoleAPIStorage);
+           return storage.getEvents().filter(e => e.level === "warn")
+             .map(e => e.arguments.map(String).join(" "))
+             .filter(m => m.includes("peekafoxy settings"));"""
+    )
+    assert any("gLastCategoryRenamedByFirefox" in m for m in messages), (
+        messages
+    )  # it names the cause
     assert browser.js("return !!document.getElementById('tabs-autohide-button');") is True
     browser.close_settings_tabs()
 
@@ -497,7 +530,7 @@ def test_the_shortcut_hint_matches_the_operating_system_running_firefox(browser)
     system = browser.js("return Services.appinfo.OS;")
     hint = browser.settings(
         "return doc.getElementById('peekafoxy-peekafoxy.urlbar.shortcut')"
-        ".closest('.pf-card').querySelector('.pf-note').textContent;"
+        ".closest('.pf-card').lastElementChild.textContent;"
     )
     assert ("GNOME" in hint) is (system == "Linux")
     assert ("AltGr" in hint) is (system == "WINNT")

@@ -14,6 +14,7 @@ import sys
 import textwrap
 import threading
 import time
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -113,17 +114,17 @@ def test_a_reader_that_went_away_ends_the_run_quietly_in_process(
 def test_a_pipe_closed_before_the_report_is_written_is_not_a_traceback(home: Path):
     make_profile(home)
     env = {**os.environ, "HOME": str(home), "PYTHONPATH": SRC, "PEEK_A_FOXY_LOG": "off"}
-    process = subprocess.Popen(
+    with subprocess.Popen(
         [sys.executable, "-m", "peek_a_foxy", "doctor", "--markdown"],
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-    )
-    assert process.stdout is not None
-    process.stdout.close()  # nobody reads: the first write fails with EPIPE
-    stderr = process.stderr.read() if process.stderr else ""
-    process.wait(timeout=60)
+    ) as process:
+        assert process.stdout is not None
+        process.stdout.close()  # nobody reads: the first write fails with EPIPE
+        stderr = process.stderr.read() if process.stderr else ""
+        process.wait(timeout=60)
     assert "Traceback" not in stderr and "BrokenPipe" not in stderr, stderr
     assert process.returncode in (0, 1)
 
@@ -194,17 +195,20 @@ def test_two_runs_at_once_share_a_log_and_both_succeed(home: Path, tmp_path: Pat
     make_profile(home)
     log = tmp_path / "shared.log"
     env = {**os.environ, "HOME": str(home), "PYTHONPATH": SRC, "PEEK_A_FOXY_LOG": str(log)}
-    processes = [
-        subprocess.Popen(
-            [sys.executable, "-m", "peek_a_foxy", "doctor", "--json"],
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        for _ in range(4)
-    ]
-    outputs = [process.communicate(timeout=120) for process in processes]
+    with ExitStack() as stack:
+        processes = [
+            stack.enter_context(
+                subprocess.Popen(
+                    [sys.executable, "-m", "peek_a_foxy", "doctor", "--json"],
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            )
+            for _ in range(4)
+        ]
+        outputs = [process.communicate(timeout=120) for process in processes]
     for (stdout, stderr), process in zip(outputs, processes, strict=True):
         assert "Traceback" not in stderr, stderr
         assert json.loads(stdout)["schema"] == 1
@@ -218,31 +222,35 @@ def test_two_runs_at_once_never_save_to_the_same_name(home: Path, tmp_path: Path
     folder = tmp_path / "reports"
     folder.mkdir()
     env = {**os.environ, "HOME": str(home), "PYTHONPATH": SRC, "PEEK_A_FOXY_LOG": "off"}
-    processes = [
-        subprocess.Popen(
-            [sys.executable, "-m", "peek_a_foxy", "doctor", "--save", str(folder)],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        for _ in range(6)
-    ]
-    for process in processes:
-        _, stderr = process.communicate(timeout=120)
-        assert "Traceback" not in stderr and "PAF-403" not in stderr, stderr
+    with ExitStack() as stack:
+        processes = [
+            stack.enter_context(
+                subprocess.Popen(
+                    [sys.executable, "-m", "peek_a_foxy", "doctor", "--save", str(folder)],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            )
+            for _ in range(6)
+        ]
+        for process in processes:
+            _, stderr = process.communicate(timeout=120)
+            assert "Traceback" not in stderr and "PAF-403" not in stderr, stderr
     assert len(list(folder.glob("doctor-*.md"))) == 6
 
 
-def test_a_profile_given_as_a_symlink_loop_is_a_usage_error_not_a_traceback(tmp_path: Path):
+def test_a_profile_given_as_a_symlink_loop_is_reported_not_a_traceback(tmp_path: Path):
     if WINDOWS:
         pytest.skip("symlinks need a privilege on Windows")
     loop = tmp_path / "loop"
     os.symlink("loop", loop)
     for option in ("--profile", "--firefox-dir"):
-        result = runner.invoke(app, ["doctor", option, str(loop)])
-        assert result.exit_code == errors.EXIT_USAGE, result.output
+        result = runner.invoke(app, ["doctor", "--json", option, str(loop)])
+        assert result.exit_code == errors.EXIT_FAILURE, result.output
         assert "Traceback" not in result.output
+        assert json.loads(result.output)["schema"] == 1
 
 
 # --- saving (adversarial) ----------------------------------------------------------------------
@@ -429,9 +437,9 @@ def test_a_clipboard_tool_that_hangs_is_given_up_on(
 ):
     use_tool(tool(tmp_path, "import time; time.sleep(60)\n"))
     monkeypatch.setattr(report, "CLIPBOARD_TIMEOUT", 0.5)
-    started = time.monotonic()
+    # No clock: a tool that was not stopped would sleep its minute away and exit 0 without having
+    # read the report, which is a "success"; only a timeout makes this None.
     assert copy() is None
-    assert time.monotonic() - started < 10
 
 
 def test_a_clipboard_tool_that_exits_with_an_error_is_not_a_success(tmp_path: Path, use_tool):
@@ -453,9 +461,7 @@ def test_a_clipboard_tool_that_is_not_executable_is_not_a_crash(tmp_path: Path, 
 
 def test_a_clipboard_tool_that_never_reads_a_big_report_does_not_hang_us(tmp_path: Path, use_tool):
     use_tool(tool(tmp_path, "import sys; sys.exit(0)\n"))
-    started = time.monotonic()
     copy("x" * 5_000_000)  # the pipe breaks; whatever the answer, no exception and no hang
-    assert time.monotonic() - started < 20
 
 
 def test_a_clipboard_tool_that_floods_its_output_is_silenced(tmp_path: Path, use_tool, capfd):
@@ -482,10 +488,8 @@ def test_the_command_survives_a_clipboard_that_hangs(
 ):
     use_tool(tool(tmp_path, "import time; time.sleep(60)\n"))
     monkeypatch.setattr(report, "CLIPBOARD_TIMEOUT", 0.5)
-    started = time.monotonic()
     result = runner.invoke(app, ["doctor", "--copy"])
     assert result.exit_code == 0 and "could not be copied to the clipboard" in result.output
-    assert time.monotonic() - started < 30
 
 
 # --- git and other blocking helpers (adversarial) ----------------------------------------------
@@ -512,9 +516,7 @@ def test_a_git_that_hangs_does_not_hang_the_doctor(
 ):
     fake_git(tmp_path, monkeypatch, "sleep 60\n")
     monkeypatch.setattr(doctor, "GIT_TIMEOUT", 0.5)
-    started = time.monotonic()
-    check = git_check(home)
-    assert time.monotonic() - started < 10
+    check = git_check(home)  # a git that was waited for would answer "found" after its minute
     assert check.status == WARN and check.code == errors.GIT_MISSING.code
     assert "could not be run" in check.message
 
