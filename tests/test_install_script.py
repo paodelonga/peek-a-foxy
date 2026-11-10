@@ -312,9 +312,11 @@ def test_a_folder_that_cannot_go_in_the_path_stops_the_installer_before_any_down
     host, directory
 ):
     """Run the real script: its refusal comes before the first download, so no network is used."""
-    encoded = base64.b64encode(f"& '{SCRIPT}' -InstallDir $env:PAF_DIR".encode("utf-16-le")).decode(
-        "ascii"
+    # As a script block, not as a file, so that an execution policy of Restricted cannot stop it.
+    command = (
+        f"& ([scriptblock]::Create([IO.File]::ReadAllText('{SCRIPT}'))) -InstallDir $env:PAF_DIR"
     )
+    encoded = base64.b64encode(command.encode("utf-16-le")).decode("ascii")
     done = subprocess.run(
         [host, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
         capture_output=True,
