@@ -12,9 +12,11 @@ def fxac_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo = tmp_path / "fxac-fixture"
     (repo / "program" / "defaults" / "pref").mkdir(parents=True)
     (repo / "profile" / "chrome" / "utils").mkdir(parents=True)
-    (repo / "program" / "config.js").write_text("// loader\n")
-    (repo / "program" / "defaults" / "pref" / "config-prefs.js").write_text("pref(1);\n")
-    (repo / "profile" / "chrome" / "utils" / "boot.sys.mjs").write_text("boot\n")
+    # Bytes, so the files are LF on Windows too: the commit below runs without the system git
+    # settings (core.autocrlf), so it keeps whatever line endings it is given.
+    (repo / "program" / "config.js").write_bytes(b"// loader\n")
+    (repo / "program" / "defaults" / "pref" / "config-prefs.js").write_bytes(b"pref(1);\n")
+    (repo / "profile" / "chrome" / "utils" / "boot.sys.mjs").write_bytes(b"boot\n")
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "fixture")

@@ -32,9 +32,9 @@ def test_install_with_loader(profile: Path, firefox_dir: Path, fxac_repo: Path):
 
 def test_install_is_idempotent(profile: Path):
     install(profile)
-    first = {p: p.read_text() for p in profile.rglob("*") if p.is_file()}
+    first = {p: p.read_bytes() for p in profile.rglob("*") if p.is_file()}
     install(profile)
-    assert {p: p.read_text() for p in profile.rglob("*") if p.is_file()} == first
+    assert {p: p.read_bytes() for p in profile.rglob("*") if p.is_file()} == first
 
 
 def test_user_content_and_changed_prefs_are_preserved(profile: Path):

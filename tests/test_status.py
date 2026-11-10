@@ -163,9 +163,10 @@ def test_the_file_name_is_the_documented_one():
 def test_a_status_file_of_exactly_the_size_limit_is_read_and_one_byte_more_is_not(
     tmp_path: Path, extra: int, bigger: bool
 ):
-    body = FIXTURE.read_text().rstrip()
+    body = FIXTURE.read_text(encoding="utf-8").rstrip()
     padding = " " * (status.MAX_BYTES + extra - len(body.encode("utf-8")))
-    (tmp_path / status.STATUS_FILE).write_text(body + padding)
+    # Bytes: text mode on Windows would add a CR to every line and miss the size by 20 bytes.
+    (tmp_path / status.STATUS_FILE).write_bytes((body + padding).encode("utf-8"))
     assert (tmp_path / status.STATUS_FILE).stat().st_size == status.MAX_BYTES + extra
     if bigger:
         with pytest.raises(StatusError, match="much bigger"):

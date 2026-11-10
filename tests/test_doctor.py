@@ -19,6 +19,7 @@ from doctor_support import (
     make_firefox,
     make_profile,
     pin_loader,
+    write,
 )
 from support import needs_permissions
 
@@ -147,7 +148,7 @@ def what_install_does(kind: str, environ: dict[str, str], monkeypatch, tmp_path:
         for name, text in LOADER_TEXT.items():  # the files that the pinned hashes stand for
             source = tmp_path / "program" / name
             source.parent.mkdir(parents=True, exist_ok=True)
-            source.write_text(text)
+            write(source, text)  # LF, or the hash is not the pinned one on Windows
         if kind == "windows":
             elevate.copy_as_administrator(tmp_path, tmp_path, lambda command: 0)
         else:

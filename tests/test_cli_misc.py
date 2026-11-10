@@ -19,7 +19,7 @@ from hypothesis import strategies as st
 from support import needs_symlinks, squeezed
 from typer.testing import CliRunner
 
-from peek_a_foxy import doctor, errors, installer, report
+from peek_a_foxy import doctor, errors, installer, platform, report
 from peek_a_foxy.cli import app
 from peek_a_foxy.errors import DiscoveryError, PeekError
 from peek_a_foxy.profiles import read_profiles
@@ -36,6 +36,8 @@ def test_a_malformed_isrelative_is_a_coded_error_for_every_command(
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     firefox = tmp_path / "home" / ".mozilla" / "firefox"
     firefox.mkdir(parents=True)
+    # Where this system's Firefox keeps profiles.ini differs (macOS, Windows): name this folder.
+    monkeypatch.setattr(platform, "profiles_root", lambda: firefox)
     (firefox / "profiles.ini").write_text(
         f"[Profile0]\nName=x\nPath=p1\nIsRelative={value}\nDefault=1\n", encoding="utf-8"
     )
@@ -168,6 +170,8 @@ def firefox_folder(tmp_path: Path, monkeypatch, ini: bytes) -> Path:
     folder.mkdir(parents=True)
     (folder / "profiles.ini").write_bytes(ini)
     monkeypatch.setenv("HOME", str(home))
+    # Where this system's Firefox keeps profiles.ini differs (macOS, Windows): name this folder.
+    monkeypatch.setattr(platform, "profiles_root", lambda: folder)
     return folder
 
 

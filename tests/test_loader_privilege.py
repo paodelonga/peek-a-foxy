@@ -86,6 +86,7 @@ def test_the_bytes_that_were_verified_are_the_bytes_that_sudo_receives(
     checkout: Path, tmp_path: Path, pinned, protected, sudo_calls: Path, monkeypatch
 ):
     monkeypatch.setattr(loader.platform, "is_windows", lambda: False)
+    monkeypatch.setattr(loader.platform, "system", lambda: "linux")  # GNU install, on any system
     firefox = tmp_path / "usr" / "lib" / "firefox"
     loader.install_loader(checkout, firefox)
     done = calls_of(sudo_calls)
@@ -98,6 +99,26 @@ def test_the_bytes_that_were_verified_are_the_bytes_that_sudo_receives(
             PREFS,
         ),
     ]  # the source path of the checkout is not on any command line: nothing is read a second time
+
+
+@needs_posix_shell
+def test_on_macos_the_verified_bytes_go_through_tee_and_then_chmod(
+    checkout: Path, tmp_path: Path, pinned, protected, sudo_calls: Path, monkeypatch
+):
+    """BSD install may refuse /dev/stdin, so macOS pipes the same checked bytes into tee."""
+    monkeypatch.setattr(loader.platform, "is_windows", lambda: False)
+    monkeypatch.setattr(loader.platform, "system", lambda: "macos")
+    firefox = tmp_path / "usr" / "lib" / "firefox"
+    loader.install_loader(checkout, firefox)
+    config, prefs = firefox / "config.js", firefox / "defaults" / "pref" / "config-prefs.js"
+    assert calls_of(sudo_calls) == [
+        (["mkdir", "-p", str(config.parent)], b""),
+        (["tee", str(config)], CONFIG),
+        (["chmod", "644", str(config)], b""),
+        (["mkdir", "-p", str(prefs.parent)], b""),
+        (["tee", str(prefs)], PREFS),
+        (["chmod", "644", str(prefs)], b""),
+    ]
 
 
 @needs_posix_shell
@@ -132,6 +153,7 @@ def test_with_the_explicit_flag_an_overridden_loader_is_copied_and_logged_as_unv
 ):
     monkeypatch.setenv("FXAC_REPO", "anything")
     monkeypatch.setattr(loader.platform, "is_windows", lambda: False)
+    monkeypatch.setattr(loader.platform, "system", lambda: "linux")  # GNU install, on any system
     # The parent logger stops propagating once a run has started logging (logs.start), so the
     # capture handler goes straight onto the logger of the module.
     loader.log.addHandler(caplog.handler)

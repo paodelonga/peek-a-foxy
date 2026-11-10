@@ -144,6 +144,7 @@ def test_a_read_only_firefox_dir_falls_back_to_sudo(monkeypatch, tmp_path):
         raise PermissionError("read-only")
 
     monkeypatch.setattr(loader, "_copy_direct", denied)
+    monkeypatch.setattr(loader.platform, "system", lambda: "linux")  # GNU install, on any system
     monkeypatch.setenv("FXAC_REPO", "x")  # not the pinned loader, so it has to be allowed
     source = tmp_path / "config.js"
     source.write_text("x")
