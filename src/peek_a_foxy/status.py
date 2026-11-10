@@ -39,6 +39,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from peek_a_foxy import platform
+
 STATUS_FILE = "peekafoxy-status.json"
 STATUS_SCHEMA = 1
 MAX_BYTES = 1024 * 1024  # the writer's file is a few KB; anything bigger is not ours
@@ -155,12 +157,18 @@ def parse_status(text: str) -> Status:
     )
 
 
+def _read_file(path: Path) -> bytes:
+    with open(path, "rb") as handle:
+        return handle.read(MAX_BYTES + 1)
+
+
 def read_status(chrome_dir: Path) -> Status | None:
     """The status in ``chrome_dir``; ``None`` when there is no file; :class:`StatusError` if bad."""
     path = chrome_dir / STATUS_FILE
     try:
-        with open(path, "rb") as handle:
-            raw = handle.read(MAX_BYTES + 1)
+        # Firefox saves the file by renaming a new one over it, and while that happens Windows
+        # refuses to open it for a moment.
+        raw = platform.retry_if_denied(lambda: _read_file(path))
     except (FileNotFoundError, NotADirectoryError):
         return None
     except OSError as error:

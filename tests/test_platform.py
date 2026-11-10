@@ -358,3 +358,54 @@ def test_is_windows_follows_the_platform(monkeypatch):
     assert platform.is_windows()
     monkeypatch.setattr(sys, "platform", "linux")
     assert not platform.is_windows()
+
+
+# --- files that Windows holds for a moment (adversarial) ----------------------------------------
+
+
+def _denied(times: int, calls: list[int]):
+    def action() -> str:
+        calls.append(1)
+        if len(calls) <= times:
+            raise PermissionError(13, "Access is denied")
+        return "done"
+
+    return action
+
+
+def test_a_denial_that_passes_is_waited_out_with_growing_waits(monkeypatch):
+    waits: list[float] = []
+    calls: list[int] = []
+    monkeypatch.setattr(platform, "DENIED_WAITS", (0.01, 0.02, 0.04))
+    monkeypatch.setattr(platform.time, "sleep", waits.append)
+    assert platform.retry_if_denied(_denied(2, calls)) == "done"
+    assert len(calls) == 3 and waits == [0.01, 0.02]
+
+
+def test_a_denial_that_lasts_is_raised_after_the_last_wait(monkeypatch):
+    waits: list[float] = []
+    calls: list[int] = []
+    monkeypatch.setattr(platform, "DENIED_WAITS", (0.01, 0.02, 0.04))
+    monkeypatch.setattr(platform.time, "sleep", waits.append)
+    with pytest.raises(PermissionError):
+        platform.retry_if_denied(_denied(10**6, calls))
+    assert len(calls) == 4 and waits == [0.01, 0.02, 0.04]
+
+
+def test_other_errors_are_never_tried_again(monkeypatch):
+    calls: list[int] = []
+    monkeypatch.setattr(platform, "DENIED_WAITS", (0.01, 0.02))
+
+    def missing() -> None:
+        calls.append(1)
+        raise FileNotFoundError(2, "No such file")
+
+    with pytest.raises(FileNotFoundError):
+        platform.retry_if_denied(missing)
+    assert calls == [1]
+
+
+def test_only_windows_waits_and_never_for_more_than_a_second():
+    """A denial elsewhere comes from the permissions: waiting would only slow the error down."""
+    assert bool(platform.DENIED_WAITS) is (sys.platform == "win32")
+    assert sum(platform.DENIED_WAITS) < 1

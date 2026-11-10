@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from peek_a_foxy import status
+from peek_a_foxy import platform, status
 from peek_a_foxy.status import StatusError, parse_status, read_status
 
 FIXTURE = Path(__file__).parent / "fixtures" / "peekafoxy-status.json"
@@ -99,6 +99,39 @@ def test_reading_a_folder_with_the_file(tmp_path: Path):
 def test_an_unreadable_file_is_a_status_error(tmp_path: Path):
     (tmp_path / status.STATUS_FILE).write_bytes(b"\xff\xfe\x00")
     with pytest.raises(StatusError, match="not valid UTF-8"):
+        read_status(tmp_path)
+
+
+def test_a_file_being_replaced_is_read_once_windows_lets_go_of_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Adversarial: the doctor reads the status at the moment Firefox renames a new one over it."""
+    data = FIXTURE.read_bytes()
+    attempts: list[int] = []
+
+    def read_file(path: Path) -> bytes:
+        attempts.append(1)
+        if len(attempts) <= 3:  # Windows says "access denied" while the rename happens
+            raise PermissionError(13, "Permission denied", str(path))
+        return data
+
+    monkeypatch.setattr(platform, "DENIED_WAITS", (0.01,) * 5)
+    monkeypatch.setattr(platform.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(status, "_read_file", read_file)
+    assert read_status(tmp_path).windows == 2
+    assert len(attempts) == 4
+
+
+def test_a_denial_that_lasts_is_still_a_status_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    def read_file(path: Path) -> bytes:
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(platform, "DENIED_WAITS", (0.01,) * 5)
+    monkeypatch.setattr(platform.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(status, "_read_file", read_file)
+    with pytest.raises(StatusError, match=r"could not be read \(Permission denied\)"):
         read_status(tmp_path)
 
 
