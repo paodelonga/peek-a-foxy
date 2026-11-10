@@ -8,7 +8,7 @@ import pytest
 from support import fake_sudo, needs_permissions, needs_posix_shell, needs_symlinks
 from typer.testing import CliRunner
 
-from peek_a_foxy import cli, loader
+from peek_a_foxy import cli, errors, loader
 from peek_a_foxy import userfiles as uf
 from peek_a_foxy.cli import app
 from peek_a_foxy.installer import UserFileError, plan_install, plan_uninstall
@@ -264,14 +264,32 @@ def test_declining_the_confirmation_changes_nothing(tmp_path: Path, monkeypatch,
     assert tree(profile) == before
 
 
-@pytest.mark.parametrize("answer", ["0", "3", "x"])
-def test_an_invalid_profile_number_is_rejected(tmp_path: Path, monkeypatch, answer):
-    _profiles_ini(tmp_path)
+@pytest.mark.parametrize("answer", ["0", "3", "-1", "99999999999999999999", "2147483648"])
+def test_a_number_outside_the_list_is_the_invalid_choice_error_and_nothing_changes(
+    tmp_path: Path, monkeypatch, answer
+):
+    """The check itself must refuse it. (The first version of this test only looked at profile
+    "one", and "0" passed with the check broken: index -1 picked the last profile, and the
+    confirmation that followed then read "0" until the input ended.)"""
+    one, two = _profiles_ini(tmp_path)
+    monkeypatch.setattr(cli.platform, "profiles_root", lambda: tmp_path)
+    monkeypatch.setattr(cli, "_interactive", lambda yes: True)
+    result = runner.invoke(app, ["install", "--skip-loader"], input=f"{answer}\ny\n")
+    assert result.exit_code == 1, result.output
+    assert errors.INVALID_CHOICE.code in result.output and "between 1 and 2" in result.output
+    assert not (one / "chrome").exists() and not (two / "chrome").exists()
+
+
+@pytest.mark.parametrize("answer", ["x", "1.5", "", " "])
+def test_an_answer_that_is_not_a_number_is_asked_again_and_nothing_changes(
+    tmp_path: Path, monkeypatch, answer
+):
+    one, two = _profiles_ini(tmp_path)
     monkeypatch.setattr(cli.platform, "profiles_root", lambda: tmp_path)
     monkeypatch.setattr(cli, "_interactive", lambda yes: True)
     result = runner.invoke(app, ["install", "--skip-loader"], input=f"{answer}\n" * 3)
-    assert result.exit_code != 0
-    assert not (tmp_path / "Profiles" / "one" / "chrome").exists()
+    assert result.exit_code != 0 and errors.UNEXPECTED.code not in result.output
+    assert not (one / "chrome").exists() and not (two / "chrome").exists()
 
 
 def test_interactive_firefox_choice(profile: Path, tmp_path: Path, monkeypatch, fxac_repo):
