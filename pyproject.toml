@@ -21,9 +21,10 @@ classifiers = [
   "Topic :: Desktop Environment",
 ]
 dependencies = [
-  # The floors are the oldest versions that pass the whole suite (the "lowest" job of ci.yml runs
-  # them). Typer is below 1.0 and the code reaches into TyperGroup and TyperCommand, so a new minor
-  # release can break it: the ceiling moves up when a release has been tried.
+  # The floors are the oldest Typer and Rich that pass the whole suite (the "lowest" job of ci.yml
+  # runs them; their own dependencies are not lowered). Typer is below 1.0 and the code reaches
+  # into TyperGroup and TyperCommand, so a new minor release can break it: the ceiling moves up
+  # when a release has been tried.
   "typer>=0.16.0,<0.30",
   "rich>=13.8,<16",
 ]
