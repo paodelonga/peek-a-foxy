@@ -11,7 +11,6 @@ import hashlib
 import os
 import shutil
 import subprocess
-import time
 from pathlib import Path
 
 import pytest
@@ -301,10 +300,9 @@ def test_a_git_that_stalls_is_stopped_with_a_coded_error(tmp_path: Path, monkeyp
     stalled.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setattr(loader, "GIT_TIMEOUT_SECONDS", 1)
-    started = time.monotonic()
+    # No clock: a git that was waited for would end its minute with exit 0 and no error at all.
     with pytest.raises(LoaderError, match="timed out") as caught:
         loader._git("fetch")
-    assert time.monotonic() - started < 20
     assert caught.value.code is errors.GIT_FAILED
 
 

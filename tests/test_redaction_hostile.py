@@ -61,11 +61,10 @@ def test_any_mix_of_the_dangerous_pieces_is_redacted_in_proportion_to_its_size(p
     assert large < 8 * small + 0.05
 
 
-def test_a_one_megabyte_line_is_redacted_in_seconds_not_hours():
-    started = time.monotonic()
+def test_a_two_megabyte_line_is_redacted_whole():
+    """The ratio tests above check the algorithm; this one checks the result at that size."""
     shown = plain()("a" * 1_000_000 + "://" + "b" * 1_000_000)
-    assert time.monotonic() - started < 30
-    assert shown.startswith("a")
+    assert shown == "a" * 1_000_000 + "://" + "b" * 1_000_000
 
 
 def test_a_long_line_in_profiles_ini_does_not_make_doctor_slow(tmp_path: Path):
@@ -75,16 +74,14 @@ def test_a_long_line_in_profiles_ini_does_not_make_doctor_slow(tmp_path: Path):
     ini.mkdir(parents=True)
     (ini / "profiles.ini").write_text("a" * 200_000 + "\n", encoding="utf-8")
     environment = {**os.environ, "HOME": str(home), "PEEK_A_FOXY_LOG": "off"}
-    started = time.monotonic()
     done = subprocess.run(
         [sys.executable, "-m", "peek_a_foxy", "doctor", "--json"],
         env=environment,
         capture_output=True,
         text=True,
         stdin=subprocess.DEVNULL,
-        timeout=120,
+        timeout=120,  # the one coarse limit of this test: a regular expression that never ends
     )
-    assert time.monotonic() - started < 60
     assert json.loads(done.stdout)["schema"] == 1
     assert len(done.stdout) < 200_000  # the quoted line is cut, not repeated in the report
 

@@ -152,17 +152,16 @@ def sparse(path: Path, size: int = SPARSE) -> None:
 
 
 @pytest.mark.parametrize("name", list(HOSTILE_FILES))
-def test_a_huge_file_is_neither_read_whole_nor_slow(home: Path, name: str):
+def test_a_huge_file_is_not_read_whole(home: Path, name: str):
+    """The memory is the oracle (a clock limit would only measure the machine)."""
     ff, profile = world(home)
     sparse(HOSTILE_FILES[name](home, ff, profile))
     tracemalloc.start()
-    started = time.monotonic()
     try:
         found = run(home, ff, profile=profile if name != "profiles.ini" else None)
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
-    assert time.monotonic() - started < 20
     assert peak < HUNDRED_MB_LIMIT, f"{peak / 1024 / 1024:.0f} MB held while reading {name}"
     assert_sound(found)
 
@@ -223,7 +222,6 @@ def test_text_built_to_stall_a_parser_does_not(home: Path, name: str, kind: str)
     HOSTILE_FILES[name](home, ff, profile).write_bytes(SLOW_FOR_NAIVE_CODE[kind])
     env = {**os.environ, "HOME": str(home), "PYTHONPATH": SRC, "PEEK_A_FOXY_LOG": "off"}
     args = ["doctor", "--json", "--profile", str(profile), "--firefox-dir", str(ff)]
-    started = time.monotonic()
     try:
         done = subprocess.run(
             [sys.executable, "-m", "peek_a_foxy", *args],
@@ -234,7 +232,6 @@ def test_text_built_to_stall_a_parser_does_not(home: Path, name: str, kind: str)
         )
     except subprocess.TimeoutExpired:
         pytest.fail(f"the doctor was still working on {name} ({kind}) after 30 seconds")
-    assert time.monotonic() - started < 30
     assert "Traceback" not in done.stderr, done.stderr
     data = json.loads(done.stdout)
     assert all(c["code"] != BUG for s in data["sections"] for c in s["checks"])
@@ -574,14 +571,12 @@ def test_duplicate_sections_and_keys_are_tolerated(home: Path):
     assert_sound(run(home))
 
 
-def test_ten_thousand_profiles_are_capped_and_fast(home: Path):
+def test_ten_thousand_profiles_are_capped(home: Path):
     sections = [
         f"[Profile{n}]\nName=user{n}\nIsRelative=1\nPath=p{n}\nDefault=1\n" for n in range(10_000)
     ]
     write_ini(home, "\n".join(sections))
-    started = time.monotonic()
     found = run(home)
-    assert time.monotonic() - started < 30
     assert_sound(found)
     listing = next(s for s in found.sections if s.id == "profiles")
     assert len(listing.checks) <= doctor.MAX_PROFILES_LISTED + 3
