@@ -8,9 +8,12 @@ written in this package's source may contain markup, and they must not contain u
 
 from __future__ import annotations
 
+import logging
+import os
 import sys
 import traceback
 from pathlib import Path
+from typing import IO, Any
 
 from rich.console import Console, RenderableType
 from rich.table import Table
@@ -19,8 +22,86 @@ from rich.text import Text
 from peek_a_foxy import errors as paf
 from peek_a_foxy.errors import PeekError
 
-console = Console()
-errors = Console(stderr=True)
+_output_lost = False  # set when a write to stdout or stderr failed for good (no reader, no space)
+
+
+def output_lost() -> bool:
+    """Whether some output could not be written (the reader closed the pipe: ``... | head -c1``)."""
+    return _output_lost
+
+
+def reset_output_state() -> None:
+    """Forget an earlier loss of output: each run of the program starts clean."""
+    global _output_lost
+    _output_lost = False
+
+
+def silence(stream: IO[str] | None) -> None:
+    """Point the file descriptor of ``stream`` at nowhere.
+
+    After a broken pipe every later write, and the interpreter's own flush at exit, would fail
+    again and print a traceback; with the descriptor going nowhere they succeed and say nothing.
+    """
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        return
+    try:
+        if stream is not None:
+            os.dup2(devnull, stream.fileno())
+    except (OSError, ValueError, AttributeError):  # no real descriptor (a test, a closed stream)
+        pass
+    finally:
+        os.close(devnull)
+
+
+def lost_output(stream: IO[str] | None) -> None:
+    """Remember that ``stream`` cannot be written to, and make every later write harmless."""
+    global _output_lost
+    _output_lost = True
+    silence(stream)
+
+
+class _Console(Console):
+    """A Rich console that does not end the program when its reader goes away.
+
+    Rich's own reaction to a broken pipe is ``raise SystemExit(1)`` from inside ``print``. That
+    would stop an installation half way through just because its output was piped into ``head``.
+    """
+
+    def on_broken_pipe(self) -> None:
+        self.quiet = True  # nothing more to render for a reader that is gone
+        lost_output(self.file)
+
+
+console = _Console()
+errors = _Console(stderr=True)
+
+
+def _print(target: Console, *args: Any, **kwargs: Any) -> None:
+    """``target.print`` that treats output which cannot be written as lost output, not a crash.
+
+    A command that is half way through changing files must still finish them when the person
+    pipes its output into ``head`` (a broken pipe), or sends it to a full disk (``> /dev/full``)
+    or a closed stream. Only the text is lost; the first failure is logged.
+    """
+    try:
+        target.print(*args, **kwargs)
+    except (OSError, ValueError) as error:  # ValueError: "I/O operation on closed file"
+        if not _output_lost:
+            logging.getLogger(__name__).info("output to %s was lost: %r", target.file, error)
+        lost_output(target.file)
+
+
+class QuietStreamHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    """The verbose console log, which also gives up quietly on a broken pipe."""
+
+    def handleError(self, record: logging.LogRecord) -> None:
+        error = sys.exc_info()[1]
+        if isinstance(error, (OSError, ValueError)):
+            lost_output(self.stream)
+            return
+        super().handleError(record)
 
 
 def can_print(text: str) -> bool:
@@ -47,25 +128,25 @@ def setup_streams() -> None:
 
 def say(message: str, style: str = "") -> None:
     """Print ``message`` literally."""
-    console.print(Text(message, style=style), soft_wrap=True)
+    _print(console, Text(message, style=style), soft_wrap=True)
 
 
 def note(message: str) -> None:
     """A remark for the person, on stderr so that a report on stdout stays clean."""
-    errors.print(Text(message, style="dim"), soft_wrap=True)
+    _print(errors, Text(message, style="dim"), soft_wrap=True)
 
 
 def warn(message: str) -> None:
-    console.print(Text.assemble(("warning: ", "yellow"), message), soft_wrap=True)
+    _print(console, Text.assemble(("warning: ", "yellow"), message), soft_wrap=True)
 
 
 def step_line(number: int, total: int, description: str) -> None:
-    console.print(Text.assemble((f"({number}/{total}) ", "cyan"), description), soft_wrap=True)
+    _print(console, Text.assemble((f"({number}/{total}) ", "cyan"), description), soft_wrap=True)
 
 
 def _error_line(text: Text | str) -> None:
     # soft_wrap: a path must not be broken across lines, people copy it from the message.
-    errors.print(text if isinstance(text, Text) else Text(text), soft_wrap=True)
+    _print(errors, text if isinstance(text, Text) else Text(text), soft_wrap=True)
 
 
 def report(error: PeekError, *, verbose: bool, log_path: Path | None) -> None:
@@ -117,4 +198,4 @@ def row(table: Table, *cells: str) -> None:
 
 
 def show(renderable: RenderableType) -> None:
-    console.print(renderable)
+    _print(console, renderable)

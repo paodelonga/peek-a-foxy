@@ -9,6 +9,7 @@ install directory, because the loader has to be written there.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -95,6 +96,7 @@ class Browser:
 
     profile: Path
     install_dir: Path
+    process: subprocess.Popen
 
     def __init__(self, client) -> None:
         self.client = client
@@ -215,6 +217,18 @@ class Browser:
                }"""
         )
 
+    def quit_gracefully(self) -> None:
+        """Quit the way a person does (Firefox saves the session on the way out) and wait for it."""
+        try:
+            self.client.set_context(self.client.CONTEXT_CHROME)
+            self.client.execute_script(
+                "Services.tm.dispatchToMainThread(() =>"
+                " Services.startup.quit(Services.startup.eAttemptQuit));"
+            )
+        except Exception:
+            pass  # the connection goes away with Firefox
+        self.process.wait(timeout=60)
+
     def switch_to(self, handle: str) -> None:
         self.client.switch_to_window(handle)
 
@@ -265,26 +279,42 @@ def launched(
     edit_script: Callable[[str], str] | None = None,
     edit_module: Callable[[str], str] | None = None,
     before_start: Callable[[Path], None] | None = None,
+    existing_profile: Path | None = None,
 ) -> Iterator[Browser]:
     """Install into a fresh profile, start Firefox headless on it, and yield a connected helper.
 
     ``edit_script`` may rewrite each installed ``*.uc.js`` and ``edit_module`` the shared module
     before Firefox starts; ``before_start`` is called with the profile folder, once everything is
     installed, to set up a state (a hostile file, a read-only folder) for Firefox to find.
-    """
-    profile = root / "profile"
-    profile.mkdir()
-    port = _free_port()
-    (profile / "user.js").write_text(SETTINGS.format(port=port) + extra_user_js)
 
-    plan_install(profile, install_dir).execute()  # the real loader, into the copy
-    if edit_script is not None:
+    ``existing_profile`` starts Firefox again on a profile that an earlier ``launched`` left behind
+    (to see what survives a restart): nothing is installed again, and only the Marionette port in
+    its user.js is replaced.
+    """
+    port = _free_port()
+    if existing_profile is not None:
+        profile = existing_profile
+        user_js = profile / "user.js"
+        user_js.write_text(
+            re.sub(
+                r'user_pref\("marionette.port", \d+\);',
+                f'user_pref("marionette.port", {port});',
+                user_js.read_text(encoding="utf-8"),
+            ),
+            encoding="utf-8",
+        )
+    else:
+        profile = root / "profile"
+        profile.mkdir()
+        (profile / "user.js").write_text(SETTINGS.format(port=port) + extra_user_js)
+        plan_install(profile, install_dir).execute()  # the real loader, into the copy
+    if existing_profile is None and edit_script is not None:
         for installed in sorted((profile / "chrome" / "JS").glob("*.uc.js")):
             installed.write_text(
                 edit_script(installed.read_text(encoding="utf-8")), encoding="utf-8"
             )
 
-    if edit_module is not None:
+    if existing_profile is None and edit_module is not None:
         module = profile / "chrome" / "resources" / "peekafoxy.sys.mjs"
         module.write_text(edit_module(module.read_text(encoding="utf-8")), encoding="utf-8")
     if before_start is not None:
@@ -318,6 +348,7 @@ def launched(
         helper = Browser(client)
         helper.profile = profile
         helper.install_dir = install_dir
+        helper.process = process
         helper.wait(
             "typeof UC_API !== 'undefined'", timeout=30, message="fx-autoconfig did not load"
         )
@@ -336,7 +367,11 @@ def launched(
                };"""
         )
         yield helper
-        client.delete_session()
+        try:
+            client.delete_session()
+        except Exception:
+            if process.poll() is None:  # a test may have quit Firefox on purpose
+                raise
     finally:
         _stop(process)
 

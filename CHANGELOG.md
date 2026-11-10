@@ -43,6 +43,10 @@ is and what controls it, with a *Known issues* section for what is not covered.
     Python, the error explains `--yes` and `winpty`.
   - `windows-latest` joins the unit tests (Python 3.10 and 3.13), the headless-Firefox suite, the
     network tests and the weekly Firefox run, including a check of the real title bar layout.
+- **A one-time backup of the user's files.** The first time `install` or `uninstall` is about to change an existing `userChrome.css` or `user.js`, a copy is kept next to it as `<file>.peek-a-foxy.bak`; it is never replaced and `uninstall` never deletes it.
+- **`uninstall` removes `chrome/peekafoxy-status.json` and its `.tmp` leftover**, and only warns if something else is at that name.
+- **The weekly Firefox run also covers the ESR** (`latest-esr`).
+- **A guard on the length of the elevated command (Windows).** A command over 32,767 characters is refused with `PAF-306` and a hint before anything is started.
 
 ### Changed
 
@@ -53,6 +57,14 @@ is and what controls it, with a *Known issues* section for what is not covered.
 - The step that installs the loader says "asks for administrator permission if needed" on Windows
   instead of "uses sudo if needed".
 - The README no longer says the shortcuts will become configurable (they have been since 0.2.0).
+- **The user files are replaced atomically.** The new content is written to a temporary file in the same folder and renamed over the old one, so a crash or a full disk cannot leave half a file; a symbolic link is followed to the real file and stays a link; permissions and owner are kept; a read-only file is respected; a change made by another program while the command works makes the edit start over from the new content; a file over 64 MiB is refused.
+- The script's `isNewTabPage` no longer rebuilds its list or imports its two modules on every new tab.
+
+### Fixed
+
+- **A broken pipe stopped `install` and `uninstall` half way.** Rich turned it into `SystemExit(1)` inside a step, so `peek-a-foxy install --yes | head -1` left the profile half installed. Output that cannot be written (a closed pipe, a closed stream, a full disk) is now lost quietly, the work finishes, and no command prints a traceback or exits with 120.
+- **Redaction.** A home folder that is a drive root (`C:\`) no longer removes every `C:` from the text; file names of eight characters such as `autohide.uc.js` in a stack frame are no longer replaced by `<profile>` (the same exclusion as the Firefox side); a profile or user named `profile` or `user` no longer turns `<profile>` into `<<profile 1>>`, and redacting a text twice gives the same text.
+- **The state of each bar did not come back with a restored session**, and a new window did not save its state until the first toggle: Firefox does not know a window to its SessionStore while it starts ("Window is not tracked"), and a restored window gets its saved values later. The script now applies the saved values when SessionStore knows the window and again whenever a window state is restored (`SSWindowStateReady`), and saves the state of a window that has none. One visible effect: in a restored window the bar may start in the default state and then move to the saved one a fraction of a second later.
 
 ### Known issues
 
@@ -66,6 +78,10 @@ is and what controls it, with a *Known issues* section for what is not covered.
   Another `general.config.filename` set elsewhere is not detected.
 - Windows still needs Python and Git for Windows. A standalone program with Scoop and winget packages
   is planned.
+- A hard kill (power loss, `kill -9`) between the temporary file and the rename leaves a file named `<file>.<pid>.<random>.peek-a-foxy.tmp` next to the user's file. The user's file itself is never half written; the leftover can be deleted by hand.
+- The edit replaces the file, so a hard link to `userChrome.css` is broken (the link becomes a separate file), and extended attributes, ACLs and the SELinux label of the old file are not copied to the new one.
+- The step that checks for a change made by another program compares the content just before the rename; a change in the few microseconds between that check and the rename is still lost.
+- Windows is unverified for: the broken pipe handling (the errors Windows raises for a closed pipe differ), the real elevated command at about 5 KB, and an antivirus holding the file when the rename happens (the edit fails with `PAF-402`, safe to repeat).
 
 - **Choose what opens the tab bar for a moment.** The Peek-a-Foxy section of Firefox's settings has a
   "Reveal the tab bar when" group with one switch for each trigger, all on by default (the behavior

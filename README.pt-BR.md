@@ -125,6 +125,10 @@ user_pref("userChromeJS.persistent_domcontent_callback", true);
 
 As prefs do autohide *não* são escritas ali de propósito: o Firefox reaplica o `user.js` a cada inicialização, o que desfaria qualquer mudança sua em `about:config`. Em vez disso, o script as registra (com os padrões e os tipos certos) toda vez que carrega, então elas aparecem no `about:config`, e nada é gravado em disco até você mudar um valor.
 
+**Seus próprios arquivos são editados com cuidado.** O `userChrome.css` e o `user.js` são substituídos de uma só vez (um arquivo temporário ao lado deles é escrito primeiro e depois renomeado sobre eles), então uma falha ou um disco cheio nunca deixa um arquivo pela metade. Se um deles for um link simbólico, o arquivo para o qual ele aponta é o que muda e o link continua. As permissões são mantidas, um arquivo somente leitura não é substituído, e se outro programa alterar um deles enquanto o comando trabalha, o comando recomeça a partir do conteúdo novo em vez de sobrescrevê-lo.
+
+**Um backup é guardado uma vez.** Na primeira vez em que o comando vai alterar um desses arquivos, ele guarda uma cópia ao lado, chamada `userChrome.css.peek-a-foxy.bak` ou `user.js.peek-a-foxy.bak`. A cópia só é feita se o arquivo já existia e se ainda não há uma cópia, e nunca é substituída depois, então ela sempre guarda o seu arquivo como estava antes de o Peek-a-Foxy mexer nele. O `uninstall` nunca apaga essas cópias; apague-as você mesmo quando não precisar mais delas. Um arquivo maior que 64 MiB não é editado.
+
 Na pasta de instalação do Firefox (por exemplo `/usr/lib/firefox/`), o loader do [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig), baixado num commit fixo e verificado (só esse commit, sem o histórico):
 
 ```text
@@ -162,6 +166,8 @@ Os botões estão em *Personalizar barra de ferramentas* como **Auto-hide the ta
 peek-a-foxy install -h
 peek-a-foxy --install-completion      # depois reinicie o shell
 ```
+
+Se a saída de um comando for cortada (`peek-a-foxy install --yes | head -1`, um terminal fechado, um disco cheio), o `install` e o `uninstall` ainda terminam o trabalho e saem normalmente, e o `logs` e o `doctor` saem com o código 1, porque o texto é a razão de ser deles. Nada é impresso sobre isso.
 
 ## Configurações
 
@@ -265,7 +271,7 @@ CSS puro não detecta troca de aba nem mantém um estado separado por janela, po
 ## Notas do Windows
 
 - **Instalação:** com Python, por enquanto: `pipx install git+https://github.com/paodelonga/peek-a-foxy.git` (ou `uv tool install`), depois `peek-a-foxy install`. Um programa independente para o Scoop e o winget está planejado (veja o [roadmap](#roadmap)).
-- **Pedido de administrador.** A pasta do Firefox em `C:\Program Files` é somente leitura para um usuário comum, então o Windows pergunta (UAC) antes de dois arquivos, `config.js` e `defaults\pref\config-prefs.js`, serem copiados para lá. Só essa cópia é elevada. O processo elevado é uma execução nova e isolada do Python base (não da cópia dentro de um ambiente do pipx ou do uv) que recebe os bytes dos dois arquivos e recusa qualquer coisa que não seja o fx-autoconfig fixado. Se você disser não, nada é escrito na pasta do Firefox e o comando avisa. Risco residual: ele roda o `python.exe` com a sua aprovação, então uma instalação do Python que outro programa consiga reescrever pode abusar desse pedido.
+- **Pedido de administrador.** A pasta do Firefox em `C:\Program Files` é somente leitura para um usuário comum, então o Windows pergunta (UAC) antes de dois arquivos, `config.js` e `defaults\pref\config-prefs.js`, serem copiados para lá. Só essa cópia é elevada. O processo elevado é uma execução nova e isolada do Python base (não da cópia dentro de um ambiente do pipx ou do uv) que recebe os bytes dos dois arquivos e recusa qualquer coisa que não seja o fx-autoconfig fixado. Se você disser não, nada é escrito na pasta do Firefox e o comando avisa. Risco residual: ele roda o `python.exe` com a sua aprovação, então uma instalação do Python que outro programa consiga reescrever pode abusar desse pedido. O comando que inicia a etapa elevada tem de 4 a 5 KB. O Windows aceita linhas de comando de até 32.767 caracteres, e o Peek-a-Foxy se recusa a iniciar a etapa elevada se o comando dela passar disso, avisando com o erro `PAF-306` em vez de falhar dentro do Windows.
 - **Qual Firefox:** achado pelo registro, `Program Files`, `Program Files (x86)`, a pasta local do usuário e o `PATH`; use `--firefox-dir` para uma cópia portátil. A versão da Microsoft Store (MSIX) é recusada.
 - **Atualizações do Firefox** podem substituir a pasta de instalação e remover o loader: rode `peek-a-foxy install` de novo se os botões e a seção nas configurações sumirem.
 - **Antivírus** pode perguntar sobre o `config.js` na pasta do Firefox: é o loader do fx-autoconfig, que o Firefox executa ao iniciar.
@@ -280,6 +286,8 @@ peek-a-foxy uninstall
 ```
 
 Remove os arquivos e as prefs deste projeto. Deixa o `chrome/utils` e o loader na pasta de instalação do Firefox, porque outros scripts podem usá-los.
+
+O `uninstall` também remove o `chrome/peekafoxy-status.json` (o arquivo que o script do Firefox escreve para o `peek-a-foxy doctor`) e o resto `.tmp` dele. Se houver outra coisa nesse nome (uma pasta, um arquivo que não pode ser apagado), ela é mantida e o comando só avisa.
 
 ## Roadmap
 

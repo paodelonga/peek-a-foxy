@@ -125,6 +125,10 @@ user_pref("userChromeJS.persistent_domcontent_callback", true);
 
 The autohide prefs are deliberately *not* written there: Firefox re-applies `user.js` on every start, which would undo any change you make in `about:config`. Instead, the script registers them (with their defaults and right types) every time it loads, so they are listed in `about:config` and nothing is written to disk until you change a value.
 
+**Your own files are edited with care.** `userChrome.css` and `user.js` are replaced in one step (a temporary file next to them is written first and then renamed over them), so a crash or a full disk can never leave half a file. If either is a symbolic link, the file it points to is the one that changes and the link stays. Their permissions are kept, a read-only file is not replaced, and if a program changes one of them while the command is working, the command starts over from the new content instead of overwriting it.
+
+**A backup is kept once.** The first time the command is about to change one of these files, it keeps a copy next to it, named `userChrome.css.peek-a-foxy.bak` or `user.js.peek-a-foxy.bak`. The copy is made only if the file already existed, only if no copy exists yet, and it is never replaced afterwards, so it always holds your file as it was before Peek-a-Foxy touched it. `uninstall` never deletes these copies; delete them yourself when you no longer need them. A file larger than 64 MiB is not edited at all.
+
 In Firefox's install directory (for example `/usr/lib/firefox/`), the [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig) loader, fetched at a pinned and verified commit (only that commit, without its history):
 
 ```text
@@ -162,6 +166,8 @@ The buttons are in *Customize Toolbar* as **Auto-hide the tab bar** and **Auto-h
 peek-a-foxy install -h
 peek-a-foxy --install-completion      # then restart your shell
 ```
+
+If the output of a command is cut off (`peek-a-foxy install --yes | head -1`, a closed terminal, a full disk), `install` and `uninstall` still finish their work and exit normally, and `logs` and `doctor` exit with code 1 because their text is what they are for. Nothing is printed about it.
 
 ## Settings
 
@@ -265,7 +271,7 @@ Pure CSS cannot detect tab switches or keep a separate state per window, hence t
 ## Windows notes
 
 - **Install:** with Python for now: `pipx install git+https://github.com/paodelonga/peek-a-foxy.git` (or `uv tool install`), then `peek-a-foxy install`. A standalone program for Scoop and winget is planned (see the [roadmap](#roadmap)).
-- **Administrator prompt.** Firefox's folder under `C:\Program Files` is read-only for a normal user, so Windows asks (UAC) before two files, `config.js` and `defaults\pref\config-prefs.js`, are copied there. Only that copy is elevated. The elevated process is a fresh, isolated run of the base Python (not the copy inside a pipx or uv environment) that receives the two files' bytes and refuses anything that does not match the pinned fx-autoconfig. If you say no, nothing is written to Firefox's folder and the command says so. Residual risk: it runs `python.exe` with your approval, so a Python installation that something else can rewrite can abuse that prompt.
+- **Administrator prompt.** Firefox's folder under `C:\Program Files` is read-only for a normal user, so Windows asks (UAC) before two files, `config.js` and `defaults\pref\config-prefs.js`, are copied there. Only that copy is elevated. The elevated process is a fresh, isolated run of the base Python (not the copy inside a pipx or uv environment) that receives the two files' bytes and refuses anything that does not match the pinned fx-autoconfig. If you say no, nothing is written to Firefox's folder and the command says so. Residual risk: it runs `python.exe` with your approval, so a Python installation that something else can rewrite can abuse that prompt. The command that starts the elevated step is about 4 to 5 KB long. Windows accepts command lines of up to 32,767 characters, and Peek-a-Foxy refuses to start the elevated step if its command would be longer than that, saying so with error `PAF-306` instead of failing inside Windows.
 - **Which Firefox:** found through the registry, `Program Files`, `Program Files (x86)`, your local app data and `PATH`; pass `--firefox-dir` for a portable copy. The Microsoft Store (MSIX) build is refused.
 - **Firefox updates** can replace its install folder and remove the loader: run `peek-a-foxy install` again if the buttons and the settings section disappear.
 - **Antivirus** may ask about `config.js` in Firefox's folder: it is the fx-autoconfig loader, which Firefox runs on start.
@@ -280,6 +286,8 @@ peek-a-foxy uninstall
 ```
 
 Removes this project's files and prefs. It leaves `chrome/utils` and the loader in the Firefox install directory, since other scripts may use them.
+
+`uninstall` also removes `chrome/peekafoxy-status.json` (the file Firefox's script writes for `peek-a-foxy doctor`) and its `.tmp` leftover. If something else is at that name (a folder, a file that cannot be deleted) it is kept and the command only warns.
 
 ## Roadmap
 

@@ -358,3 +358,162 @@ def test_the_real_helper_command_goes_through_the_real_elevator(pinned, tmp_path
     assert code == elevate.OK
     assert (folder / "config.js").read_bytes() == CONFIG
     assert (folder / "defaults" / "pref" / "config-prefs.js").read_bytes() == PREFS
+
+
+# --- the length of the elevated command ---------------------------------------------------------
+
+REALISTIC = [
+    bytes(range(256)) + b"c" * 175,
+    b'pref("x", "' + b"p" * 170 + b'");\n',
+]  # ~430 and ~190
+
+
+def pin_payloads(monkeypatch: pytest.MonkeyPatch, payloads: list[bytes]) -> None:
+    monkeypatch.setattr(
+        elevate,
+        "PINNED_SHA256",
+        {
+            "config.js": hashlib.sha256(payloads[0]).hexdigest(),
+            "defaults/pref/config-prefs.js": hashlib.sha256(payloads[1]).hexdigest(),
+        },
+    )
+    monkeypatch.delenv("FXAC_REPO", raising=False)
+    monkeypatch.delenv("FXAC_COMMIT", raising=False)
+
+
+def write_checkout(root: Path, payloads: list[bytes]) -> Path:
+    (root / "program" / "defaults" / "pref").mkdir(parents=True)
+    (root / "program" / "config.js").write_bytes(payloads[0])
+    (root / "program" / "defaults" / "pref" / "config-prefs.js").write_bytes(payloads[1])
+    return root
+
+
+def test_the_real_command_is_well_inside_the_limit_that_is_enforced(monkeypatch, tmp_path):
+    """The size of the real thing: the helper code and the two real-sized payloads."""
+    pin_payloads(monkeypatch, REALISTIC)
+    length = elevate.command_line_length(elevate.helper_command(tmp_path, REALISTIC))
+    assert 3000 < length < elevate.MAX_COMMAND_LINE_CHARS // 4  # a quarter of the room, at most
+
+
+def test_the_limit_is_the_one_microsoft_documents_for_createprocess():
+    assert elevate.MAX_COMMAND_LINE_CHARS == 32767
+
+
+def test_the_length_is_that_of_the_whole_line_with_the_quoted_program_and_the_null():
+    command = ["C:\\Python 3\\python.exe", "-I", "a b", "c"]
+    line = '"C:\\Python 3\\python.exe" -I "a b" c'  # what CreateProcessW is assumed to get
+    assert elevate.command_line_length(command) == len(line) + 1  # and its terminating null
+    assert elevate.parameters_allowed(command[0]) == 32767 - len(f'"{command[0]}"') - 2
+
+
+def test_a_command_over_the_limit_is_refused_before_anything_is_started(
+    pinned, checkout, tmp_path, monkeypatch
+):
+    started: list[object] = []
+    monkeypatch.setattr(elevate, "MAX_COMMAND_LINE_CHARS", 1000)  # the real command is longer
+    with pytest.raises(ElevationError, match="characters long") as caught:
+        elevate.copy_as_administrator(
+            checkout, firefox(tmp_path), lambda command: started.append(command) or 0
+        )
+    assert started == []
+    assert caught.value.code is errors.COMMAND_TOO_LONG and caught.value.code.code == "PAF-306"
+    assert "should not happen" in caught.value.hint and errors.ISSUES_URL in caught.value.hint
+    assert "more than the 1000 that Windows allows" in str(caught.value)
+    assert "characters for the command line" in caught.value.detail
+
+
+def test_the_new_code_belongs_to_elevation_and_is_not_the_helper_failure_code():
+    assert errors.COMMAND_TOO_LONG.area == 3
+    assert errors.COMMAND_TOO_LONG is not errors.UAC_HELPER_FAILED
+
+
+def test_the_length_counts_what_windows_gets_after_quoting_not_the_raw_arguments(
+    pinned, checkout, tmp_path, monkeypatch
+):
+    """Quotes and backslashes are escaped by the quoting, which makes the line longer."""
+    folder = tmp_path / ('q"' * 30)  # a folder name full of quotes
+    command = elevate.helper_command(folder, [CONFIG, PREFS])
+    raw = sum(len(a) for a in command)
+    whole = elevate.command_line_length(command)
+    assert whole > raw
+    monkeypatch.setattr(elevate, "MAX_COMMAND_LINE_CHARS", whole - 1)
+    with pytest.raises(ElevationError):
+        elevate.copy_as_administrator(checkout, folder, lambda command: 0)
+    monkeypatch.setattr(elevate, "MAX_COMMAND_LINE_CHARS", whole)  # exactly at the limit is allowed
+    asked: list[int] = []
+    elevate.copy_as_administrator(checkout, folder, lambda command: asked.append(1) or 0)
+    assert asked == [1]
+
+
+def test_a_very_long_firefox_path_alone_can_trip_the_guard(pinned, checkout, tmp_path):
+    folder = Path("/" + "/".join(["d" * 200] * 170))  # a 34 000 character path
+    with pytest.raises(ElevationError, match="characters long"):
+        elevate.copy_as_administrator(checkout, folder, lambda command: 0)
+
+
+def test_an_oversized_payload_is_refused_too(monkeypatch, tmp_path):
+    big = [b"x" * 30000, b"y" * 10]  # about 40 000 characters once encoded
+    pin_payloads(monkeypatch, big)
+    checkout = write_checkout(tmp_path / "co", big)
+    with pytest.raises(ElevationError, match="characters long"):
+        elevate.copy_as_administrator(checkout, firefox(tmp_path), lambda command: 0)
+
+
+def test_the_guard_keeps_exit_codes_and_other_errors_as_they_were(pinned, checkout, tmp_path):
+    with pytest.raises(ElevationError, match="pinned fx-autoconfig") as caught:
+        elevate.copy_as_administrator(checkout, firefox(tmp_path), lambda command: elevate.MISMATCH)
+    assert caught.value.code is errors.UAC_HELPER_FAILED
+
+
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="the real ShellExecuteEx")
+
+
+@windows_only
+def test_the_real_elevator_runs_the_real_command_at_its_real_size(monkeypatch, tmp_path):
+    """The size the owner measured (about 5 KB of parameters), through ShellExecuteEx for real.
+
+    The CI runner is an administrator, so 'runas' starts the helper without a prompt.
+    """
+    if not elevate.is_admin():
+        pytest.skip("would show a real UAC prompt")
+    pin_payloads(monkeypatch, REALISTIC)
+    folder = firefox(tmp_path)
+    command = elevate.helper_command(folder, REALISTIC)
+    assert len(elevate.parameters_of(command)) > 3000  # the regime this test is about
+    assert elevate.windows_elevator(command) == elevate.OK
+    assert (folder / "config.js").read_bytes() == REALISTIC[0]
+    assert (folder / "defaults" / "pref" / "config-prefs.js").read_bytes() == REALISTIC[1]
+
+
+@windows_only
+def test_the_real_elevator_passes_a_command_line_of_exactly_the_limit_that_is_enforced(
+    tmp_path,
+):
+    """A line of exactly 32,767 characters, with the real path of this Python as the program."""
+    if not elevate.is_admin():
+        pytest.skip("would show a real UAC prompt")
+    out = tmp_path / "echo.txt"
+    code = "import sys; open(sys.argv[1], 'wb').write(sys.argv[2].encode()); sys.exit(7)"
+    head = [sys.executable, "-I", "-S", "-c", code, str(out)]
+    # The payload is plain letters (no quoting), plus one space before it in the parameters.
+    payload_length = (
+        elevate.parameters_allowed(sys.executable) - len(elevate.parameters_of(head)) - 1
+    )
+    payload = ("abc" * payload_length)[:payload_length]
+    command = [*head, payload]
+    assert elevate.command_line_length(command) == elevate.MAX_COMMAND_LINE_CHARS == 32767
+    assert elevate.windows_elevator(command) == 7
+    assert out.read_text() == payload  # every character arrived
+
+
+@windows_only
+def test_the_real_elevator_gets_quotes_newlines_and_backslashes_at_that_size(tmp_path):
+    if not elevate.is_admin():
+        pytest.skip("would show a real UAC prompt")
+    out = tmp_path / "echo.txt"
+    code = "import sys; open(sys.argv[1], 'wb').write(sys.argv[2].encode()); sys.exit(0)"
+    payload = ('a"b\\c\nd \\" e\\\\' * 300)[:4500]
+    assert (
+        elevate.windows_elevator([sys.executable, "-I", "-S", "-c", code, str(out), payload]) == 0
+    )
+    assert out.read_text() == payload

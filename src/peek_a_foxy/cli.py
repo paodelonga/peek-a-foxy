@@ -42,7 +42,18 @@ class _Group(TyperGroup):
     def main(self, args: Sequence[str] | None = None, *rest: Any, **extra: Any) -> Any:
         global _argv
         _argv = list(sys.argv[1:] if args is None else args)
-        return super().main(args, *rest, **extra)
+        ui.reset_output_state()
+        try:
+            return super().main(args, *rest, **extra)
+        except OSError as error:
+            # Only what Click prints itself (--help, a usage error) can fail out here: everything
+            # run by a command is handled in invoke(). The reader went away, so say nothing.
+            log.info("output was lost: %r", error)
+            ui.lost_output(sys.stdout)
+            ui.lost_output(sys.stderr)
+            raise SystemExit(errors.EXIT_FAILURE) from None
+        finally:
+            _flush_quietly()
 
     def invoke(self, ctx: Any) -> Any:
         code = errors.EXIT_OK
@@ -61,6 +72,20 @@ class _Group(TyperGroup):
             logs.stop(code)
 
 
+def _flush_quietly() -> None:
+    """Flush now, so that a pipe that is already closed is handled here and not at exit.
+
+    A failed flush keeps its data, and the interpreter flushes again when it exits and reports the
+    failure as "Exception ignored ..." with exit code 120.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None:
+                stream.flush()
+        except (OSError, ValueError):
+            ui.lost_output(stream)
+
+
 def _is_click_signal(error: Exception) -> bool:
     """Exit, Abort and the usage errors: Click prints and exits for these itself.
 
@@ -75,7 +100,13 @@ def _is_click_signal(error: Exception) -> bool:
 def _handle_failure(error: Exception) -> int:
     """Log and print a failure; return the exit code."""
     if isinstance(error, OSError) and error.errno == errno.EPIPE:
-        raise error  # the reader of our output went away: not ours to explain
+        # The reader of our output went away (``| head``): nothing to explain, and no traceback.
+        # Our own output goes through ui, which absorbs this; a pipe error that still gets here is
+        # logged so that it is not lost, and both streams are made harmless for the exit.
+        log.warning("a pipe closed while writing; ending quietly", exc_info=error)
+        ui.silence(sys.stdout)
+        ui.silence(sys.stderr)
+        return errors.EXIT_FAILURE
     if isinstance(error, OSError):
         error = errors.from_oserror(error)
     verbose, path = logs.is_verbose(), logs.active_path()
@@ -220,7 +251,7 @@ def _begin(
 
 def _version(value: bool) -> None:
     if value:
-        ui.console.print(f"peek-a-foxy {__version__}")
+        ui.say(f"peek-a-foxy {__version__}")
         raise typer.Exit()
 
 
@@ -352,7 +383,7 @@ def _apply(plan: Plan, title: str, dry_run: bool, yes: bool) -> list[str]:
     """Show the plan, ask for confirmation when interactive, then run it."""
     _show_plan(plan, title)
     if dry_run:
-        ui.console.print("[dim]Dry run: nothing was changed.[/]")
+        ui.show("[dim]Dry run: nothing was changed.[/]")
         raise typer.Exit()
     if not yes:
         _confirm()
@@ -454,10 +485,13 @@ def uninstall(
     _begin(ctx, verbose, log_file, no_log)
     profile_path = _choose_profile(profile, yes)
     plan = plan_uninstall(profile_path)
-    _apply(plan, f"Uninstall from {profile_path}", dry_run, yes)
-    ui.console.print(
+    warnings = _apply(plan, f"Uninstall from {profile_path}", dry_run, yes)
+    for warning in warnings:
+        ui.warn(warning)
+    ui.show(
         "[green]Done.[/] Left in place: chrome/utils and the loader in the Firefox install "
-        "directory, since other scripts may use them."
+        "directory, since other scripts may use them, and any copies of your files that end in "
+        ".peek-a-foxy.bak, which are yours to keep or delete."
     )
 
 
@@ -482,6 +516,14 @@ def logs_command(
     """Show where the log is and what the last run did; open its folder or delete it."""
     if open_folder and clear:
         raise typer.BadParameter("use --open or --clear, not both")
+    _logs(ctx, open_folder, clear, yes, log_file)
+    if ui.output_lost():  # the text is what this command is for, and it did not arrive
+        raise typer.Exit(errors.EXIT_FAILURE)
+
+
+def _logs(
+    ctx: typer.Context, open_folder: bool, clear: bool, yes: bool, log_file: Path | None
+) -> None:
     _begin(ctx, False, None, False, write_file=False)  # reading the log must not write to it
     given = ctx.obj if isinstance(ctx.obj, _LogOptions) else _LogOptions()
     target = logs.resolve_target(
@@ -572,11 +614,7 @@ def _emit(text: str) -> bool:
 
 def _silence_stdout() -> None:
     """Point stdout at nowhere, so the interpreter's own flush at exit does not complain."""
-    try:
-        devnull = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(devnull, sys.stdout.fileno())
-    except (OSError, ValueError, AttributeError):
-        pass
+    ui.lost_output(sys.stdout)
 
 
 class _OptionalPathCommand(TyperCommand):

@@ -58,15 +58,17 @@
 
     Peek.registerDefaults();
 
-    // `initial`: the window is still starting, and Firefox's SessionStore does not track it yet ("Window
-    // is not tracked"), so saving fails then; that is expected, and only worth an info event.
-    const setEnabled = (target, on, initial = false) => {
-      root.toggleAttribute(target.attr, on);
+    // The state of a bar is an attribute on the window root. Changing it with setEnabled() also saves
+    // it with the window (SessionStore), so that a session restore brings it back; applyState() only
+    // changes the attribute (used at startup, before the window is known to SessionStore).
+    const applyState = (target, on) => root.toggleAttribute(target.attr, on);
+    const setEnabled = (target, on) => {
+      applyState(target, on);
       try {
         SessionStore.setCustomWindowValue(window, target.session, on ? "1" : "0");
       } catch (e) {
         // Not fatal: the state just won't survive a session restore.
-        Diag[initial ? "info" : "warn"]("autohide:session", e);
+        Diag.warn("autohide:session", e);
       }
     };
 
@@ -116,17 +118,54 @@
     window.addEventListener("unload", () => Services.prefs.removeObserver(Peek.PREF_BRANCH, settingsObserver), { once: true });
 
     // --- initial state: saved per-window value, else the pref default ---
+    //
+    // The pref default is applied right away, so that the window never starts in a state nobody chose.
+    // The value saved with the window is another matter: while a window starts, SessionStore does not
+    // know it yet ("Window is not tracked"), and a window that is restored from a session only gets its
+    // saved values when its state is restored, which is later still (it ends with SSWindowStateReady).
+    // So the saved state is looked at again at those two moments:
+    //   - once SessionStore knows the window (its load event, retried a few times if it is not yet): a
+    //     saved value is applied, and a bar that has none (a new window) is saved as it is now, so that
+    //     the state exists from the start and not only after the first toggle;
+    //   - whenever a window state has been restored (SSWindowStateReady: startup, "restore previous
+    //     session", "reopen closed window"): the restored values are applied.
 
-    for (const target of TARGETS) {
-      let saved = null;
-      try {
-        saved = SessionStore.getCustomWindowValue(window, target.session);
-      } catch (e) {
-        // No saved state for a brand new window.
-        Diag.info("autohide:state", e);
+    for (const target of TARGETS) applyState(target, Peek.read(target.pref));
+
+    // true: every bar was looked at; false: SessionStore does not know this window yet.
+    const syncSession = () => {
+      for (const target of TARGETS) {
+        let saved;
+        try {
+          saved = SessionStore.getCustomWindowValue(window, target.session);
+        } catch (e) {
+          if (/not tracked/i.test(String(e))) return false;
+          Diag.warn("autohide:state", e);
+          continue;
+        }
+        if (saved === "1" || saved === "0") {
+          applyState(target, saved === "1");
+        } else if (saved === "") {
+          try {
+            SessionStore.setCustomWindowValue(window, target.session, root.hasAttribute(target.attr) ? "1" : "0");
+          } catch (e) {
+            Diag.warn("autohide:session", e);
+          }
+        }
       }
-      setEnabled(target, saved ? saved === "1" : Peek.read(target.pref), true);
-    }
+      return true;
+    };
+
+    // At most about two seconds: a window that is still not known by then keeps the state it has, and
+    // the next toggle saves it, as before.
+    const SYNC_TRIES = 40, SYNC_DELAY_MS = 50;
+    const syncWhenTracked = (tries = 0) => {
+      if (window.closed || syncSession() || tries >= SYNC_TRIES) return;
+      setTimeout(() => syncWhenTracked(tries + 1), SYNC_DELAY_MS);
+    };
+    window.addEventListener("SSWindowStateReady", syncSession);
+    if (document.readyState === "complete") syncWhenTracked();
+    else window.addEventListener("load", () => syncWhenTracked(), { once: true });
 
     // --- flash the tab bar when tabs change (shortcuts, links, background tabs) ---
 
@@ -146,20 +185,30 @@
     // (a link, a bookmark, window.open...) counts as "opens straight to an address". The load is started
     // right after TabOpen, so the address is read one tick later.
     const justOpened = new WeakSet();
+    // What is always a new tab, and the two places that name another one: the module that knows the
+    // new-tab page and the one that knows the home page. The addresses they give can change while
+    // Firefox runs (the person edits the home page), so those are read on every call; the fixed list
+    // and the imported modules are not rebuilt. A module that cannot be imported is tried again.
+    const FIXED_NEW_TAB_ADDRESSES = new Set(["", "about:blank", "about:newtab", "about:home"]);
+    const NEW_TAB_SOURCES = [
+      ["AboutNewTab", (module) => module.AboutNewTab.newTabURL],
+      ["HomePage", (module) => module.HomePage.get(window)],
+    ];
+    const importedModules = new Map();
     const isNewTabPage = (spec) => {
-      const known = new Set(["", "about:blank", "about:newtab", "about:home"]);
-      for (const [module, object, getter] of [
-        ["AboutNewTab", "AboutNewTab", (o) => o.newTabURL],
-        ["HomePage", "HomePage", (o) => o.get(window)],
-      ]) {
+      if (FIXED_NEW_TAB_ADDRESSES.has(spec)) return true;
+      for (const [name, addressOf] of NEW_TAB_SOURCES) {
         try {
-          known.add(getter(ChromeUtils.importESModule(`resource:///modules/${module}.sys.mjs`)[object]));
+          if (!importedModules.has(name)) {
+            importedModules.set(name, ChromeUtils.importESModule(`resource:///modules/${name}.sys.mjs`));
+          }
+          if (addressOf(importedModules.get(name)) === spec) return true;
         } catch (e) {
           // Not fatal: the fixed list above still covers the usual cases.
           Diag.warn("autohide:newtab", e);
         }
       }
-      return known.has(spec);
+      return false;
     };
     gBrowser.tabContainer.addEventListener("TabSelect", (event) => {
       if (!justOpened.has(event.target) && Peek.read(PREFS.revealSwitch)) flashTabs();

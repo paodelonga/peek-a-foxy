@@ -185,6 +185,14 @@ UAC_ENV_OVERRIDE = _register(
     "Remove FXAC_REPO and FXAC_COMMIT from the environment and run the command again.",
 )
 
+COMMAND_TOO_LONG = _register(
+    "PAF-306",
+    "uac-command-too-long",
+    "The command for the administrator step is longer than Windows allows, so it was not started.",
+    "This should not happen with the files that Peek-a-Foxy installs. Please report it at "
+    f"{ISSUES_URL} with the result of `peek-a-foxy doctor --copy`.",
+)
+
 # --- 4xx: the user's files ----------------------------------------------------------------------
 
 FILE_NOT_UTF8 = _register(

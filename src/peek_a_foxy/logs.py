@@ -35,7 +35,7 @@ from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import cast
 from urllib.parse import quote
 
-from peek_a_foxy import platform
+from peek_a_foxy import platform, ui
 
 ENV_VAR = "PEEK_A_FOXY_LOG"  # "off", or the path of the log file
 LOG_NAME = "peek-a-foxy.log"
@@ -122,9 +122,25 @@ _QUERY_SECRET = re.compile(
 )
 _AUTH_HEADER = re.compile(r"(?i)(?P<head>authorization:\s*(?:bearer|basic|token)\s+)\S+")
 _GITHUB_TOKEN = re.compile(r"\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}")
-# Firefox names profile folders like ``a1b2c3d4.default-release``.
-_PROFILE_FOLDER = re.compile(r"(?<=[\\/])[a-z0-9]{8}\.[^\\/\s'\"]+")
+# Firefox names profile folders like ``a1b2c3d4.default-release``. The same shape is a file name of
+# eight letters in a stack frame (``autohide.uc.js:12``), which stays readable: the part after the
+# dot says it is a script or another file of ours. The JavaScript side (``SCRIPT_SUFFIX`` in
+# chrome/resources/peekafoxy.sys.mjs) keeps the same list, and the two must stay equal.
+_SCRIPT_SUFFIX = r"(?i:uc\.js|sys\.mjs|m?js|css|json|py|x?html|ini)(?![A-Za-z0-9_-])"
+_PROFILE_FOLDER = rf"(?<=[\\/])(?![a-z0-9]{{8}}\.{_SCRIPT_SUFFIX})[a-z0-9]{{8}}\.[^\\/\s'\"]+"
+# What this module itself writes in place of a secret. Text that already holds one (the status
+# file written by the Firefox script, a report that is redacted twice) must come out unchanged.
+_PLACEHOLDER = r"<(?:profile(?: \d+)?|user)>"
+# A drive on its own: ``C:``, ``c:/`` or ``\\?\C:\``. Not a home folder, whatever a broken
+# environment says: using it as a pattern would blank every ``C:`` in the text.
+_DRIVE_ROOT = re.compile(r"(?:\\\\[?.]\\)?[A-Za-z]:")
 _SEPARATORS = re.compile(r"[\\/]+")
+
+
+def _is_root(path: str) -> bool:
+    """Whether ``path`` is only a root (a slash, or a drive such as C:), too common as a pattern."""
+    bare = path.rstrip("/\\")
+    return not path.strip("/\\") or _DRIVE_ROOT.fullmatch(bare) is not None
 
 
 def _name(part: str) -> str:
@@ -180,34 +196,38 @@ class Redactor:
         ignore_case: bool = False,
         profile_names: Sequence[str] = (),
     ) -> None:
-        # A home that is just "/" or "C:\" would blank out every path. The longest goes first, so
-        # that a folder inside another is not cut short.
-        homes = sorted(
-            {c for c in (home, *extra_homes) if c and len(c.strip("/\\")) >= 2},
-            key=len,
-            reverse=True,
-        )
-        flags = re.IGNORECASE if ignore_case else 0
-        self._home = (
-            re.compile("|".join(_folder_pattern(h.rstrip("/\\")) for h in homes), flags)
-            if homes
-            else None
-        )
+        # A home that is just "/" or "C:\" would blank out every path.
+        homes = {
+            c for c in (home, *extra_homes) if c and len(c.strip("/\\")) >= 2 and not _is_root(c)
+        }
+        scoped = "(?i:{})" if ignore_case else "{}"
+        # The things that are replaced by a placeholder are found in ONE pass over the text, so a
+        # placeholder that was just written (or was already there) is never matched again: a user
+        # named "profile" would otherwise turn "<profile>" into "<<user>>". The first alternative
+        # that matches at a position wins, so the order below is the order of precedence.
+        self._replacements: dict[str, str] = {"keep": "", "home": "~", "user": "<user>"}
+        pieces = [f"(?P<keep>{_PLACEHOLDER})"]
+        if homes:
+            # The longest goes first, so that a folder inside another is not cut short.
+            longest_first = sorted(homes, key=len, reverse=True)
+            alternatives = "|".join(_folder_pattern(h.rstrip("/\\")) for h in longest_first)
+            pieces.append("(?P<home>" + scoped.format(alternatives) + ")")
         # A profile name chosen by the person may be personal: each becomes ``<profile N>`` (N is
         # its place in profiles.ini, so a report stays readable). Standard names Firefox itself
         # gives, and names too short to tell apart from ordinary words, are kept.
-        self._names: list[tuple[re.Pattern[str], str]] = []
         for number, name in enumerate(profile_names, start=1):
             if len(name) >= 3 and name not in STANDARD_PROFILE_NAMES:
-                pattern = re.compile(rf"(?<!\w){re.escape(name)}(?!\w)", flags)
-                self._names.append((pattern, f"<profile {number}>"))
+                self._replacements[f"n{number}"] = f"<profile {number}>"
+                pieces.append(
+                    f"(?P<n{number}>" + scoped.format(rf"(?<!\w){re.escape(name)}(?!\w)") + ")"
+                )
         # Short names would also match inside ordinary words, so only distinctive ones are hidden
         # on their own; the home folder (which contains the name) is always hidden.
-        self._user = (
-            re.compile(rf"(?<!\w){re.escape(user)}(?!\w)", flags)
-            if user and len(user) >= 3
-            else None
-        )
+        if user and len(user) >= 3:
+            pieces.append("(?P<user>" + scoped.format(rf"(?<!\w){re.escape(user)}(?!\w)") + ")")
+        self._replacements["folder"] = "<profile>"
+        pieces.append(f"(?P<folder>{_PROFILE_FOLDER})")
+        self._placeholders = re.compile("|".join(pieces))
 
     @classmethod
     def for_this_machine(
@@ -246,18 +266,16 @@ class Redactor:
             profile_names=profile_names,
         )
 
+    def _replace(self, found: re.Match[str]) -> str:
+        kind = found.lastgroup or "keep"
+        return found.group(0) if kind == "keep" else self._replacements[kind]
+
     def __call__(self, text: str) -> str:
-        if self._home:
-            text = self._home.sub("~", text)
-        for pattern, placeholder in self._names:
-            text = pattern.sub(placeholder, text)
-        if self._user:
-            text = self._user.sub("<user>", text)
+        text = self._placeholders.sub(self._replace, text)
         text = _URL_CREDENTIALS.sub(r"\g<scheme>***@", text)
         text = _AUTH_HEADER.sub(r"\g<head>***", text)
         text = _QUERY_SECRET.sub(r"\g<name>=***", text)
-        text = _GITHUB_TOKEN.sub("***", text)
-        return _PROFILE_FOLDER.sub("<profile>", text)
+        return _GITHUB_TOKEN.sub("***", text)
 
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")  # all but \t \n \r
@@ -383,7 +401,7 @@ def start(
             if warn:
                 warn(f"could not write the log file ({error}); going on without it")
     if verbose:
-        console = logging.StreamHandler(sys.stderr)
+        console = ui.QuietStreamHandler(sys.stderr)
         console.setFormatter(_Formatter(CONSOLE_FORMAT, redact, run))
         logger.addHandler(console)
 

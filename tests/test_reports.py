@@ -106,7 +106,7 @@ def test_a_failure_in_uninstall_is_reported_the_same_way(profile: Path, monkeypa
     monkeypatch.setattr("peek_a_foxy.installer.userfiles.without_css_import", broken)
     result = runner.invoke(app, ["uninstall", "--profile", str(profile), "--yes"])
     assert result.exit_code == 1
-    assert "1 of 3 steps finished" in result.output
+    assert "2 of 4 steps finished" in result.output  # the status file step is the second
 
 
 def test_the_failed_step_is_named_in_odd_paths_literally(tmp_path: Path):

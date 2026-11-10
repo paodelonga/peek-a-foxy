@@ -18,15 +18,22 @@ def load(name: str) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_the_weekly_run_covers_the_current_release_and_the_beta():
+def test_the_weekly_run_covers_the_current_release_the_beta_and_the_esr():
     workflow = load("firefox-weekly.yml")
     triggers = workflow[True]  # YAML reads the key `on` as the boolean True
     assert triggers["schedule"] and "workflow_dispatch" in triggers
     job = workflow["jobs"]["browser"]
-    assert set(job["strategy"]["matrix"]["firefox"]) == {"latest", "latest-beta"}
+    assert set(job["strategy"]["matrix"]["firefox"]) == {"latest", "latest-beta", "latest-esr"}
     assert set(job["strategy"]["matrix"]["os"]) == {"ubuntu-latest", "windows-latest"}
     assert job["strategy"]["fail-fast"] is False  # one channel failing must not hide the other
     assert any("-m browser" in step.get("run", "") for step in job["steps"])
+
+
+def test_every_firefox_name_in_the_weekly_matrix_is_one_the_setup_action_documents():
+    """A typo would fail only on a Monday; these are the names browser-actions/setup-firefox has."""
+    documented = {"latest", "latest-beta", "latest-devedition", "latest-nightly", "latest-esr"}
+    names = load("firefox-weekly.yml")["jobs"]["browser"]["strategy"]["matrix"]["firefox"]
+    assert names and set(names) <= documented and len(names) == len(set(names))
 
 
 def test_the_regular_ci_does_not_run_on_a_schedule():
