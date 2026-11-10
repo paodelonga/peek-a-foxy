@@ -582,10 +582,11 @@ def test_without_startfile_windows_opening_is_a_failure_not_a_crash(monkeypatch)
 # --- the elevated helper stays out of this ------------------------------------------------------
 
 
-def test_the_elevated_helper_has_no_logging_and_imports_nothing_of_ours():
-    code = elevate.helper_code()
-    assert "logging" not in code and "peek_a_foxy" not in code
-    assert re.findall(r"^import .*$", code, re.MULTILINE) == ["import base64, hashlib, os, sys"]
+def test_the_elevated_script_writes_no_log_and_uses_nothing_of_ours():
+    script = elevate.helper_script("C:\\Firefox", [b"a", b"b"])
+    assert "peek_a_foxy" not in script and "log" not in script.lower()
+    for word in ("Start-Transcript", "Out-File", "Write-", "Import-Module", "Add-Type"):
+        assert word not in script
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="runs a shell script as the opener")

@@ -59,6 +59,19 @@ def is_admin() -> bool:  # pragma: no cover
     return bool(ctypes.windll.shell32.IsUserAnAdmin())
 
 
+def system_directory() -> str:  # pragma: no cover
+    """The system folder (``C:\\Windows\\System32``) from Windows itself, not from SystemRoot."""
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetSystemDirectoryW.argtypes = [wintypes.LPWSTR, wintypes.UINT]
+    kernel32.GetSystemDirectoryW.restype = wintypes.UINT
+    buffer = ctypes.create_unicode_buffer(wintypes.MAX_PATH + 1)
+    length = kernel32.GetSystemDirectoryW(buffer, len(buffer))
+    # 0 is a failure; a length that does not fit is the size it would need, which is not normal.
+    if length == 0 or length >= len(buffer):
+        raise ElevationFailed(ctypes.get_last_error(), "could not read the system folder")
+    return buffer.value
+
+
 def run_elevated(
     executable: str, parameters: str, timeout_seconds: float
 ) -> int:  # pragma: no cover

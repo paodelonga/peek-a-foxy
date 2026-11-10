@@ -38,9 +38,10 @@ jobs:
           $exe = "dist\peek-a-foxy.exe"
           & $exe --version
           if ($LASTEXITCODE -ne 0) { throw "--version failed" }
-          # The elevated copy of the standalone program must refuse bad input with USAGE (10).
-          & $exe --elevated-copy "$env:RUNNER_TEMP" not-base64 not-base64
-          if ($LASTEXITCODE -ne 10) { throw "--elevated-copy returned $LASTEXITCODE, expected 10" }
+          # The program has no elevated mode of its own (the elevated process is System32 Windows
+          # PowerShell): the old flag must be an unknown option, a usage error (2).
+          & $exe --elevated-copy "$env:RUNNER_TEMP" AAAA AAAA
+          if ($LASTEXITCODE -ne 2) { throw "--elevated-copy returned $LASTEXITCODE, expected 2" }
           # The embedded Firefox files are found: install them into a throwaway profile.
           $profile = Join-Path $env:RUNNER_TEMP "profile"
           New-Item -ItemType Directory -Path $profile | Out-Null
