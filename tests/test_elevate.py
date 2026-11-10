@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from support import needs_symlinks
 
-from peek_a_foxy import elevate, loader
+from peek_a_foxy import elevate, errors, loader
 from peek_a_foxy.elevate import ElevationError
 
 CONFIG = b'// the loader\npref("x", 1);\n'
@@ -198,7 +198,7 @@ def test_the_elevated_copy_refuses_to_run_with_the_pin_overridden(
 
 def test_an_elevator_that_fails_to_start_is_passed_on(pinned, checkout, tmp_path):
     def cancelled(command: list[str]) -> int:
-        raise ElevationError("the administrator prompt was cancelled")
+        raise ElevationError(errors.UAC_CANCELLED, "the administrator prompt was cancelled")
 
     with pytest.raises(ElevationError, match="cancelled"):
         elevate.copy_as_administrator(checkout, firefox(tmp_path), cancelled)
@@ -252,16 +252,20 @@ def test_an_administrator_who_still_cannot_write_gets_an_error_and_no_second_pro
     assert asked == []
 
 
-def test_a_cancelled_prompt_is_a_loader_error(on_windows, pinned, checkout, tmp_path, monkeypatch):
+def test_a_cancelled_prompt_keeps_its_own_error_code(
+    on_windows, pinned, checkout, tmp_path, monkeypatch
+):
     deny_direct_copy(monkeypatch)
 
     def cancelled(command: list[str]) -> int:
-        raise ElevationError("the administrator prompt was cancelled")
+        raise ElevationError(errors.UAC_CANCELLED, "the administrator prompt was cancelled")
 
-    with pytest.raises(loader.LoaderError, match="cancelled"):
+    # It used to be turned into a LoaderError; now it keeps its own code (PAF-301).
+    with pytest.raises(ElevationError, match="cancelled") as caught:
         loader.install_loader(
             checkout, firefox(tmp_path), elevator=cancelled, is_admin=lambda: False
         )
+    assert caught.value.code is errors.UAC_CANCELLED
 
 
 def test_the_step_description_names_the_right_mechanism(monkeypatch):

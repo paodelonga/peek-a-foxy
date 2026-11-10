@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from peek_a_foxy import __version__, cli
+from peek_a_foxy import __version__, cli, errors
 from peek_a_foxy.cli import app
+from peek_a_foxy.errors import PlatformError
 
 runner = CliRunner()
 
@@ -146,7 +147,7 @@ def _complete(words: str, cword: int, **env: str) -> list[str]:
 
 
 def test_commands_and_options_are_completed():
-    assert _complete("peek-a-foxy ", 1) == ["install", "uninstall"]
+    assert _complete("peek-a-foxy ", 1) == ["install", "uninstall", "logs"]
     assert "--skip-loader" in _complete("peek-a-foxy install --s", 2)
     assert "--dry-run" in _complete("peek-a-foxy uninstall --d", 2)
 
@@ -192,7 +193,7 @@ def test_completion_helpers_cope_with_missing_data(tmp_path: Path, monkeypatch):
     assert cli._complete_firefox_dir("") == []
 
     def unsupported():
-        raise cli.platform.UnsupportedPlatformError("nope")
+        raise PlatformError(errors.UNSUPPORTED_OS, "nope")
 
     monkeypatch.setattr(cli.platform, "profiles_root", unsupported)
     monkeypatch.setattr(cli.platform, "firefox_dir_candidates", unsupported)
@@ -236,7 +237,7 @@ def test_an_installation_without_a_competing_one_is_used_without_asking(
 
 def test_a_platform_firefox_cannot_be_found_on_is_a_clean_error(profile: Path, monkeypatch):
     def unsupported():
-        raise cli.platform.UnsupportedPlatformError("only some platforms")
+        raise PlatformError(errors.UNSUPPORTED_OS, "only some platforms")
 
     monkeypatch.setattr(cli.platform, "firefox_dir_candidates", unsupported)
     result = runner.invoke(app, ["install", "--profile", str(profile), "--yes"])

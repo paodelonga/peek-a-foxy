@@ -5,6 +5,9 @@ from __future__ import annotations
 from importlib import resources
 from pathlib import Path
 
+from peek_a_foxy import errors
+from peek_a_foxy.errors import PlatformError
+
 CSS_NAME = "autohide.css"
 SCRIPT_NAME = "autohide.uc.js"
 PREFS_SCRIPT_NAME = "autohide-prefs.uc.js"  # the settings page in about:preferences
@@ -26,4 +29,4 @@ def assets_dir() -> Path:
     checkout = Path(__file__).resolve().parents[2] / "chrome"
     if (checkout / CSS_NAME).is_file():
         return checkout
-    raise FileNotFoundError("could not find the Peek-a-Foxy files to install")
+    raise PlatformError(errors.FILES_MISSING, "could not find the Peek-a-Foxy files to install")

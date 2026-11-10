@@ -12,11 +12,18 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
+
+from peek_a_foxy import errors
+from peek_a_foxy.errors import ElevationError
+
+log = logging.getLogger(__name__)  # only the parent process logs; HELPER_CODE imports nothing
 
 # SHA-256 of the files at DEFAULT_COMMIT of fx-autoconfig, with LF line endings. A test fetches the
 # real commit and compares: bump them together with the commit.
@@ -106,10 +113,6 @@ sys.exit(main(sys.argv))
 """
 
 
-class ElevationError(RuntimeError):
-    """The elevated copy did not happen; the message says why."""
-
-
 Elevator = Callable[[list[str]], int]
 
 
@@ -135,10 +138,18 @@ def windows_elevator(command: list[str]) -> int:  # pragma: no cover - needs Win
         )
     except _winapi.ElevationFailed as error:
         if error.args[0] == _winapi.ERROR_CANCELLED:
-            raise ElevationError("the administrator prompt was cancelled") from error
+            raise ElevationError(
+                errors.UAC_CANCELLED, "the administrator prompt was cancelled"
+            ) from error
         if error.args[0] == _winapi.WAIT_TIMEOUT:
-            raise ElevationError("the administrator prompt was not answered in time") from error
-        raise ElevationError(f"could not ask for administrator rights ({error})") from error
+            raise ElevationError(
+                errors.UAC_TIMEOUT, "the administrator prompt was not answered in time"
+            ) from error
+        raise ElevationError(
+            errors.UAC_UNAVAILABLE,
+            f"could not ask for administrator rights ({error})",
+            detail=repr(error),
+        ) from error
 
 
 def is_admin() -> bool:  # pragma: no cover - needs Windows
@@ -153,12 +164,27 @@ def copy_as_administrator(
     """Copy ``config.js`` and ``defaults/pref/config-prefs.js`` into ``firefox_dir`` as admin."""
     if os.environ.get("FXAC_REPO") or os.environ.get("FXAC_COMMIT"):
         raise ElevationError(
+            errors.UAC_ENV_OVERRIDE,
             "FXAC_REPO and FXAC_COMMIT are set: the administrator copy only accepts the pinned "
-            "fx-autoconfig, so unset them"
+            "fx-autoconfig, so unset them",
         )
     payloads = [(checkout / "program" / name).read_bytes() for name in PINNED_SHA256]
     run = elevator or windows_elevator
-    code = run(helper_command(firefox_dir, payloads))
+    command = helper_command(firefox_dir, payloads)
+    # The command carries the code and the file contents: log only what it is made of.
+    log.info(
+        "asking for administrator rights to copy %d file(s) into %s (%d bytes of payload)",
+        len(payloads),
+        firefox_dir,
+        sum(len(data) for data in payloads),
+    )
+    started = time.monotonic()
+    code = run(command)
+    log.info("the elevated process exited with %d after %.2f s", code, time.monotonic() - started)
     if code != OK:
         reason = MESSAGES.get(code, f"the elevated process failed (exit code {code})")
-        raise ElevationError(f"could not install the loader into {firefox_dir}: {reason}")
+        raise ElevationError(
+            errors.UAC_HELPER_FAILED,
+            f"could not install the loader into {firefox_dir}: {reason}",
+            detail=f"the elevated process exited with code {code}",
+        )
