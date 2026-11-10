@@ -236,7 +236,8 @@ UTILS_IS_A_LINK = _register(
     "utils-is-a-link",
     "The chrome/utils folder in your profile is a link, so nothing was copied into it.",
     "Replace the link with a real folder, or remove it, then run `peek-a-foxy install` again. "
-    "Peek-a-Foxy never writes through a link, because the files would end up somewhere else.",
+    "Peek-a-Foxy never copies the loader's utils through a link, because the files would end up "
+    "somewhere else.",
 )
 
 # --- 5xx: platform and environment --------------------------------------------------------------
