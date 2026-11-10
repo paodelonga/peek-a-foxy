@@ -176,11 +176,58 @@ def test_the_windows_short_name_of_the_user_folder_is_hidden():
     assert "AppData" in shown  # only the name goes
 
 
+@pytest.mark.parametrize(
+    ("user", "short"),
+    [
+        ("Jo Smith", "JOSMIT"),  # eight characters, but a space: Windows still shortens it
+        ("A.Smith", "ASMITH"),  # a dot too
+        ("jo.doe", "JODOE"),  # fewer than six usable characters: all of them
+        ("Ana Maria", "ANAMAR"),
+        ("abcdefgh", None),  # exactly eight and plain: fits as it is
+        ("abcdefghi", "ABCDEF"),  # nine: the first one that does not
+        ("a.b", None),  # shortened, but nothing distinctive is left to look for
+        ("", None),
+    ],
+)
+def test_the_boundary_of_what_windows_shortens(user: str, short: str | None):
+    assert logs._short_name(user) == short
+
+
+def test_a_user_with_a_space_in_a_short_name_is_hidden_in_a_windows_temporary_folder():
+    redactor = logs.Redactor(home=r"C:\Users\Jo Smith", user="Jo Smith", ignore_case=True)
+    shown = redactor(r"C:\Users\JOSMIT~1\AppData\Local\Temp\peek-a-foxy-ab12 and josmit~2")
+    assert "JOSMIT" not in shown.upper() and "AppData" in shown
+
+
 def test_a_short_name_is_only_made_for_a_name_that_windows_shortens():
     assert logs._short_name("John Smith") == "JOHNSM"
     assert logs._short_name("wolfgang-amadeus") == "WOLFGA"
     assert logs._short_name("zoe") is None  # fits in 8.3 as it is
     assert logs._short_name("a b") is None  # fewer than three usable characters
+
+
+def formatted(message: str) -> str:
+    """What the log (file and console) writes for one record."""
+    record = logging.LogRecord("peek_a_foxy", logging.INFO, __file__, 1, message, None, None)
+    return logs._Formatter("%(message)s", plain(), "run").format(record)
+
+
+@pytest.mark.parametrize(
+    "code", [*range(0x00, 0x09), 0x0B, 0x0C, *range(0x0E, 0x20), *range(0x7F, 0xA0)]
+)
+def test_every_control_character_but_tab_and_line_breaks_is_replaced(code: int):
+    """Including the 8-bit C1 controls: U+009B alone is a CSI to some terminals."""
+    assert formatted(f"a{chr(code)}b") == "a\ufffdb"
+
+
+@pytest.mark.parametrize("char", ["\t", " ", "~", "\u00a0", "\u00a1", "é", "\u200f", "\U0001f98a"])
+def test_ordinary_and_unusual_printable_characters_are_kept(char: str):
+    assert formatted(f"a{char}b") == f"a{char}b"
+
+
+def test_an_eight_bit_escape_sequence_cannot_reach_a_terminal_through_the_log():
+    shown = formatted("name \x9b31m red \x9d0;title\x07 \x1b[2J")
+    assert not any(0x7F <= ord(c) <= 0x9F or ord(c) < 0x20 for c in shown)
 
 
 def test_macos_paths_are_hidden_whatever_their_case():
