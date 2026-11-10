@@ -1,6 +1,6 @@
 /* Autohide for the tab bar and the navigation bar (urlbar), per window.
    The attributes autohide-tabs / autohide-urlbar on :root are set by JS/autohide.uc.js
-   (Ctrl+Alt+T / Ctrl+Alt+U, plus a toolbar button for each); their initial values come from the prefs
+   (shortcuts set in the settings, plus a toolbar button for each); their initial values come from the prefs
    peekafoxy.tabs.autohide / peekafoxy.urlbar.autohide.
    Collapsed to a thin hover strip; revealed on the strip, while focused, or while a related popup is open.
 

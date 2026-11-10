@@ -16,6 +16,16 @@ ChromeUtils.defineESModuleGetters(lazy, {
 // The version of the Peek-a-Foxy files (a test keeps it equal to the package version).
 export const SCRIPT_VERSION = "0.2.0";
 
+// The default shortcuts. Ctrl+Alt+T opens a terminal on GNOME, Ubuntu and Linux Mint, so on Linux (and on
+// any system this does not know) the tab bar uses Ctrl+Alt+Shift+T. Ctrl+Alt+U is Firefox's own
+// shortcut for the tabs sidebar, so the navigation bar uses Ctrl+Alt+Shift+U everywhere.
+// The operating system is Services.appinfo.OS: "Linux", "WINNT" or "Darwin".
+export const DEFAULT_TABS_SHORTCUT = "Ctrl+Alt+T";
+export const DEFAULT_TABS_SHORTCUT_LINUX = "Ctrl+Alt+Shift+T";
+export const DEFAULT_URLBAR_SHORTCUT = "Ctrl+Alt+Shift+U";
+export const defaultTabsShortcut = (os) =>
+  os === "WINNT" || os === "Darwin" ? DEFAULT_TABS_SHORTCUT : DEFAULT_TABS_SHORTCUT_LINUX;
+
 // One entry per pref. Everything is registered on Firefox's default branch (see registerDefaults),
 // so about:config lists the prefs with the right type and nothing is written until a value changes.
 //   type    "bool" | "int" | "string"
@@ -30,8 +40,8 @@ export const PREFS = {
   revealSwitch: { name: "peekafoxy.tabs.reveal.switch", type: "bool", default: true },
   revealNew: { name: "peekafoxy.tabs.reveal.new", type: "bool", default: true },
   revealLink: { name: "peekafoxy.tabs.reveal.link", type: "bool", default: true },
-  tabsShortcut: { name: "peekafoxy.tabs.shortcut", type: "string", default: "Ctrl+Alt+T" },
-  urlbarShortcut: { name: "peekafoxy.urlbar.shortcut", type: "string", default: "Ctrl+Alt+U" },
+  tabsShortcut: { name: "peekafoxy.tabs.shortcut", type: "string", default: defaultTabsShortcut(Services.appinfo.OS) },
+  urlbarShortcut: { name: "peekafoxy.urlbar.shortcut", type: "string", default: DEFAULT_URLBAR_SHORTCUT },
   welcomed: { name: "peekafoxy.welcomed", type: "bool", default: false },
 };
 export const PREF_BRANCH = "peekafoxy.";
@@ -257,7 +267,7 @@ export const STRINGS = {
     urlbar: { label: "Auto-hide the navigation bar", tooltip: "Hide or show the navigation bar in this window ({key})" },
     settings: {
       category: "Peek a Foxy 🦊",
-      description: "Hide the tab bar and the navigation bar until you need them. Changes apply to all open windows right away.",
+      description: "Hide the tab bar and the navigation bar until you need them. Timings, shortcuts and what reveals the tab bar apply to all open windows right away; the two options for new windows only affect windows you open afterwards.",
       startGroup: "New windows",
       startTabs: "Hide the tab bar in new windows",
       startUrlbar: "Hide the navigation bar in new windows",
@@ -276,11 +286,12 @@ export const STRINGS = {
       tabsShortcut: "Toggle tab bar visibility",
       urlbarShortcut: "Toggle navigation bar visibility",
       shortcutPrompt: "Click here, then press the new shortcut",
-      shortcutHint: "Combine Ctrl, Alt or Meta with a letter, a digit or F1–F12. Your system keeps some shortcuts for itself; if one does nothing, try another.",
-      shortcutHintLinux: "For example, Ctrl+Alt+T opens a terminal on GNOME, Ubuntu and Linux Mint.",
-      shortcutHintWindows: "AltGr counts as Ctrl+Alt on layouts that have it (Portuguese ABNT2, German, Czech...), so it isn't accepted. Use the left Ctrl and Alt, or Ctrl+Shift.",
+      shortcutHint: "Combine Ctrl, Alt or Meta with a letter, a digit or F1–F12. Your system keeps some shortcuts for itself; if one does nothing, try another. Letters and digits name the key's position on a US keyboard, so on other layouts the label may differ from the keycap.",
+      shortcutHintLinux: "On Linux the default for the tab bar is {key}, because Ctrl+Alt+T opens a terminal on GNOME, Ubuntu and Linux Mint.",
+      shortcutHintWindows: "AltGr counts as Ctrl+Alt on layouts that have it (Portuguese ABNT2, German, Czech...), so it isn't accepted. Use the left Ctrl and Alt, or Ctrl+Shift with a letter.",
       reset: "Restore default",
       resetFor: "Restore default: {label}",
+      verticalTabsNote: "Vertical tabs are on, so Firefox already hides the tab bar and the tab bar options have no effect.",
       supportGroup: "Support",
       supportOk: "Working: Peek-a-Foxy {version} is loaded in this window.",
       supportErrors: "Working, with errors: Peek-a-Foxy {version} is loaded in this window, but its script recorded errors, which the diagnostic info lists.",
@@ -308,9 +319,9 @@ export const STRINGS = {
         toolbarButtons: "The toolbar button {ids} is not registered with Firefox, so it is missing from Customize Toolbar. Firefox may have changed how toolbar buttons are made, or the script stopped before it made them.",
         prefMissing: "The setting {name} is not registered, so it is missing from about:config and the script uses its built-in default.",
         prefType: "The setting {name} holds {actual} instead of {expected}, probably from a line in user.js or prefs.js with the wrong kind of value, so the script ignores it and uses the default ({default}). Reset it in about:config.",
-        prefsMore: "{n} more setting(s) have the same kind of problem.",
+        prefsMore: "More settings have the same kind of problem ({n}).",
         rangeBad: "The setting {name} is {value}, outside the allowed {min} to {max}, so the script uses {used} instead.",
-        rangeMore: "{n} more setting(s) are out of range too.",
+        rangeMore: "More settings are out of range too ({n}).",
         shortcutBad: "The shortcut setting {name} says \"{text}\", which is not a valid shortcut, so the default {default} is used.",
         shortcutMore: "The other shortcut has the same problem.",
         shortcutsSame: "Both bars use the shortcut {text}, so only one of them reacts to it. Choose a different shortcut for one of them in the Peek-a-Foxy settings.",
@@ -337,7 +348,7 @@ export const STRINGS = {
               tooltip: "Oculta ou mostra a barra de navegação nesta janela ({key})" },
     settings: {
       category: "Peek a Foxy 🦊",
-      description: "Esconde a barra de abas e a barra de navegação até você precisar delas. As mudanças valem na hora para todas as janelas abertas.",
+      description: "Oculta a barra de abas e a barra de navegação até você precisar delas. Os tempos, os atalhos e o que faz a barra de abas aparecer valem na hora para todas as janelas abertas; as duas opções de novas janelas só afetam as janelas que você abrir depois.",
       startGroup: "Novas janelas",
       startTabs: "Ocultar a barra de abas em novas janelas",
       startUrlbar: "Ocultar a barra de navegação em novas janelas",
@@ -351,16 +362,17 @@ export const STRINGS = {
       revealSwitch: "Ocorrer troca de abas",
       revealNew: "Ocorrer abertura de uma nova aba",
       revealLink: "Ocorrer abertura automática de uma nova aba (clique em um link, um favorito ou uma página que abre uma nova janela)",
-      revealNote: "Passar o mouse na faixa sempre abre a barra de abas, independente da escolha que estiver aqui.",
+      revealNote: "Passar o mouse sobre a faixa sempre abre a barra de abas, independentemente da escolha feita aqui.",
       shortcutsGroup: "Atalhos",
       tabsShortcut: "Alternar a exibição da barra de abas",
       urlbarShortcut: "Alternar a exibição da barra de navegação",
       shortcutPrompt: "Clique aqui e pressione o novo atalho",
-      shortcutHint: "Combine Ctrl, Alt ou Meta com uma letra, um dígito ou F1–F12. O sistema reserva alguns atalhos para ele; se um não fizer nada, tente outro.",
-      shortcutHintLinux: "Por exemplo, Ctrl+Alt+T abre um terminal no GNOME, no Ubuntu e no Linux Mint.",
-      shortcutHintWindows: "Em layouts com AltGr (ABNT2, alemão, tcheco...), o AltGr conta como Ctrl+Alt e não é aceito. Use o Ctrl e o Alt da esquerda, ou Ctrl+Shift.",
+      shortcutHint: "Combine Ctrl, Alt ou Meta com uma letra, um dígito ou F1–F12. O sistema reserva alguns atalhos para ele; se um não fizer nada, tente outro. As letras e os dígitos indicam a posição da tecla em um teclado americano; em outros layouts, o nome pode não coincidir com o que está impresso na tecla.",
+      shortcutHintLinux: "No Linux, o padrão da barra de abas é {key}, porque Ctrl+Alt+T abre um terminal no GNOME, no Ubuntu e no Linux Mint.",
+      shortcutHintWindows: "Em layouts com AltGr (ABNT2, alemão, tcheco...), o AltGr conta como Ctrl+Alt e não é aceito. Use o Ctrl e o Alt da esquerda, ou Ctrl+Shift com uma letra.",
       reset: "Restaurar padrão",
       resetFor: "Restaurar padrão: {label}",
+      verticalTabsNote: "As abas verticais estão ativadas, então o Firefox já oculta a barra de abas e as opções da barra de abas não têm efeito.",
       supportGroup: "Suporte",
       supportOk: "Funcionando: o Peek-a-Foxy {version} está carregado nesta janela.",
       supportErrors: "Funcionando, com erros: o Peek-a-Foxy {version} está carregado nesta janela, mas o script registrou erros, que as informações de diagnóstico listam.",
@@ -379,7 +391,7 @@ export const STRINGS = {
         "navigator-toolbox": "O elemento #navigator-toolbox (o container das barras de ferramentas do Firefox) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então as barras não podem ser ocultadas nem mostradas.",
         "tabs-toolbar": "O elemento #TabsToolbar (a barra de abas) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então a barra de abas não pode ser ocultada.",
         "nav-bar": "O elemento #nav-bar (a barra de navegação) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então a barra de navegação não pode ser ocultada.",
-        urlbar: "O elemento #urlbar (a barra de endereço) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então a barra de navegação pode se fechar enquanto a lista suspensa da barra de endereço está aberta.",
+        urlbar: "O elemento #urlbar (a barra de endereços) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então a barra de navegação pode se fechar enquanto a lista suspensa da barra de endereços está aberta.",
         "bookmarks-toolbar": "O elemento #PersonalToolbar (a barra de favoritos) não foi encontrado. O Firefox pode tê-lo renomeado ou removido, então ela não vai se ocultar e se mostrar junto com a barra de navegação.",
         tabsHolder: "O elemento #tabbrowser-tabs (as abas em si) não foi encontrado. O Firefox pode tê-lo renomeado, então a barra de abas pode não se recolher corretamente.",
         tabsHolderCustom: "A janela desenha a própria barra de título (customtitlebar), mas #TabsToolbar .toolbar-items, a parte da barra de abas que contém as abas, não foi encontrada. O Firefox pode ter movido as abas, então ocultar a barra de abas pode ocultar os botões da janela ou não fazer nada.",
@@ -388,9 +400,9 @@ export const STRINGS = {
         toolbarButtons: "O botão da barra de ferramentas {ids} não está registrado no Firefox, então ele não aparece em Personalizar barra de ferramentas. O Firefox pode ter mudado a forma de criar botões da barra de ferramentas, ou o script parou antes de criá-los.",
         prefMissing: "A configuração {name} não está registrada, então ela não aparece no about:config e o script usa o valor padrão embutido.",
         prefType: "A configuração {name} contém {actual} em vez de {expected}, provavelmente por uma linha do user.js ou do prefs.js com o tipo de valor errado, então o script a ignora e usa o valor padrão ({default}). Restaure-a no about:config.",
-        prefsMore: "Mais {n} configuração(ões) têm o mesmo tipo de problema.",
+        prefsMore: "Há mais configurações com o mesmo tipo de problema ({n}).",
         rangeBad: "A configuração {name} está em {value}, fora do intervalo permitido de {min} a {max}, então o script usa {used} no lugar.",
-        rangeMore: "Mais {n} configuração(ões) também estão fora do intervalo.",
+        rangeMore: "Há mais configurações fora do intervalo ({n}).",
         shortcutBad: "A configuração de atalho {name} diz \"{text}\", que não é um atalho válido, então o atalho padrão {default} é usado.",
         shortcutMore: "O outro atalho tem o mesmo problema.",
         shortcutsSame: "As duas barras usam o atalho {text}, então só uma delas reage a ele. Escolha um atalho diferente para uma delas nas configurações do Peek-a-Foxy.",
@@ -413,7 +425,8 @@ export const STRINGS = {
 // The hint under the shortcuts: the same everywhere, plus what is true on this operating system
 // (Services.appinfo.OS is "Linux", "WINNT" or "Darwin").
 export function shortcutHint(settings, os = Services.appinfo.OS) {
-  const extra = { Linux: settings.shortcutHintLinux, WINNT: settings.shortcutHintWindows }[os];
+  const linux = settings.shortcutHintLinux.replace("{key}", DEFAULT_TABS_SHORTCUT_LINUX);
+  const extra = { Linux: linux, WINNT: settings.shortcutHintWindows }[os];
   return extra ? `${settings.shortcutHint} ${extra}` : settings.shortcutHint;
 }
 

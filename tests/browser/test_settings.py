@@ -24,10 +24,6 @@ PROBLEM = """
 """
 PANE = "gBrowser.selectedBrowser.contentDocument.getElementById('peekafoxy-pane')"
 FIELD = "gBrowser.selectedBrowser.contentDocument.getElementById('peekafoxy-%s')"
-KEYDOWN = """
-  window.dispatchEvent(new KeyboardEvent('keydown',
-    {code: arguments[0], ctrlKey: true, altKey: true, bubbles: true, cancelable: true}));
-"""
 OPEN_TAB = (
     "gBrowser.addTab('about:blank', "
     "{triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});"
@@ -139,13 +135,14 @@ def test_the_controls_show_the_current_prefs(browser):
                    urlbar: v('peekafoxy-peekafoxy.urlbar.shortcut').value,
                    startTabs: v('peekafoxy-peekafoxy.tabs.autohide').checked};"""
     )
+    tabs, urlbar = browser.default_shortcut("tabs"), browser.default_shortcut("urlbar")
     assert shown == {
         "strip": "20",
         "show": "120",
         "hide": "300",
         "flash": "1500",
-        "tabs": "Ctrl+Alt+T",
-        "urlbar": "Ctrl+Alt+U",
+        "tabs": tabs,
+        "urlbar": urlbar,
         "startTabs": False,
     }
 
@@ -337,9 +334,9 @@ def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
     )
     browser.close_settings_tabs()
 
-    browser.js(KEYDOWN, "KeyT")  # the old one does nothing now
+    browser.keydown("KeyT")  # the old one does nothing now
     assert not browser.js(f"return {HAS};", "autohide-tabs")
-    browser.js(KEYDOWN, "KeyG")
+    browser.keydown("KeyG", shift=False)
     assert browser.js(f"return {HAS};", "autohide-tabs")
     assert "Ctrl+Alt+G" in browser.js(
         "return CustomizableUI.getWidget('tabs-autohide-button').forWindow(window).node"
@@ -353,7 +350,7 @@ def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
         ("g", "KeyG", "", "Add Ctrl, Alt or Meta."),
         ("g", "KeyG", "s", "Add Ctrl, Alt or Meta."),
         ("ArrowUp", "ArrowUp", "ca", "That key can't be used."),
-        ("u", "KeyU", "ca", "The other bar already uses this shortcut."),
+        ("u", "KeyU", "cas", "The other bar already uses this shortcut."),
     ],
 )
 def test_a_bad_shortcut_is_refused_with_a_message_and_changes_nothing(
@@ -374,7 +371,7 @@ def test_pressing_only_a_modifier_waits_and_tab_still_leaves_the_field(browser):
 def test_a_shortcut_that_is_garbage_in_the_pref_falls_back_to_the_default(browser):
     browser.js("Services.prefs.setStringPref('peekafoxy.tabs.shortcut', 'Ctrl+Nonsense+');")
     browser.wait("Services.prefs.getStringPref('peekafoxy.tabs.shortcut') === 'Ctrl+Nonsense+'")
-    browser.js(KEYDOWN, "KeyT")
+    browser.keydown("KeyT")
     assert browser.js(f"return {HAS};", "autohide-tabs")
 
 
@@ -383,7 +380,7 @@ def test_the_two_bars_can_swap_their_shortcuts(browser):
     assert record(browser, "tabs", "g", "KeyG", "ca") == ""
     assert record(browser, "urlbar", "t", "KeyT", "ca") == ""  # free now
     browser.close_settings_tabs()
-    browser.js(KEYDOWN, "KeyT")
+    browser.keydown("KeyT", shift=False)  # recorded as Ctrl+Alt+T, without Shift
     assert browser.js(f"return {HAS};", "autohide-urlbar")
     assert not browser.js(f"return {HAS};", "autohide-tabs")
 

@@ -112,10 +112,12 @@ def test_keys_that_are_not_shortcut_material_are_ignored(browser):
 
 
 def test_the_shortcut_problem_checks_the_other_bar(browser):
-    # `other` is the other bar's pref (here the tab bar's, Ctrl+Alt+T): we choose for the urlbar.
+    # `other` is the other bar's pref (here one that is not registered, so its value is its default,
+    # Ctrl+Alt+T, on every system): we choose for the urlbar.
     result = browser.js(
         MODULE
-        + """const other = P.PREFS.tabsShortcut;
+        + """const other = {name: "peekafoxy.test.unregistered", type: "string",
+                        default: "Ctrl+Alt+T"};
            return ["Ctrl+Alt+T", "ctrl+alt+t", "Ctrl+Alt+U", "Ctrl+Alt+G", "G", "Ctrl+Alt+Enter"]
              .map(t => P.shortcutProblem(t, other));"""
     )
@@ -224,3 +226,176 @@ def test_the_hint_texts_exist_in_both_languages_and_name_no_system_in_the_neutra
         return out;"""
     )
     assert problems == []
+
+
+# --- the default shortcuts, by operating system ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("os_name", "expected"),
+    [
+        ("WINNT", "Ctrl+Alt+T"),
+        ("Darwin", "Ctrl+Alt+T"),
+        ("Linux", "Ctrl+Alt+Shift+T"),
+        ("FreeBSD", "Ctrl+Alt+Shift+T"),  # any other system behaves like Linux
+        ("SunOS", "Ctrl+Alt+Shift+T"),
+        ("", "Ctrl+Alt+Shift+T"),
+        ("winnt", "Ctrl+Alt+Shift+T"),  # exact names only: Services.appinfo.OS is never lower case
+        ("darwin", "Ctrl+Alt+Shift+T"),
+        (" WINNT", "Ctrl+Alt+Shift+T"),
+        ("WINNT\u0000", "Ctrl+Alt+Shift+T"),
+        ("constructor", "Ctrl+Alt+Shift+T"),  # names that every object has
+        ("__proto__", "Ctrl+Alt+Shift+T"),
+        ("toString", "Ctrl+Alt+Shift+T"),
+    ],
+)
+def test_the_default_tab_bar_shortcut_depends_on_the_system(browser, os_name, expected):
+    got = browser.js(MODULE + "return P.defaultTabsShortcut(arguments[0]);", os_name)
+    assert got == expected
+
+
+@pytest.mark.parametrize("value", ["undefined", "null", "42", "{}", "[]", "['WINNT']", "true"])
+def test_a_default_asked_for_with_something_that_is_not_a_system_name_is_the_linux_one(
+    browser, value
+):
+    got = browser.js(MODULE + f"return P.defaultTabsShortcut({value});")
+    assert got == "Ctrl+Alt+Shift+T"
+
+
+def test_the_navigation_bar_default_is_the_same_on_every_system_and_not_firefoxs_own(browser):
+    assert browser.js(MODULE + "return P.DEFAULT_URLBAR_SHORTCUT;") == "Ctrl+Alt+Shift+U"
+    assert browser.js(MODULE + "return P.PREFS.urlbarShortcut.default;") == "Ctrl+Alt+Shift+U"
+
+
+def test_every_default_shortcut_is_valid_and_they_differ_on_every_system(browser):
+    result = browser.js(
+        MODULE
+        + """return ["Linux", "WINNT", "Darwin", "Other", undefined].map((os) => {
+               const tabs = P.parseShortcut(P.defaultTabsShortcut(os));
+               const urlbar = P.parseShortcut(P.DEFAULT_URLBAR_SHORTCUT);
+               return [tabs.ok, urlbar.ok, tabs.text !== urlbar.text];
+             });"""
+    )
+    assert result == [[True, True, True]] * 5
+
+
+def test_the_defaults_are_registered_read_and_shown_the_same_way(browser):
+    """about:config's default branch, Peek.read and the tooltip all say what the module says."""
+    result = browser.js(
+        MODULE
+        + """const branch = Services.prefs.getDefaultBranch("");
+           const os = Services.appinfo.OS;
+           return [
+             branch.getStringPref("peekafoxy.tabs.shortcut") === P.defaultTabsShortcut(os),
+             branch.getStringPref("peekafoxy.urlbar.shortcut") === P.DEFAULT_URLBAR_SHORTCUT,
+             P.bindingFor(P.PREFS.tabsShortcut).text === P.defaultTabsShortcut(os),
+             P.bindingFor(P.PREFS.urlbarShortcut).text === P.DEFAULT_URLBAR_SHORTCUT,
+             Services.prefs.prefHasUserValue("peekafoxy.tabs.shortcut"),
+           ];"""
+    )
+    assert result == [True, True, True, True, False]
+
+
+def test_the_linux_hint_says_the_tab_bar_default_in_both_languages(browser):
+    hints = browser.js(
+        MODULE
+        + """const text = (lang) => P.STRINGS[lang].settings;
+           return ["en", "pt"].map((lang) => P.shortcutHint(text(lang), "Linux"));"""
+    )
+    assert hints[0].endswith(
+        " On Linux the default for the tab bar is Ctrl+Alt+Shift+T, because Ctrl+Alt+T opens a "
+        "terminal on GNOME, Ubuntu and Linux Mint."
+    )
+    assert hints[1].endswith(
+        " No Linux, o padrão da barra de abas é Ctrl+Alt+Shift+T, porque Ctrl+Alt+T abre um "
+        "terminal no GNOME, no Ubuntu e no Linux Mint."
+    )
+    assert "{key}" not in hints[0] + hints[1]
+
+
+def test_the_neutral_hint_ends_with_the_note_about_the_us_keyboard(browser):
+    base = browser.js(MODULE + "return ['en', 'pt'].map(l => P.STRINGS[l].settings.shortcutHint);")
+    assert base[0].endswith(
+        "Letters and digits name the key's position on a US keyboard, so on other layouts the "
+        "label may differ from the keycap."
+    )
+    assert base[1].endswith(
+        "As letras e os dígitos indicam a posição da tecla em um teclado americano; em outros "
+        "layouts, o nome pode não coincidir com o que está impresso na tecla."
+    )
+
+
+def test_the_windows_hint_asks_for_a_letter_with_ctrl_shift(browser):
+    hints = browser.js(
+        MODULE + "return ['en', 'pt'].map(l => P.STRINGS[l].settings.shortcutHintWindows);"
+    )
+    assert hints[0].endswith("Use the left Ctrl and Alt, or Ctrl+Shift with a letter.")
+    assert hints[1].endswith("Use o Ctrl e o Alt da esquerda, ou Ctrl+Shift com uma letra.")
+
+
+def test_the_texts_the_owner_approved_are_in_both_languages_word_for_word(browser):
+    got = browser.js(
+        MODULE
+        + """return ["en", "pt"].map((l) => {
+               const s = P.STRINGS[l].settings;
+               return [s.description, s.revealNote, s.health.prefsMore, s.health.rangeMore,
+                       s.resetFor, s.verticalTabsNote];
+             });"""
+    )
+    assert got[0][0] == (
+        "Hide the tab bar and the navigation bar until you need them. Timings, shortcuts and what "
+        "reveals the tab bar apply to all open windows right away; the two options for new windows "
+        "only affect windows you open afterwards."
+    )
+    assert got[1][0] == (
+        "Oculta a barra de abas e a barra de navegação até você precisar delas. Os tempos, os "
+        "atalhos e o que faz a barra de abas aparecer valem na hora para todas as janelas abertas; "
+        "as duas opções de novas janelas só afetam as janelas que você abrir depois."
+    )
+    assert got[1][1] == (
+        "Passar o mouse sobre a faixa sempre abre a barra de abas, independentemente da escolha "
+        "feita aqui."
+    )
+    assert got[0][2:] == [
+        "More settings have the same kind of problem ({n}).",
+        "More settings are out of range too ({n}).",
+        "Restore default: {label}",
+        "Vertical tabs are on, so Firefox already hides the tab bar and the tab bar options have "
+        "no effect.",
+    ]
+    assert got[1][2:] == [
+        "Há mais configurações com o mesmo tipo de problema ({n}).",
+        "Há mais configurações fora do intervalo ({n}).",
+        "Restaurar padrão: {label}",
+        "As abas verticais estão ativadas, então o Firefox já oculta a barra de abas e as opções "
+        "da barra de abas não têm efeito.",
+    ]
+
+
+def test_the_portuguese_texts_say_barra_de_enderecos_in_the_plural_only(browser):
+    texts = browser.js(
+        MODULE
+        + """const out = [];
+           const walk = (node) => {
+             for (const value of Object.values(node))
+               typeof value === "string" ? out.push(value) : walk(value);
+           };
+           walk(P.STRINGS.pt);
+           return out;"""
+    )
+    joined = " ".join(texts)
+    assert "barra de endereços" in joined
+    assert "barra de endereço " not in joined and "barra de endereço)" not in joined
+
+
+def test_the_shortcut_problem_knows_the_real_defaults_of_the_two_bars(browser):
+    """The default tab bar shortcut is taken for the navigation bar, and Ctrl+Alt+U (Firefox's own
+    shortcut for the tabs sidebar) is no longer the navigation bar's, so the tab bar may have it."""
+    result = browser.js(
+        MODULE
+        + """const os = Services.appinfo.OS;
+           return [P.shortcutProblem(P.defaultTabsShortcut(os), P.PREFS.tabsShortcut),
+                   P.shortcutProblem(P.DEFAULT_URLBAR_SHORTCUT, P.PREFS.urlbarShortcut),
+                   P.shortcutProblem("Ctrl+Alt+U", P.PREFS.urlbarShortcut)];"""
+    )
+    assert result == ["duplicate", "duplicate", None]

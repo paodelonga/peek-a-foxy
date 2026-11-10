@@ -546,6 +546,95 @@ def test_the_reset_buttons_are_named_in_portuguese_for_a_portuguese_firefox(brow
     assert "Restaurar padrão: Alternar a exibição da barra de abas" in names
 
 
+# --- the note about vertical tabs ----------------------------------------------------------------
+
+VERTICAL_NOTE = "doc.getElementById('peekafoxy-vertical-tabs-note')"
+VERTICAL_TEXT = "Vertical tabs are on, so Firefox already hides the tab bar and the tab bar options have no effect."
+
+
+def note_shown(browser) -> bool:
+    return browser.settings(
+        f"const note = {VERTICAL_NOTE}; return !!note && !note.hidden && note.getBoundingClientRect().height > 0;"
+    )
+
+
+def wait_for_note(browser, shown: bool) -> None:
+    browser.wait(
+        f"(() => {{ const doc = gBrowser.selectedBrowser.contentDocument;"
+        f" const note = {VERTICAL_NOTE}; return !!note && (!note.hidden) === {str(shown).lower()}; }})()",
+        5,
+        f"the note about vertical tabs did not become {'visible' if shown else 'hidden'}",
+    )
+
+
+@pytest.fixture
+def vertical_tabs_off(browser):
+    browser.js("Services.prefs.clearUserPref('sidebar.verticalTabs');")
+    yield
+    browser.js("Services.prefs.clearUserPref('sidebar.verticalTabs');")
+
+
+def test_the_vertical_tabs_note_is_not_shown_while_vertical_tabs_are_off(
+    browser, vertical_tabs_off
+):
+    browser.open_settings("#peekafoxy")
+    assert not note_shown(browser)
+    assert browser.settings(f"return {VERTICAL_NOTE}.textContent;") == VERTICAL_TEXT
+
+
+def test_the_vertical_tabs_note_follows_the_pref_while_the_page_is_open(browser, vertical_tabs_off):
+    browser.open_settings("#peekafoxy")
+    browser.js("Services.prefs.setBoolPref('sidebar.verticalTabs', true);")
+    wait_for_note(browser, True)
+    assert note_shown(browser)
+    browser.js("Services.prefs.setBoolPref('sidebar.verticalTabs', false);")
+    wait_for_note(browser, False)
+    browser.js("Services.prefs.setBoolPref('sidebar.verticalTabs', true);")  # and again
+    wait_for_note(browser, True)
+    browser.js("Services.prefs.clearUserPref('sidebar.verticalTabs');")
+    wait_for_note(browser, False)
+
+
+def test_the_vertical_tabs_note_is_shown_at_once_when_the_page_opens_with_them_on(
+    browser, vertical_tabs_off
+):
+    browser.js("Services.prefs.setBoolPref('sidebar.verticalTabs', true);")
+    browser.open_settings("#peekafoxy")
+    assert note_shown(browser)
+    browser.close_settings_tabs()
+
+
+def test_the_vertical_tabs_note_is_in_portuguese_for_a_portuguese_firefox(
+    browser_in_portuguese,
+):
+    browser = browser_in_portuguese
+    browser.js("Services.prefs.setBoolPref('sidebar.verticalTabs', true);")
+    try:
+        browser.open_settings("#peekafoxy")
+        shown = note_shown(browser)
+        text = browser.settings(f"return {VERTICAL_NOTE}.textContent;")
+    finally:
+        browser.js("Services.prefs.clearUserPref('sidebar.verticalTabs');")
+        browser.close_settings_tabs()
+    assert shown
+    assert text == (
+        "As abas verticais estão ativadas, então o Firefox já oculta a barra de abas e as opções "
+        "da barra de abas não têm efeito."
+    )
+
+
+def test_the_vertical_tabs_note_stops_listening_when_the_page_is_closed(browser, vertical_tabs_off):
+    """Cleaning up on unload: changing the pref after the page is gone records no error."""
+    browser.open_settings("#peekafoxy")
+    browser.close_settings_tabs()
+    problems = "return Diag.events().filter((e) => e.level !== 'info').length;"
+    before = browser.diag(problems)
+    browser.js("Services.prefs.setBoolPref('sidebar.verticalTabs', true);")
+    time.sleep(0.3)
+    browser.js("Services.prefs.clearUserPref('sidebar.verticalTabs');")
+    assert browser.diag(problems) == before
+
+
 # --- language and direction ----------------------------------------------------------------------
 
 

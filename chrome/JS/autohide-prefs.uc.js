@@ -211,6 +211,26 @@
     return line;
   };
 
+  // With vertical tabs Firefox has no tab bar to hide, so the tab bar options do nothing: say so, but
+  // only while the pref is on, and follow it live.
+  const VERTICAL_TABS = "sidebar.verticalTabs";
+  const verticalTabsNote = () => {
+    const note = el("p", { class: "pf-note", id: "peekafoxy-vertical-tabs-note", text: TEXT.verticalTabsNote, hidden: "" });
+    const refresh = () => {
+      let on = false;
+      try {
+        on = Services.prefs.getBoolPref(VERTICAL_TABS, false);
+      } catch (e) {
+        Diag.warn("settings:verticalTabs", e); // the pref holds another type: not on
+      }
+      note.hidden = !on;
+    };
+    const observer = { observe: refresh };
+    Services.prefs.addObserver(VERTICAL_TABS, observer);
+    window.addEventListener("unload", () => Services.prefs.removeObserver(VERTICAL_TABS, observer), { once: true });
+    controls.push({ refresh });
+    return note;
+  };
 
   const issuesNote = () => {
     const link = el("a", { href: Peek.ISSUES_URL, target: "_blank", rel: "noopener noreferrer", text: TEXT.supportLink });
@@ -254,6 +274,7 @@
       : el("div", {}, el("h1", { text: TEXT.category }), el("p", { text: TEXT.description }));
     return el("section", {},
       header,
+      verticalTabsNote(),
       group(TEXT.startGroup,
         checkbox(PREFS.tabsAutohide, TEXT.startTabs),
         checkbox(PREFS.urlbarAutohide, TEXT.startUrlbar),

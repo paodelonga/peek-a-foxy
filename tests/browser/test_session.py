@@ -193,10 +193,6 @@ FAKE = """
       setCustomWindowValue: () => { window.__calls.set++; throw new Error(%(error)s); },
     };
 """
-KEYDOWN = """
-  window.dispatchEvent(new KeyboardEvent('keydown',
-    {code: arguments[0], ctrlKey: true, altKey: true, bubbles: true, cancelable: true}));
-"""
 
 
 def with_fake_store(error: str):
@@ -226,7 +222,7 @@ def test_a_window_that_is_never_tracked_is_retried_a_bounded_number_of_times(
         assert browser.js(HAS, "autohide-tabs")  # the pref default stands
         assert tracking_noise(events(browser)) == []  # being untracked is not worth a mention
         # The shortcut still works; the failure to save is reported once and is not fatal.
-        browser.js(KEYDOWN, "KeyT")
+        browser.keydown("KeyT")
         assert not browser.js(HAS, "autohide-tabs")
         warned = [e["where"] for e in events(browser) if e["level"] == "warn"]
         assert warned.count("autohide:session") == 1

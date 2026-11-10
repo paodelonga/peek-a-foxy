@@ -628,7 +628,7 @@ def test_values_outside_their_range_are_reported_with_the_value_actually_used(br
     assert "peekafoxy.strip.px is 99999" in note and "1 to 40" in note and "uses 40" in note
     browser.js("Services.prefs.setIntPref('peekafoxy.show.ms', -5);")
     note = failed_health(checked(browser))["settings-values"]
-    assert "1 more setting(s) are out of range" in note
+    assert "More settings are out of range too (1)" in note
 
 
 def test_a_shortcut_that_does_not_parse_is_reported_with_the_default_in_use(browser):
@@ -636,7 +636,10 @@ def test_a_shortcut_that_does_not_parse_is_reported_with_the_default_in_use(brow
         "Services.prefs.setStringPref('peekafoxy.tabs.shortcut', 'Ctrl+Alt+Nonsense\\u0000');"
     )
     note = failed_health(checked(browser))["shortcuts"]
-    assert "peekafoxy.tabs.shortcut" in note and "default Ctrl+Alt+T is used" in note
+    assert (
+        "peekafoxy.tabs.shortcut" in note
+        and f"default {browser.default_shortcut('tabs')} is used" in note
+    )
     assert "\x00" not in note
 
 
@@ -650,7 +653,7 @@ def test_two_bars_with_the_same_shortcut_are_reported(browser):
 
 
 def test_changing_a_setting_rechecks_by_itself(browser):
-    browser.js("Services.prefs.setStringPref('peekafoxy.tabs.shortcut', 'Ctrl+Alt+U');")
+    browser.js("Services.prefs.setStringPref('peekafoxy.tabs.shortcut', 'Ctrl+Alt+Shift+U');")
     browser.wait(
         "ChromeUtils.importESModule('chrome://userchrome/content/peekafoxy.sys.mjs')"
         ".Diag.health().some(r => r.name === 'shortcuts-distinct' && !r.ok)",
@@ -793,9 +796,7 @@ def test_a_status_file_that_cannot_be_written_is_recorded_and_changes_nothing_el
     # The script works as if nothing had happened.
     assert browser.js("return !!document.getElementById('tabs-autohide-button');")
     browser.js("document.documentElement.removeAttribute('autohide-tabs');")
-    browser.js(
-        "window.dispatchEvent(new KeyboardEvent('keydown', {code: 'KeyT', ctrlKey: true, altKey: true, bubbles: true, cancelable: true}));"
-    )
+    browser.keydown("KeyT")
     assert browser.js("return document.documentElement.hasAttribute('autohide-tabs');")
     browser.js("document.documentElement.removeAttribute('autohide-tabs');")
     # And it does not try again in a loop: the failure is recorded without queueing another write.

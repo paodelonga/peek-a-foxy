@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           Peek-a-Foxy: autohide for tabs and urlbar, per window
-// @description    Peek-a-boo for Foxys: per-window autohide for the tab bar (button + Ctrl+Alt+T) and the navigation bar (button + Ctrl+Alt+U).
+// @description    Peek-a-boo for Foxys: per-window autohide for the tab bar (button + shortcut) and the navigation bar (button + shortcut).
 // @include        main
 // ==/UserScript==
 
@@ -312,7 +312,7 @@
       if (openPopups.size) showPopupBars();
     }, true);
 
-    // --- the shortcuts (Ctrl+Alt+T and Ctrl+Alt+U by default) toggle the current window only ---
+    // --- the shortcuts (see PREFS in peekafoxy.sys.mjs for the defaults) toggle the current window only ---
     //
     // While a shortcut field of the settings page has the focus, the keys are what the person is
     // choosing, not shortcuts: this handler sees them first (the page is inside this window), so it

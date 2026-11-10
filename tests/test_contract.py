@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from peek_a_foxy import cli, errors, logs, report, status, userfiles
 from peek_a_foxy.assets import FILES, MODULE_NAME, PREFS_SCRIPT_NAME, SCRIPT_NAME, assets_dir
 
@@ -33,10 +35,29 @@ def test_the_legacy_prefs_map_onto_current_names():
 
 def test_the_default_shortcuts_the_cli_announces_are_the_ones_in_the_module():
     module = source(f"resources/{MODULE_NAME}")
-    defaults = re.findall(
-        r'name: "peekafoxy\.\w+\.shortcut", type: "string", default: "([^"]+)"', module
-    )
-    assert sorted(defaults) == sorted([cli.TABS_SHORTCUT, cli.URLBAR_SHORTCUT])
+    assert _module_constant("DEFAULT_TABS_SHORTCUT") == cli.TABS_SHORTCUT
+    assert _module_constant("DEFAULT_TABS_SHORTCUT_LINUX") == cli.TABS_SHORTCUT_LINUX
+    assert _module_constant("DEFAULT_URLBAR_SHORTCUT") == cli.URLBAR_SHORTCUT
+    # the prefs take their defaults from those constants, not from a literal that could drift
+    assert re.findall(
+        r'name: "peekafoxy\.\w+\.shortcut", type: "string", default: ([^}]+) \}', module
+    ) == [
+        "defaultTabsShortcut(Services.appinfo.OS)",
+        "DEFAULT_URLBAR_SHORTCUT",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [("win32", cli.TABS_SHORTCUT), ("darwin", cli.TABS_SHORTCUT)]
+    + [
+        (p, cli.TABS_SHORTCUT_LINUX)
+        for p in ("linux", "linux2", "freebsd14", "", "cygwin", "WIN32")
+    ],
+)
+def test_the_cli_announces_the_tab_bar_shortcut_of_the_system(monkeypatch, platform, expected):
+    monkeypatch.setattr(cli.sys, "platform", platform)
+    assert cli.tabs_shortcut() == expected
 
 
 def test_every_installed_file_exists_in_the_sources():

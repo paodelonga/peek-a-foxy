@@ -6,15 +6,11 @@ import pytest
 
 pytestmark = pytest.mark.browser
 
-KEYDOWN = """
-  window.dispatchEvent(new KeyboardEvent('keydown',
-    {code: arguments[0], ctrlKey: true, altKey: true, bubbles: true, cancelable: true}));
-"""
 HAS = "document.documentElement.hasAttribute(arguments[0])"
 
 
 def press(browser, code: str) -> None:
-    browser.js(KEYDOWN, code)
+    browser.keydown(code)
 
 
 # --- loading -----------------------------------------------------------------------------------
@@ -390,14 +386,15 @@ BUTTON_TEXTS = """
 
 
 def test_the_buttons_are_in_english_by_default(browser):
+    tabs, urlbar = browser.default_shortcut("tabs"), browser.default_shortcut("urlbar")
     assert browser.js(BUTTON_TEXTS) == {
         "tabs-autohide-button": [
             "Auto-hide the tab bar",
-            "Hide or show the tab bar in this window (Ctrl+Alt+T)",
+            f"Hide or show the tab bar in this window ({tabs})",
         ],
         "urlbar-autohide-button": [
             "Auto-hide the navigation bar",
-            "Hide or show the navigation bar in this window (Ctrl+Alt+U)",
+            f"Hide or show the navigation bar in this window ({urlbar})",
         ],
     }
 
@@ -405,14 +402,16 @@ def test_the_buttons_are_in_english_by_default(browser):
 def test_the_buttons_and_the_greeting_are_in_portuguese_for_a_portuguese_firefox(
     browser_in_portuguese,
 ):
+    tabs = browser_in_portuguese.default_shortcut("tabs")
+    urlbar = browser_in_portuguese.default_shortcut("urlbar")
     texts = browser_in_portuguese.js(BUTTON_TEXTS)
     assert texts["tabs-autohide-button"] == [
         "Ocultar a barra de abas automaticamente",
-        "Oculta ou mostra a barra de abas nesta janela (Ctrl+Alt+T)",
+        f"Oculta ou mostra a barra de abas nesta janela ({tabs})",
     ]
     assert texts["urlbar-autohide-button"] == [
         "Ocultar a barra de navegação automaticamente",
-        "Oculta ou mostra a barra de navegação nesta janela (Ctrl+Alt+U)",
+        f"Oculta ou mostra a barra de navegação nesta janela ({urlbar})",
     ]
     notes = [
         n
@@ -423,6 +422,10 @@ def test_the_buttons_and_the_greeting_are_in_portuguese_for_a_portuguese_firefox
 
 
 def test_the_shortcut_in_a_tooltip_is_the_one_that_works(browser):
-    for button, code in (("tabs-autohide-button", "KeyT"), ("urlbar-autohide-button", "KeyU")):
+    for button, bar, code in (
+        ("tabs-autohide-button", "tabs", "KeyT"),
+        ("urlbar-autohide-button", "urlbar", "KeyU"),
+    ):
         tip = browser.js(BUTTON_TEXTS)[button][1]
-        assert f"Ctrl+Alt+{code[-1]}" in tip
+        assert browser.default_shortcut(bar) in tip
+        assert tip.endswith(f"+{code[-1]})")
