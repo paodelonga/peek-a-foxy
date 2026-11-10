@@ -41,6 +41,13 @@ class _ShellExecuteInfo(ctypes.Structure):  # pragma: no cover
     ]
 
 
+def short_path(path: str) -> str | None:  # pragma: no cover
+    """The 8.3 name of an existing folder (``C:\\Users\\ANAMAR~1``), or ``None``."""
+    buffer = ctypes.create_unicode_buffer(32768)
+    size = ctypes.windll.kernel32.GetShortPathNameW(path, buffer, len(buffer))
+    return buffer.value if 0 < size < len(buffer) else None
+
+
 def is_admin() -> bool:  # pragma: no cover
     return bool(ctypes.windll.shell32.IsUserAnAdmin())
 

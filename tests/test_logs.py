@@ -102,6 +102,95 @@ def test_the_home_folder_becomes_a_tilde_in_every_spelling():
     assert redactor()("opened /home/ana/.mozilla") == "opened ~/.mozilla"
 
 
+WIN_HOME = r"C:\Users\Ana Maria"
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        r"C:\Users\Ana Maria",
+        "C:/Users/Ana Maria",
+        r"C:\Users/Ana Maria",  # a mix, as when a typed path is joined to a built one
+        r"C:/Users\Ana Maria",
+        r"C:\\Users\\Ana Maria",  # inside a repr()
+        r"C:\\\\Users\\\\Ana Maria",  # inside the repr of a repr
+        r"C://Users//Ana Maria",
+        r"c:\users\ana maria",  # the drive letter and the names in lower case
+        r"C:\USERS\ANA MARIA",
+        "C:\\Users\\Ana Maria\\",  # a trailing separator
+        r"\\?\C:\Users\Ana Maria",  # the long-path prefix
+        "file:///C:/Users/Ana%20Maria",  # a file URL
+        "file:///c%3A/Users/Ana%20Maria",
+        r"\\?\c:\\Users\Ana Maria",
+    ],
+)
+def test_a_windows_home_is_hidden_in_every_spelling_it_can_be_printed_in(spelling):
+    shown = logs.Redactor(home=WIN_HOME, user=None, ignore_case=True)(f"open {spelling}\\x here")
+    assert "ana" not in shown.lower() and "~" in shown, shown
+
+
+def test_the_drive_letter_is_matched_in_either_case_even_without_ignore_case():
+    shown = logs.Redactor(home=WIN_HOME, user=None)(r"c:\Users\Ana Maria\x")
+    assert shown == r"~\x"
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        r"\\srv\share\ana",
+        "//srv/share/ana",
+        r"\\\\srv\\share\\ana",  # in a repr()
+        r"\\?\UNC\srv\share\ana",  # the long-path form of a network share
+        r"\\?\UNC\srv\\share\ana",
+    ],
+)
+def test_a_home_on_a_network_share_is_hidden_in_every_spelling(spelling):
+    shown = logs.Redactor(home=r"\\srv\share\ana", user=None)(f"in {spelling}\\x")
+    assert "ana" not in shown and "srv" not in shown, shown
+
+
+def test_a_folder_that_only_looks_similar_is_left_alone():
+    redact = logs.Redactor(home=WIN_HOME, user=None, ignore_case=True)
+    for text in (r"C:\Users\Ana\x", r"C:\Users\Public\Ana Maria", r"D:\Users\Ana Maria\x"):
+        assert redact(text) == text
+
+
+def test_a_home_with_undecodable_bytes_in_its_name_does_not_break_the_redactor():
+    odd = "/home/ana\udcff\ud800"  # what Python makes of bytes that are not valid UTF-8
+    assert logs.Redactor(home=odd, user=None)(f"in {odd}/x") == "in ~/x"
+
+
+def test_a_short_8_3_name_of_the_home_is_hidden_when_the_system_knows_it(tmp_path: Path):
+    home = r"C:\Users\Ana Maria"
+    short = {home: r"C:\Users\ANAMAR~1"}
+    fake = logs.Redactor.for_this_machine(
+        {"USERPROFILE": home}, Path(home), "windows", short_path=short.get
+    )
+    temp = r"git clone x C:\Users\ANAMAR~1\AppData\Local\Temp\t1 and C:\Users\Ana Maria\x"
+    assert "ANAMAR" not in fake(temp) and "Ana Maria" not in fake(temp)
+
+    # and a system that cannot say (or fails) just goes without it
+    def broken(path: str) -> str:
+        raise OSError("no short names on this volume")
+
+    for fail in (broken, {}.get):
+        quiet = logs.Redactor.for_this_machine({}, Path(home), "windows", short_path=fail)
+        assert quiet(r"C:\Users\Ana Maria\x") == r"~\x"
+
+
+def test_a_home_that_is_a_link_is_hidden_under_its_real_name_too(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(logs.getpass, "getuser", lambda: "zz")  # too short to be hidden itself
+    real = tmp_path / "real-home"
+    real.mkdir()
+    link = tmp_path / "link-home"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except OSError:  # no right to make links here
+        pytest.skip("symbolic links are not available")
+    fake = logs.Redactor.for_this_machine({}, link, "linux")
+    assert str(real) not in fake(f"seen {real}/x") and str(link) not in fake(f"seen {link}/x")
+
+
 def test_extra_homes_such_as_userprofile_are_hidden_too():
     result = redactor(extra_homes=[r"D:\Profiles\ana"])(r"in D:\Profiles\ana\x and /home/ana/y")
     assert "Profiles" not in result and "/home/ana" not in result
@@ -174,6 +263,19 @@ names = st.text(
 )
 homes = st.builds(lambda parts: "/" + "/".join(parts), st.lists(names, min_size=2, max_size=4))
 noise = st.text(max_size=30)
+
+
+@given(
+    parts=st.lists(names, min_size=2, max_size=4),
+    separators=st.lists(
+        st.sampled_from(["\\", "/", "\\\\", "//", "\\/", "\\" * 4]), min_size=4, max_size=4
+    ),
+    tail=st.sampled_from(["", "\\chrome", "/a b/c.txt"]),
+)
+def test_a_windows_home_never_survives_any_mix_of_separators(parts, separators, tail):
+    home = "C:\\" + "\\".join(parts)
+    spelled = "C:" + "".join(sep + part for sep, part in zip(separators, parts, strict=False))
+    assert logs.Redactor(home=home, user=None)(spelled + tail) == "~" + tail
 
 
 @given(home=homes, before=noise, after=noise, tail=st.sampled_from(["", "/chrome", "/a b/c.txt"]))

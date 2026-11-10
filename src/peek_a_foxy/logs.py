@@ -31,6 +31,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
+from urllib.parse import quote
 
 from peek_a_foxy import platform
 
@@ -121,13 +122,33 @@ _AUTH_HEADER = re.compile(r"(?i)(?P<head>authorization:\s*(?:bearer|basic|token)
 _GITHUB_TOKEN = re.compile(r"\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}")
 # Firefox names profile folders like ``a1b2c3d4.default-release``.
 _PROFILE_FOLDER = re.compile(r"(?<=[\\/])[a-z0-9]{8}\.[^\\/\s'\"]+")
+_SEPARATORS = re.compile(r"[\\/]+")
 
 
-def _spellings(path: str) -> set[str]:
-    """One path as it may be printed: as given, with either slash, and escaped (a repr)."""
-    forward = path.replace("\\", "/")
-    backward = path.replace("/", "\\")
-    return {path, forward, backward, backward.replace("\\", "\\\\")}
+def _name(part: str) -> str:
+    """One folder name as a regex: as is, or percent-encoded as in a ``file://`` URL."""
+    if re.fullmatch(r"[A-Za-z]:", part):  # a drive letter, in either case (``C:`` or ``C%3A``)
+        return f"[{part[0].lower()}{part[0].upper()}](?::|%3[Aa])"
+    # errors="replace": a name that is not valid text (undecodable bytes) must not break logging.
+    forms = {part, quote(part, safe=":", errors="replace"), quote(part, safe="", errors="replace")}
+    return "(?:" + "|".join(re.escape(form) for form in sorted(forms, key=len, reverse=True)) + ")"
+
+
+def _folder_pattern(path: str) -> str:
+    """A regex for one folder in any spelling a log line may hold it in.
+
+    Every run of slashes and backslashes counts as one separator, which covers either slash, a
+    mix of both, and the doubled backslashes of a ``repr()`` (or of the repr of a repr). A network
+    share also matches in its ``\\\\?\\UNC\\`` form, names also match percent-encoded, and the
+    drive letter matches in either case.
+    """
+    parts = [part for part in _SEPARATORS.split(path) if part]
+    lead = ""
+    if path[:2] in ("\\\\", "//"):  # a network share: \\server\share, or \\?\UNC\server\share
+        lead = r"[\\/]{2,}(?:\?[\\/]+UNC[\\/]+)?"
+    elif path.startswith(("\\", "/")):
+        lead = r"[\\/]+"
+    return lead + r"[\\/]+".join(_name(part) for part in parts)
 
 
 class Redactor:
@@ -141,14 +162,16 @@ class Redactor:
         extra_homes: Sequence[str] = (),
         ignore_case: bool = False,
     ) -> None:
-        homes: set[str] = set()
-        for candidate in (home, *extra_homes):
-            # A home that is just "/" or "C:\" would blank out every path.
-            if candidate and len(candidate.strip("/\\")) >= 2:
-                homes |= _spellings(candidate.rstrip("/\\") or candidate)
+        # A home that is just "/" or "C:\" would blank out every path. The longest goes first, so
+        # that a folder inside another is not cut short.
+        homes = sorted(
+            {c for c in (home, *extra_homes) if c and len(c.strip("/\\")) >= 2},
+            key=len,
+            reverse=True,
+        )
         flags = re.IGNORECASE if ignore_case else 0
         self._home = (
-            re.compile("|".join(re.escape(h) for h in sorted(homes, key=len, reverse=True)), flags)
+            re.compile("|".join(_folder_pattern(h.rstrip("/\\")) for h in homes), flags)
             if homes
             else None
         )
@@ -166,21 +189,29 @@ class Redactor:
         environ: Mapping[str, str] | None = None,
         home: Path | None = None,
         kind: str | None = None,
+        short_path: Callable[[str], str | None] | None = None,
     ) -> Redactor:
+        """``short_path`` gives a folder's 8.3 name on Windows (``C:\\Users\\ANAMAR~1``)."""
         env = os.environ if environ is None else environ
+        system = kind or default_kind()
         try:
             user: str | None = getpass.getuser()
         except Exception:  # no passwd entry, no environment: not worth failing over
             user = None
         names = [env.get(name) for name in ("USERNAME", "USER", "LOGNAME")]
         user = user or next((name for name in names if name), None)
-        homes = [value for value in (env.get("USERPROFILE"), env.get("HOME")) if value]
-        return cls(
-            home=str(Path.home() if home is None else home),
-            user=user,
-            extra_homes=homes,
-            ignore_case=(kind or default_kind()) == "windows",
-        )
+        main = str(Path.home() if home is None else home)
+        homes = [main, *(value for value in (env.get("USERPROFILE"), env.get("HOME")) if value)]
+        if short_path is None and sys.platform == "win32":  # pragma: no cover - Windows only
+            from peek_a_foxy._winapi import short_path
+        # The same folders as the system itself may spell them: with links resolved, and (the
+        # temporary folder is often spelled that way) by their 8.3 short names.
+        for folder in list(homes):
+            homes.append(os.path.realpath(folder))
+            if system == "windows" and short_path:
+                with contextlib.suppress(Exception):
+                    homes.append(short_path(folder) or "")
+        return cls(home=main, user=user, extra_homes=homes, ignore_case=system == "windows")
 
     def __call__(self, text: str) -> str:
         if self._home:
