@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from support import needs_symlinks
+from support import needs_symlinks, squeezed
 from typer.testing import CliRunner
 
 from peek_a_foxy import doctor, errors, installer, report
@@ -438,12 +438,13 @@ def test_a_file_where_a_folder_is_wanted_is_a_usage_error(tmp_path: Path, option
     for arguments in (["install", "--dry-run"], ["doctor"]):
         result = runner.invoke(app, [*arguments, option, str(plain)])
         assert result.exit_code == errors.EXIT_USAGE, result.output
-        assert "is a file" in result.output
+        assert squeezed("is a file") in squeezed(result.output)
 
 
 def test_a_folder_that_does_not_exist_is_still_a_usage_error_for_install(tmp_path: Path):
     result = runner.invoke(app, ["install", "--profile", str(tmp_path / "nowhere"), "--yes"])
-    assert result.exit_code == errors.EXIT_USAGE and "does not exist" in result.output
+    assert result.exit_code == errors.EXIT_USAGE
+    assert squeezed("does not exist") in squeezed(result.output)
     assert not (tmp_path / "nowhere").exists()  # nothing was created for a typo
 
 

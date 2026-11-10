@@ -58,6 +58,15 @@ def flat(text: str) -> str:
     return " ".join(text.split())
 
 
+def squeezed(text: str) -> str:
+    """``text`` without whitespace and box-drawing characters, however the error panel wrapped it.
+
+    The rich panel wraps at 80 columns, so a long temporary path can land on a line break (and
+    between two borders). A needle squeezed the same way is found wherever that break fell.
+    """
+    return "".join(c for c in text if not c.isspace() and not "\u2500" <= c <= "\u257f")
+
+
 def git(repo: Path, *args: str) -> str:
     """Run git in ``repo`` and return its output, whatever the developer's git is set up to do.
 
