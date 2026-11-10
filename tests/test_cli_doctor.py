@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from doctor_support import make_context, make_firefox, make_profile, pin_loader
+from support import flat
 from typer.testing import CliRunner
 
 from peek_a_foxy import cli, doctor, errors, logs, report
@@ -18,12 +19,6 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def pinned(monkeypatch: pytest.MonkeyPatch) -> None:
     pin_loader(monkeypatch)
-
-
-@pytest.fixture(autouse=True)
-def wide(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(cli.ui.console, "_width", 200)
-    monkeypatch.setattr(cli.ui.errors, "_width", 200)
 
 
 @pytest.fixture
@@ -309,5 +304,5 @@ def test_doctor_never_changes_the_firefox_files(healthy: Path, home: Path):
 
 def test_the_command_is_listed_in_help():
     result = runner.invoke(app, ["--help"])
-    assert "doctor" in result.output
-    assert "--save" in runner.invoke(app, ["doctor", "--help"]).output
+    assert "doctor" in flat(result.output)
+    assert "--save" in flat(runner.invoke(app, ["doctor", "--help"]).output)

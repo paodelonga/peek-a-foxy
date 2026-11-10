@@ -1,10 +1,10 @@
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from support import flat
 from typer.testing import CliRunner
 
 from peek_a_foxy import __version__, cli, errors
@@ -125,7 +125,7 @@ def test_several_firefox_installations_are_not_guessed(profile: Path, tmp_path: 
 @pytest.mark.parametrize("args", [["-h"], ["install", "-h"], ["uninstall", "-h"]])
 def test_dash_h_is_help_everywhere(args):
     result = runner.invoke(app, args)
-    assert result.exit_code == 0 and "Usage" in result.output
+    assert result.exit_code == 0 and "Usage" in flat(result.output)
 
 
 def _complete(words: str, cword: int, **env: str) -> list[str]:
@@ -212,10 +212,7 @@ def test_firefox_dir_completion_filters_by_prefix(monkeypatch):
 
 def test_the_yes_help_says_everything_it_skips():
     result = runner.invoke(app, ["install", "--help"])
-    # Typer decides on colors when it is imported (CI forces them), so strip any that are there.
-    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
-    flat = " ".join(plain.replace("│", " ").split())
-    help_text = flat.split("--yes -y")[1]
+    help_text = flat(result.output).split("--yes -y")[1]
     for skipped in ("confirming", "profile", "Firefox installation"):
         assert skipped in help_text
 
