@@ -19,7 +19,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from support import flat, needs_permissions, needs_symlinks
 
-from peek_a_foxy import errors, installer
+from peek_a_foxy import errors, installer, platform
 from peek_a_foxy import userfiles as uf
 from peek_a_foxy.cli import app
 from peek_a_foxy.errors import UserFileError
@@ -397,6 +397,42 @@ def test_a_file_that_never_stops_changing_is_given_up_with_a_coded_error(tmp_pat
     assert css.read_text() == str(counter[0]) and leftovers(tmp_path) == []
 
 
+def test_a_file_another_program_holds_for_a_moment_is_still_replaced(tmp_path: Path, monkeypatch):
+    """Adversarial: on Windows the rename fails with "access denied" while another program (a
+    second install, a virus scanner) has the file open, and that lasts a moment."""
+    css = tmp_path / "userChrome.css"
+    css.write_bytes(b"body{}\n")
+    real_replace = os.replace
+    denied: list[str] = []
+
+    def busy(source: str, target: str) -> None:
+        if Path(target) == css and len(denied) < 2:
+            denied.append(target)
+            raise PermissionError(13, "Access is denied", target)
+        real_replace(source, target)
+
+    monkeypatch.setattr(platform, "DENIED_WAITS", (0.0, 0.0, 0.0))
+    monkeypatch.setattr(installer.os, "replace", busy)
+    add_import(css)
+    assert len(denied) == 2 and css.read_bytes() == f"{uf.CSS_IMPORT}\nbody{{}}\n".encode()
+    assert backup_path(css).read_bytes() == b"body{}\n" and leftovers(tmp_path) == []
+
+
+def test_a_file_that_stays_held_leaves_the_original_and_no_leftover(tmp_path: Path, monkeypatch):
+    """Adversarial: a lock that does not go away ends the edit with the file as it was."""
+    css = tmp_path / "userChrome.css"
+    css.write_bytes(b"body{}\n")
+
+    def locked(source: str, target: str) -> None:
+        raise PermissionError(13, "Access is denied", target)
+
+    monkeypatch.setattr(platform, "DENIED_WAITS", (0.0, 0.0))
+    monkeypatch.setattr(installer.os, "replace", locked)
+    with pytest.raises(PermissionError):
+        add_import(css)
+    assert css.read_bytes() == b"body{}\n" and leftovers(tmp_path) == []
+
+
 def test_two_installs_at_once_end_with_one_correct_result(profile: Path):
     css = profile / "chrome" / "userChrome.css"
     css.write_bytes(b"\xef\xbb\xbfbody {\r\n  color: red;\r\n}\r\n")
@@ -416,7 +452,8 @@ def test_two_installs_at_once_end_with_one_correct_result(profile: Path):
         for _ in range(6)
     ]
     outputs = [(p.communicate(timeout=120), p.returncode) for p in processes]
-    assert [code for _, code in outputs] == [0] * 6, outputs
+    failed = [err.decode(errors="replace") for (_, err), code in outputs if code]
+    assert [code for _, code in outputs] == [0] * 6, failed
     expected = (
         b"\xef\xbb\xbf" + f"{uf.CSS_IMPORT}\r\n".encode() + b"body {\r\n  color: red;\r\n}\r\n"
     )

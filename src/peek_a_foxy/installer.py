@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
 
-from peek_a_foxy import errors, loader, userfiles
+from peek_a_foxy import errors, loader, platform, userfiles
 from peek_a_foxy.assets import FILES, assets_dir
 from peek_a_foxy.errors import UserFileError
 from peek_a_foxy.status import STATUS_FILE
@@ -124,8 +124,14 @@ def _read_raw(real: Path) -> bytes | None:
     if not real.is_file():
         return None
     log.debug("reading %s", real)
-    with real.open("rb") as handle:
-        raw = handle.read(MAX_USER_FILE_BYTES + 1)
+
+    def read() -> bytes:
+        with real.open("rb") as handle:
+            return handle.read(MAX_USER_FILE_BYTES + 1)
+
+    # Windows refuses the file for a moment while another program (a second install, a virus
+    # scanner) has it open or is renaming a new one over it.
+    raw = platform.retry_if_denied(read)
     if len(raw) > MAX_USER_FILE_BYTES:
         raise UserFileError(
             errors.FILE_IO,
@@ -198,7 +204,7 @@ def _keep_backup(path: Path, original: bytes, template: os.stat_result) -> None:
             return
         except OSError:  # a file system without hard links
             if not os.path.lexists(backup):
-                os.replace(temporary, backup)
+                platform.retry_if_denied(lambda: os.replace(temporary, backup))
                 return
         log.info("kept a copy of %s as %s", path, backup)
     finally:
@@ -230,7 +236,9 @@ def _write(path: Path, real: Path, text: str, bom: bool, original: bytes | None)
             return False
         if original is not None and template is not None:
             _keep_backup(path, original, template)
-        os.replace(temporary, real)  # the same folder, so this is a rename and never a copy
+        # The same folder, so this is a rename and never a copy. Windows refuses it while another
+        # program has the file open, which lasts a moment.
+        platform.retry_if_denied(lambda: os.replace(temporary, real))
         return True
     finally:
         with contextlib.suppress(OSError):
