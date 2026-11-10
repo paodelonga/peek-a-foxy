@@ -158,7 +158,7 @@ def parameters_allowed(executable: str) -> int:
     return MAX_COMMAND_LINE_CHARS - len(f'"{executable}"') - 2
 
 
-def windows_elevator(command: list[str]) -> int:  # pragma: no cover - needs Windows and a prompt
+def windows_elevator(command: list[str]) -> int:
     from peek_a_foxy import _winapi
 
     try:
