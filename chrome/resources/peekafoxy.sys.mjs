@@ -326,8 +326,12 @@ export function shortcutHint(settings, os = Services.appinfo.OS) {
   return extra ? `${settings.shortcutHint} ${extra}` : settings.shortcutHint;
 }
 
-export const textFor = (locale) =>
-  STRINGS[String(locale).split(/[-_]/)[0].toLowerCase()] ?? STRINGS.en;
+const languageKey = (locale) => {
+  const key = String(locale).split(/[-_]/)[0].toLowerCase();
+  return Object.hasOwn(STRINGS, key) ? key : "en";
+};
+
+export const textFor = (locale) => STRINGS[languageKey(locale)];
 
 // --- diagnostics -------------------------------------------------------------------------------
 //
@@ -403,6 +407,11 @@ const STANDARD_PROFILE_NAMES = new Set(
 const SCRIPT_SUFFIX = /^(?:uc\.js|sys\.mjs|m?js|css|json|py|x?html|ini)(?![A-Za-z0-9_-])/i;
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const WORD = (text) => `(?<![\\p{L}\\p{N}_])${escapeRegExp(text)}(?![\\p{L}\\p{N}_])`;
+// A home folder is a whole folder name, as in the Python side (src/peek_a_foxy/logs.py): /home/al is
+// not the start of /home/alice, nor of /home/al-bob, and the same text one folder deeper
+// (/var/home/jo for /home/jo) is another place. So it must not follow a word character, and must not
+// be followed by one or by a hyphen.
+const WHOLE_FOLDER = (alternatives) => `(?<![\\p{L}\\p{N}_])(?:${alternatives})(?![\\p{L}\\p{N}_-])`;
 
 // One path as it may be printed: as given, with either slash, escaped (a repr), and as part of a URL.
 function spellings(path) {
@@ -423,7 +432,7 @@ function spellings(path) {
 export function makeRedactor({ homes = [], user = "", profileDir = "", profileName = "", ignoreCase = false } = {}) {
   const flags = `gu${ignoreCase ? "i" : ""}`;
   const rules = [];
-  const paths = (list, replacement, minimum) => {
+  const paths = (list, replacement, minimum, whole = false) => {
     const spelled = new Set();
     for (const path of list) {
       const trimmed = String(path || "").replace(/[\\/]+$/, "");
@@ -432,11 +441,11 @@ export function makeRedactor({ homes = [], user = "", profileDir = "", profileNa
     }
     if (spelled.size) {
       const pattern = [...spelled].sort((a, b) => b.length - a.length).map(escapeRegExp).join("|");
-      rules.push([new RegExp(pattern, flags), replacement]);
+      rules.push([new RegExp(whole ? WHOLE_FOLDER(pattern) : pattern, flags), replacement]);
     }
   };
   paths([profileDir], "<profile>", 2);
-  paths(homes, "~", 2);
+  paths(homes, "~", 2, true);
   // Firefox names profile folders like a1b2c3d4.default-release. The same shape is a file name in
   // eight letters ("autohide.uc.js:12" in an error's stack), which is kept: the real profile folder
   // was hidden above, by its whole path, and a stack without its file names would be useless.

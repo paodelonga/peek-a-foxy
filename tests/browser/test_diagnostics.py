@@ -444,12 +444,80 @@ def test_secrets_in_urls_and_headers_are_hidden_like_the_python_side_does(browse
         ("/home/pedro", False, "failed for pedro at https://pedro:pw@example.org/p?key=1&token=2"),
         ("/home/pedro", False, "the user pedro, again pedro, and pedrolino in /home/pedrolino"),
         ("C:\\Users\\Pedro", True, "c:/users/pedro/AppData and C:\\\\Users\\\\PEDRO\\x for Pedro"),
+        # Adversarial: the home is a whole folder name, never the start, the end or the middle of
+        # another one (a hyphen counts as part of a name, a dot or a slash ends it).
+        (
+            "/home/pedro",
+            False,
+            "/home/pedro-bob/x /home/pedro_x /home/pedro2 /home/pedro. /home/pedro,",
+        ),
+        (
+            "/home/pedro",
+            False,
+            "/var/home/pedro/x /srv/home/pedro /xhome/pedro /home/pedro/home/pedro",
+        ),
+        ("/home/pedro", False, "/home/PEDRO/x on a case-sensitive system, /home/pedro/x"),
+        (
+            "/home/pedro",
+            False,
+            "/home/pedro\u0301x /home/pedro\U0001d400 /home/pedro\u00b2 /home/pedro\u0663",
+        ),
+        # ... with the trailing separators a home may come with.
+        ("/home/pedro/", False, "/home/pedro/a /home/pedrolino/a /home/pedro"),
+        ("/home/pedro//", False, "/home/pedro/a /home/pedro-x"),
+        ("/home/pedro\\", False, "/home/pedro\\a /home/pedro/a /home/pedrolino"),
+        # ... with letters that are not ASCII.
+        (
+            "/home/Jos\u00e9",
+            False,
+            "/home/Jos\u00e9/x /home/Jos\u00e9phine /home/\u00e9Jos\u00e9 /home/Jos\u00e9_",
+        ),
+        (
+            "/home/\u05d3\u05e0\u05d9",
+            False,
+            "/home/\u05d3\u05e0\u05d9/x /home/\u05d3\u05e0\u05d9\u05d0 \u05d3\u05e0\u05d9",
+        ),
+        ("/home/a(b)+[c]", False, "/home/a(b)+[c]/x /home/a(b)+[c]x /home/a(b)+[c]-"),
+        # ... on Windows, in either case and with either slash.
+        ("C:\\Users\\x", True, "C:\\Users\\x\\a C:\\Users\\xavier\\a c:/users/X/a C:\\Users\\x-y"),
+        ("C:\\Users\\Pedro\\", True, "C:\\Users\\Pedro\\a c:/users/pedrolino C:\\Users\\PedroX"),
+        ("C:\\Users\\Jos\u00c9", True, "c:/users/jos\u00e9/a C:\\Users\\JOS\u00c9phine"),
     ],
 )
 def test_the_script_and_the_python_side_hide_the_same_things(browser, home, ignore_case, text):
     options = {"homes": [home], "user": "pedro", "ignoreCase": ignore_case}
     python = Redactor(home=home, user="pedro", ignore_case=ignore_case)
     assert redact(browser, options, text) == python(text)
+
+
+@pytest.mark.parametrize(
+    ("home", "text", "expected"),
+    [
+        # Adversarial: the same cases as in tests/test_redaction_hostile.py, with the answer spelled
+        # out, so that both sides doing nothing (or both doing too much) cannot pass as "the same".
+        ("/home/al", "/home/alice/x", "/home/alice/x"),
+        ("/home/al", "/home/al/x", "~/x"),
+        ("/home/al", "a /home/al.", "a ~."),
+        ("/home/al", "/home/al-bob/x", "/home/al-bob/x"),
+        ("/home/jo", "/var/home/jo/x", "/var/home/jo/x"),
+        ("/home/pedro", "/home/pedrolino and /home/pedro", "/home/pedrolino and ~"),
+        ("/home/pedro/", "/home/pedro/a /home/pedrolino/a", "~/a /home/pedrolino/a"),
+        (
+            "/home/Jos\u00e9",
+            "/home/Jos\u00e9phine/a /home/Jos\u00e9/b",
+            "/home/Jos\u00e9phine/a ~/b",
+        ),
+        # The script also knows the address spelling (percent-encoded), which Python does not print.
+        (
+            "/home/Jos\u00e9",
+            "file:///home/Jos%C3%A9/x file:///home/Jos%C3%A9phine/x",
+            "file://~/x file:///home/Jos%C3%A9phine/x",
+        ),
+        ("C:\\Users\\x", "C:\\Users\\xavier\\a C:\\Users\\x\\a", "C:\\Users\\xavier\\a ~\\a"),
+    ],
+)
+def test_a_home_folder_is_hidden_only_as_a_whole_folder_name(browser, home, text, expected):
+    assert redact(browser, {"homes": [home]}, text) == expected
 
 
 # --- the health check ---------------------------------------------------------------------------
