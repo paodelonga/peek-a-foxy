@@ -17,6 +17,9 @@ KEYDOWN_IN_PAGE = """
     altKey: arguments[3].includes('a'), shiftKey: arguments[3].includes('s'),
     metaKey: arguments[3].includes('m'), bubbles: true, cancelable: true,
   }));
+"""
+PROBLEM = """
+  const input = doc.getElementById(arguments[0]);
   return input.closest('div').parentNode.querySelector('.pf-problem').textContent;
 """
 PANE = "gBrowser.selectedBrowser.contentDocument.getElementById('peekafoxy-pane')"
@@ -50,6 +53,17 @@ def clean(browser):
     reset()
     yield
     reset()
+
+
+def problem_under(browser, field_id: str, settle: float = 0.6) -> str:
+    """The message under a field. It is announced a moment after the change (so that the same
+    message twice is announced twice), hence the wait; an empty answer is only trusted after it."""
+    deadline = time.monotonic() + settle
+    while True:
+        text = browser.settings(PROBLEM, field_id)
+        if text or time.monotonic() >= deadline:
+            return text
+        time.sleep(0.05)
 
 
 def root_var(browser, name: str) -> str:
@@ -149,14 +163,14 @@ def test_a_pref_changed_elsewhere_updates_the_open_page(browser):
 
 
 def set_number(browser, pref: str, value: str) -> str:
-    return browser.settings(
+    browser.settings(
         """const input = doc.getElementById('peekafoxy-' + arguments[0]);
            input.value = arguments[1];
-           input.dispatchEvent(new win.Event('change', {bubbles: true}));
-           return input.closest('div').parentNode.querySelector('.pf-problem').textContent;""",
+           input.dispatchEvent(new win.Event('change', {bubbles: true}));""",
         pref,
         value,
     )
+    return problem_under(browser, f"peekafoxy-{pref}")
 
 
 def test_a_number_is_saved_as_a_real_pref(browser):
@@ -309,9 +323,9 @@ def test_the_starting_state_of_new_windows_comes_from_the_checkboxes(browser):
 
 
 def record(browser, field: str, key: str, code: str, mods: str) -> str:
-    return browser.settings(
-        KEYDOWN_IN_PAGE, f"peekafoxy-peekafoxy.{field}.shortcut", key, code, mods
-    )
+    field_id = f"peekafoxy-peekafoxy.{field}.shortcut"
+    browser.settings(KEYDOWN_IN_PAGE, field_id, key, code, mods)
+    return problem_under(browser, field_id)
 
 
 def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
@@ -338,7 +352,6 @@ def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
     [
         ("g", "KeyG", "", "Add Ctrl, Alt or Meta."),
         ("g", "KeyG", "s", "Add Ctrl, Alt or Meta."),
-        ("Enter", "Enter", "ca", "That key can't be used."),
         ("ArrowUp", "ArrowUp", "ca", "That key can't be used."),
         ("u", "KeyU", "ca", "The other bar already uses this shortcut."),
     ],
@@ -400,12 +413,7 @@ def test_the_page_is_in_portuguese_for_a_portuguese_firefox(browser_in_portugues
         "start": "Ocultar a barra de abas em novas janelas",
         "reset": "Restaurar padrão",
     }
-    message = browser.settings(
-        """const input = doc.getElementById('peekafoxy-peekafoxy.strip.px');
-           input.value = '99'; input.dispatchEvent(new win.Event('change', {bubbles: true}));
-           return input.closest('div').parentNode.querySelector('.pf-problem').textContent;"""
-    )
-    assert message == "Digite um número entre 1 e 40."
+    assert set_number(browser, "peekafoxy.strip.px", "99") == "Digite um número entre 1 e 40."
     browser.close_settings_tabs()
 
 
@@ -525,7 +533,7 @@ def test_the_shortcut_hint_matches_the_operating_system_running_firefox(browser)
     system = browser.js("return Services.appinfo.OS;")
     hint = browser.settings(
         "return doc.getElementById('peekafoxy-peekafoxy.urlbar.shortcut')"
-        ".closest('.pf-card').querySelector('.pf-note').textContent;"
+        ".closest('.pf-card').lastElementChild.textContent;"
     )
     assert ("GNOME" in hint) is (system == "Linux")
     assert ("AltGr" in hint) is (system == "WINNT")

@@ -1471,8 +1471,15 @@ CONTRAST = """
     }
     return `rgb(${back.slice(0, 3).join(',')})`;
   };
+  // A control that is dimmed (a disabled button is, with opacity) shows its text that much fainter.
+  const opacity = (node) => {
+    let value = 1;
+    for (let n = node; n; n = n.parentElement) value *= Number(win.getComputedStyle(n).opacity);
+    return value;
+  };
   const ratio = (node) => {
     const back = parse(background(node)), front = parse(win.getComputedStyle(node).color);
+    front[3] *= opacity(node);
     const mixed = [0, 1, 2].map((i) => front[i] * front[3] + back[i] * (1 - front[3]));
     const a = lum(mixed), b = lum(back);
     return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
@@ -1482,6 +1489,10 @@ CONTRAST = """
   for (const id of ids) out[id] = ratio(doc.getElementById(id));
   out.note = ratio(doc.querySelector('#peekafoxy-pane a[href]').closest('p'));
   out.link = ratio(doc.querySelector('#peekafoxy-pane a[href]'));
+  // Every element the page styles itself (the pf-* classes), each of the six reset buttons (some
+  // disabled), the fields and the labels; the three states of the page are the same in each.
+  const own = [...doc.querySelectorAll('#peekafoxy-pane [class*="pf-"], #peekafoxy-pane input, #peekafoxy-pane label')];
+  own.forEach((node, i) => { out[`${node.localName}.${node.className || '-'}#${i}${node.disabled ? ' (disabled)' : ''}`] = ratio(node); });
   out.dark = win.matchMedia('(prefers-color-scheme: dark)').matches;
   out.forced = win.matchMedia('(forced-colors: active)').matches;
   return out;
@@ -1505,10 +1516,17 @@ def test_the_support_group_stays_readable_in_light_dark_and_high_contrast(browse
     open_support(browser)
     time.sleep(0.5)
     ratios = browser.settings(CONTRAST)
+    # Not a test that measures nothing: the six reset buttons and the message lines are in it.
+    assert sum(name.startswith("button.pf-reset") for name in ratios) == 6, ratios
+    assert sum(name.startswith("p.pf-problem") for name in ratios) == 7, ratios
+    assert sum(name.startswith("p.pf-note") for name in ratios) >= 5, ratios
     for name, ratio in ratios.items():
         if name in ("dark", "forced"):
             continue
-        assert ratio >= 4.5, f"{name} has a contrast of {ratio:.1f}:1 ({ratios})"
+        # A disabled control is exempt from the 4.5:1 of WCAG 1.4.3; the page still holds it to 3:1
+        # (what the standard asks of a control's outline), so that it can be found.
+        floor = 3.0 if "(disabled)" in name else 4.5
+        assert ratio >= floor, f"{name} has a contrast of {ratio:.1f}:1 ({ratios})"
 
 
 def test_portuguese_firefox_labels_survive_a_missing_language(browser):

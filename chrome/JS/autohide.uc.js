@@ -313,13 +313,45 @@
     }, true);
 
     // --- the shortcuts (Ctrl+Alt+T and Ctrl+Alt+U by default) toggle the current window only ---
+    //
+    // While a shortcut field of the settings page has the focus, the keys are what the person is
+    // choosing, not shortcuts: this handler sees them first (the page is inside this window), so it
+    // has to ask the field's module whether one is recording.
 
     window.addEventListener("keydown", (event) => {
+      if (Peek.Recorder.isRecording()) return;
       const target = TARGETS.find((t) => Peek.matches(t.binding, event));
       if (!target) return;
       event.preventDefault();
       setEnabled(target, !root.hasAttribute(target.attr));
     }, true);
+
+    // --- the toolbar buttons show whether their window's bar is hidden ---
+    //
+    // A button is pressed (checked="true", which Firefox draws as pressed and tells assistive
+    // technology about) while its bar's autohide is on in the window the button is in. The state of a
+    // bar is the attribute on this window's root, however it came to change (the shortcut, the button,
+    // a restored session, a test), so the buttons follow the attribute instead of each place that sets
+    // it. The first window makes the widgets only at the end of this script, after the state may
+    // have been applied, so it syncs once more there. (A button that is moved in Customize Toolbar is
+    // the same node, not a new one, and keeps its state.)
+
+    const syncButtons = () => {
+      for (const target of TARGETS) {
+        try {
+          const node = CustomizableUI.getWidget(target.button.id).forWindow(window).node;
+          if (!node) continue;
+          if (root.hasAttribute(target.attr)) node.setAttribute("checked", "true");
+          else node.removeAttribute("checked");
+        } catch (e) {
+          // The button may not exist yet or any more; the state is only a convenience.
+          Diag.info("autohide:checked", e);
+        }
+      }
+    };
+    const stateObserver = new window.MutationObserver(syncButtons);
+    stateObserver.observe(root, { attributes: true, attributeFilter: TARGETS.map((t) => t.attr) });
+    window.addEventListener("unload", () => stateObserver.disconnect(), { once: true });
 
     // --- one-time greeting ---
     //
@@ -366,7 +398,7 @@
           id: button.id,
           type: "toolbarbutton",
           label: TEXT[target.name].label,
-          tooltip: tooltipFor(target),
+          tooltip: tooltipFor(target), // fx-autoconfig's name for tooltiptext (it also copies it as a stray attribute)
           image: button.image,
           "autohide-attr": attr,
           "autohide-session": session,
@@ -392,6 +424,8 @@
         else Diag.error("autohide:widget", `createWidget ${button.id} failed: ${e}`, e);
       }
     }
+
+    syncButtons(); // the widgets exist now (or already did), and the state may have been restored before
 
     // --- diagnostics ---
     //

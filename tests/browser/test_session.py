@@ -92,6 +92,16 @@ def test_a_restored_window_gets_its_saved_state_and_a_second_one_its_own(firefox
             again.switch_to(handle)
             if again.js(HAS, "autohide-tabs"):
                 again.wait(f"{again.TABS_HEIGHT} <= 8", 15, "the restored tab bar did not collapse")
+        # ... and each window's buttons show their own window's state, as restored.
+        for handle in again.client.chrome_window_handles:
+            again.switch_to(handle)
+            again.wait(
+                "['tabs', 'urlbar'].every(w => (document.getElementById(w + '-autohide-button')"
+                ".getAttribute('checked') === 'true') === document.documentElement"
+                ".hasAttribute('autohide-' + w))",
+                10,
+                "the buttons of a restored window do not show its state",
+            )
         assert tracking_noise(events(again)) == []
 
 

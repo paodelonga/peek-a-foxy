@@ -268,10 +268,43 @@ class Browser:
         ).perform()
         self.client.actions.release()
 
+    def default_shortcut(self, bar: str) -> str:
+        """The default shortcut of ``tabs`` or ``urlbar`` as registered in about:config."""
+        return self.js(
+            "return Services.prefs.getDefaultBranch('').getStringPref(arguments[0]);",
+            f"peekafoxy.{bar}.shortcut",
+        )
+
     def keydown(self, code: str, shift: bool | None = None) -> None:
         """A synthetic Ctrl+Alt keydown, with Shift as the default shortcut of KeyT / KeyU has it
         unless ``shift`` says otherwise (use ``shift=False`` for a shortcut that was recorded)."""
         self.js(KEYDOWN, code, shift)
+
+    def real_shortcut(self, bar: str) -> None:
+        """Press the default shortcut of ``tabs`` or ``urlbar`` with real keys."""
+        from marionette_driver.keys import Keys
+
+        text = self.default_shortcut(bar)
+        modifiers = {"Ctrl": Keys.CONTROL, "Alt": Keys.ALT, "Shift": Keys.SHIFT}
+        *held, letter = text.split("+")
+        self.real_keys(letter.lower(), *(modifiers[name] for name in held))
+
+    def real_keys(self, key: str, *modifiers: str) -> None:
+        """Press ``key`` with ``modifiers`` the way a keyboard does: through Firefox's key handling.
+
+        A ``dispatchEvent`` on the window skips that path (the capture phase, ``preventDefault``
+        and what a page gets to see); a chain of Marionette key actions takes it.
+        """
+        self.client.set_context(self.client.CONTEXT_CHROME)
+        self.js("window.focus();")
+        keys = self.client.actions.sequence("key", "keyboard")
+        for modifier in modifiers:
+            keys.key_down(modifier)
+        keys.key_down(key).key_up(key)
+        for modifier in reversed(modifiers):
+            keys.key_up(modifier)
+        keys.perform()
+        self.client.actions.release()
 
     def tabs_height(self) -> int:
         """Height of whatever collapses with the tab bar (see TABS_HOLDER)."""

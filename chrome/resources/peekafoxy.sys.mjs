@@ -158,6 +158,91 @@ export function shortcutProblem(text, other) {
   return bindingFor(other).text === parsed.text ? "duplicate" : null;
 }
 
+// --- Firefox's own shortcuts -------------------------------------------------------------------
+//
+// Firefox declares its keyboard shortcuts as <key> elements in the window's #mainKeyset, with the key
+// (or a keycode such as VK_F5) and the modifiers, where "accel" is Ctrl (Cmd on macOS). A shortcut that
+// the person records here would be taken from Firefox in every window, so the settings page can say
+// so. This reads Firefox's markup, which may change: whatever is not as expected gives null (no
+// warning), never an error.
+
+const keyNameOf = (key) => {
+  const char = key.getAttribute("key");
+  if (char && char.length === 1) return char.toUpperCase();
+  const code = /^VK_(F(?:[1-9]|1[0-2]))$/.exec(key.getAttribute("keycode") ?? "");
+  return code ? code[1] : null;
+};
+
+const modifiersOf = (key, os) => {
+  const found = { ctrl: false, alt: false, shift: false, meta: false };
+  for (const word of String(key.getAttribute("modifiers") ?? "").toLowerCase().split(/[\s,]+/)) {
+    if (word === "accel") found[os === "Darwin" ? "meta" : "ctrl"] = true;
+    else if (word === "control") found.ctrl = true;
+    else if (word === "os") found.meta = true;
+    else if (word in found) found[word] = true;
+  }
+  return found;
+};
+
+// What the person reads for a key: the menu item that shows it, else the command it runs.
+const labelOfKey = (doc, key) => {
+  const labelOf = (node) => node?.getAttribute("label")?.trim() || null;
+  const item = key.id
+    ? [...doc.querySelectorAll("[key]")].find((node) => node.localName !== "key" && node.getAttribute("key") === key.id)
+    : null;
+  const command = key.getAttribute("command");
+  return labelOf(item) ?? (command ? labelOf(doc.getElementById(command)) : null);
+};
+
+// {id, label} when Firefox already uses the shortcut `text` in window `win` (label is null when no
+// name could be found), else null.
+export function firefoxShortcut(win, text, os = Services.appinfo.OS) {
+  try {
+    const parsed = parseShortcut(text);
+    const doc = win?.document;
+    const keyset = doc?.getElementById("mainKeyset");
+    if (!parsed.ok || !keyset) return null;
+    for (const key of keyset.querySelectorAll("key")) {
+      if (key.getAttribute("disabled") === "true" || keyNameOf(key) !== keyOf(parsed.code)) continue;
+      const mods = modifiersOf(key, os);
+      if (mods.ctrl === parsed.ctrl && mods.alt === parsed.alt && mods.shift === parsed.shift && mods.meta === parsed.meta) {
+        return { id: key.id || key.getAttribute("command") || "", label: labelOfKey(doc, key) };
+      }
+    }
+  } catch (e) {
+    Diag.warn("module:firefoxShortcut", e);
+  }
+  return null;
+}
+
+// --- the shortcut recorder tells the windows that it is listening --------------------------------
+//
+// The fields of the settings page that record a shortcut are in another document, but a key press in
+// them reaches the shortcut handler of the browser window first, which would toggle a bar while the
+// person is only choosing a key. A field says when it has the focus; the handler asks. The fields
+// are kept, not counted, so a page that goes away without a blur (its tab was closed) stops counting:
+// an element that is gone, no longer in its page or no longer the focused one is dropped.
+const recording = new Set();
+export const Recorder = {
+  focused(input) {
+    recording.add(input);
+  },
+  blurred(input) {
+    recording.delete(input);
+  },
+  isRecording() {
+    for (const input of [...recording]) {
+      try {
+        if (input.isConnected && input.ownerDocument.activeElement === input) continue;
+      } catch (e) {
+        // A dead object (its page is gone) cannot be asked anything: it is not recording.
+      }
+      recording.delete(input);
+    }
+    return recording.size > 0;
+  },
+};
+
 // --- texts -------------------------------------------------------------------------------------
 //
 // In the language of Firefox's interface: Portuguese (pt, pt-BR, pt-PT...) gets the Brazilian
@@ -195,6 +280,7 @@ export const STRINGS = {
       shortcutHintLinux: "For example, Ctrl+Alt+T opens a terminal on GNOME, Ubuntu and Linux Mint.",
       shortcutHintWindows: "AltGr counts as Ctrl+Alt on layouts that have it (Portuguese ABNT2, German, Czech...), so it isn't accepted. Use the left Ctrl and Alt, or Ctrl+Shift.",
       reset: "Restore default",
+      resetFor: "Restore default: {label}",
       supportGroup: "Support",
       supportOk: "Working: Peek-a-Foxy {version} is loaded in this window.",
       supportErrors: "Working, with errors: Peek-a-Foxy {version} is loaded in this window, but its script recorded errors, which the diagnostic info lists.",
@@ -235,6 +321,8 @@ export const STRINGS = {
         key: "Use a letter, a digit or F1–F12.",
         modifier: "Add Ctrl, Alt or Meta.",
         duplicate: "The other bar already uses this shortcut.",
+        firefoxUses: "Firefox already uses this shortcut for “{name}”, which will stop working.",
+        firefoxUsesUnnamed: "Firefox already uses this shortcut, which will stop working.",
         unsupported: "That key can't be used.",
         range: "Enter a number between {min} and {max}.",
       },
@@ -272,6 +360,7 @@ export const STRINGS = {
       shortcutHintLinux: "Por exemplo, Ctrl+Alt+T abre um terminal no GNOME, no Ubuntu e no Linux Mint.",
       shortcutHintWindows: "Em layouts com AltGr (ABNT2, alemão, tcheco...), o AltGr conta como Ctrl+Alt e não é aceito. Use o Ctrl e o Alt da esquerda, ou Ctrl+Shift.",
       reset: "Restaurar padrão",
+      resetFor: "Restaurar padrão: {label}",
       supportGroup: "Suporte",
       supportOk: "Funcionando: o Peek-a-Foxy {version} está carregado nesta janela.",
       supportErrors: "Funcionando, com erros: o Peek-a-Foxy {version} está carregado nesta janela, mas o script registrou erros, que as informações de diagnóstico listam.",
@@ -312,6 +401,8 @@ export const STRINGS = {
         key: "Use uma letra, um dígito ou F1–F12.",
         modifier: "Adicione Ctrl, Alt ou Meta.",
         duplicate: "A outra barra já usa esse atalho.",
+        firefoxUses: "O Firefox já usa esse atalho para “{name}”, que vai deixar de funcionar.",
+        firefoxUsesUnnamed: "O Firefox já usa esse atalho, que vai deixar de funcionar.",
         unsupported: "Essa tecla não pode ser usada.",
         range: "Digite um número entre {min} e {max}.",
       },
@@ -332,6 +423,14 @@ const languageKey = (locale) => {
 };
 
 export const textFor = (locale) => STRINGS[languageKey(locale)];
+
+// The language and direction of the texts that textFor gives, which is not Firefox's own when it falls
+// back to English: the page sets them on its pane so that a mirrored (right-to-left) Firefox does
+// not lay English out right-to-left, and a screen reader picks the voice of the text.
+const LANGUAGE_TAGS = { en: "en", pt: "pt-BR" };
+const RIGHT_TO_LEFT = new Set(["ar", "fa", "he", "ur"]);
+export const languageFor = (locale) => LANGUAGE_TAGS[languageKey(locale)] ?? languageKey(locale);
+export const directionFor = (locale) => (RIGHT_TO_LEFT.has(languageKey(locale)) ? "rtl" : "ltr");
 
 // --- diagnostics -------------------------------------------------------------------------------
 //

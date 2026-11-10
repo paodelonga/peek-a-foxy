@@ -120,6 +120,13 @@
   list-style-image: url("chrome://browser/skin/tabs.svg");
 }
 
+/* The toolbar buttons are pressed (checked="true", set by the script) while the bar they belong to is
+   hidden in their window. Firefox draws [checked] pressed on its own; this says it again with
+   Firefox's own colour, so the look does not depend on that one rule. */
+:is(#tabs-autohide-button, #urlbar-autohide-button)[checked="true"] > .toolbarbutton-icon {
+  background-color: var(--toolbarbutton-background-color-active, color-mix(in srgb, currentColor 20%, transparent));
+}
+
 /* ---- Navigation bar (urlbar) ----
    Revealed on its strip, while anything inside has focus (Ctrl+L, Ctrl+K, F6, Alt+D focus the urlbar),
    while the urlbar dropdown is open, while a toolbar popup (extensions, menus) is open, or while the
