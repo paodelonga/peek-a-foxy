@@ -14,6 +14,12 @@ from peek_a_foxy import cli, doctor, errors, logs, report
 from peek_a_foxy.cli import app
 
 runner = CliRunner()
+# The friendly table's top corner: heavy, or the square one Rich draws on a legacy Windows console.
+TABLE_CORNERS = ("\u250f", "\u250c")
+
+
+def has_table(output: str) -> bool:
+    return any(corner in output for corner in TABLE_CORNERS)
 
 
 @pytest.fixture(autouse=True)
@@ -96,7 +102,7 @@ def test_on_a_terminal_the_default_is_the_friendly_table(
     machine(monkeypatch, home, is_tty=True)
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0
-    assert "Result: 0 FAIL" in result.output and "┏" in result.output
+    assert "Result: 0 FAIL" in result.output and has_table(result.output)
     assert "# Peek-a-Foxy doctor report" not in result.output
 
 
@@ -200,10 +206,12 @@ def test_save_without_a_path_goes_next_to_the_log(
     assert len(list((tmp_path / "logfolder").glob("*.md"))) == 2
 
 
-def test_the_default_place_is_the_log_folder(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+def test_the_default_place_is_the_log_folder(monkeypatch: pytest.MonkeyPatch):
+    # A Linux machine on every system: XDG wants an absolute POSIX path, which a Windows
+    # temporary folder (C:\\...) is not, so the folder is named and never touched.
+    monkeypatch.setenv("XDG_STATE_HOME", "/state-home")
     monkeypatch.setattr(logs, "default_kind", lambda: "linux")
-    assert cli._default_save_folder() == tmp_path / "state" / "peek-a-foxy"
+    assert cli._default_save_folder() == Path("/state-home") / "peek-a-foxy"
 
 
 # --- copying ----------------------------------------------------------------------------------
@@ -255,7 +263,7 @@ def test_on_a_terminal_a_failed_copy_still_prints_the_text_to_copy(
     machine(monkeypatch, home, is_tty=True)
     monkeypatch.setattr(report, "copy_to_clipboard", lambda *a, **k: None)
     result = runner.invoke(app, ["doctor", "--copy"])
-    assert "┏" in result.output  # the friendly table, then the pasteable text
+    assert has_table(result.output)  # the friendly table, then the pasteable text
     assert result.output.count("# Peek-a-Foxy doctor report") == 1
 
 

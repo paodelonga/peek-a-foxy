@@ -17,6 +17,7 @@ from doctor_support import (
     make_firefox,
     make_profile,
     pin_loader,
+    write,
 )
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -225,12 +226,28 @@ def snapshot_report(tmp_path: Path) -> str:
     profile = make_profile(home)
     (profile / "chrome" / "utils" / "boot.sys.mjs").unlink()
     ff = make_firefox(home / "opt" / "firefox")
-    (ff / "defaults" / "pref" / "local-settings.js").write_text(
-        'pref("general.config.filename", "mozilla.cfg");\n'
+    write(
+        ff / "defaults" / "pref" / "local-settings.js",
+        'pref("general.config.filename", "mozilla.cfg");\n',
     )
     context = make_context(home, firefox_candidates=lambda: [ff], log_target=home / "log" / "p.log")
     found = doctor.collect(context).redacted(logs.Redactor(home=str(home), user=None))
-    return report.to_markdown(found)
+    return _with_slashes(report.to_markdown(found))
+
+
+def _with_slashes(text: str) -> str:
+    """The snapshot spells the redacted paths with "/"; Windows prints them with its own "\\".
+
+    Only the paths under the hidden home (``~\\...``) change, and the Markdown escape of
+    ``\\<profile>`` is kept, so every other difference still fails the comparison.
+    """
+    if os.sep != "\\":
+        return text
+    return re.sub(
+        r"~\\\S*",
+        lambda match: match.group(0).replace("\\", "/").replace("//<", "/\\<"),
+        text,
+    )
 
 
 def test_a_full_report_reads_as_the_snapshot(tmp_path: Path):

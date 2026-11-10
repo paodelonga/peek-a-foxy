@@ -27,7 +27,7 @@ from doctor_support import (
 )
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from support import needs_permissions, needs_symlinks
+from support import WINDOWS, needs_permissions, needs_symlinks
 
 from peek_a_foxy import doctor, errors, logs, platform, report
 from peek_a_foxy.report import FAIL, OK, WARN
@@ -409,9 +409,22 @@ ODD_NAMES = [
     "pipe|and`tick`and<angle>",
     "[bold]markup[/bold]",
 ]
+# Windows refuses these in any file or folder name, so no path on it can hold them.
+WINDOWS_FORBIDDEN = set('<>:"/\\|?*') | {chr(code) for code in range(32)}
+ODD_PARAMS = [
+    pytest.param(
+        name,
+        id=repr(name)[:20],
+        marks=pytest.mark.skipif(
+            WINDOWS and bool(WINDOWS_FORBIDDEN & set(name)),
+            reason="Windows does not allow this character in a folder name",
+        ),
+    )
+    for name in ODD_NAMES
+]
 
 
-@pytest.mark.parametrize("name", ODD_NAMES, ids=[repr(n)[:20] for n in ODD_NAMES])
+@pytest.mark.parametrize("name", ODD_PARAMS)
 def test_odd_characters_in_the_home_never_reach_any_format(tmp_path: Path, name: str):
     home = tmp_path / name
     profile = make_profile(home, folder="abcd1234.qx")
@@ -428,7 +441,7 @@ def test_odd_characters_in_the_home_never_reach_any_format(tmp_path: Path, name:
     assert json.loads(texts[0])
 
 
-@pytest.mark.parametrize("name", ODD_NAMES, ids=[repr(n)[:20] for n in ODD_NAMES])
+@pytest.mark.parametrize("name", ODD_PARAMS)
 def test_odd_characters_in_a_path_cannot_break_the_markdown_table(tmp_path: Path, name: str):
     """The home is not under the redacted one here, so the odd name reaches the text itself."""
     home = tmp_path / "home"

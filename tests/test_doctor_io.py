@@ -18,7 +18,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from doctor_support import make_context, make_firefox, make_profile, pin_loader
+from doctor_support import (
+    make_context,
+    make_firefox,
+    make_profile,
+    pin_loader,
+    real_home_environment,
+    real_profiles_root,
+    write,
+)
 from support import IS_ROOT, WINDOWS, needs_permissions, needs_symlinks
 from typer.testing import CliRunner
 
@@ -628,18 +636,25 @@ def test_permission_checks_in_this_file_run_unprivileged():
 
 
 def test_escape_sequences_from_a_status_file_do_not_reach_the_log(home: Path, tmp_path: Path):
-    profile = make_profile(home)
-    (profile / "chrome" / "peekafoxy-status.json").write_text(
+    # In the folder this system's Firefox uses, or the real program never finds the status file.
+    profile = make_profile(home, root=real_profiles_root(home))
+    write(
+        profile / "chrome" / "peekafoxy-status.json",
         json.dumps(
             {
                 "schema": 1,
                 "updated": "2026-11-05T11:00:00Z",
                 "health": {"a": "fail: \x1b]0;pwned\x07\x1b[2J"},
             }
-        )
+        ),
     )
     log = tmp_path / "doctor.log"
-    env = {**os.environ, "HOME": str(home), "PYTHONPATH": SRC, "PEEK_A_FOXY_LOG": str(log)}
+    env = {
+        **os.environ,
+        **real_home_environment(home),
+        "PYTHONPATH": SRC,
+        "PEEK_A_FOXY_LOG": str(log),
+    }
     subprocess.run(
         [sys.executable, "-m", "peek_a_foxy", "doctor", "--json"],
         env=env,

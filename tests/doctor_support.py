@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +20,30 @@ LOADER_TEXT = {"config.js": CONFIG_JS, "defaults/pref/config-prefs.js": CONFIG_P
 NOW = datetime(2026, 11, 5, 12, 0, 0, tzinfo=timezone.utc)
 PROFILE_DIR = "abcd1234.default-release"
 OLD = datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()
+
+
+def write(path: Path, text: str) -> None:
+    """Write ``text`` as UTF-8 with LF line endings on every system, as Firefox's files have.
+
+    ``Path.write_text`` would use the locale's encoding and, on Windows, turn every LF into CRLF,
+    which the doctor rightly reports as a different file.
+    """
+    path.write_bytes(text.encode("utf-8"))
+
+
+def real_profiles_root(home: Path) -> Path:
+    """Where the real program, run with :func:`real_home_environment`, looks for profiles.ini."""
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "Firefox"
+    if sys.platform == "win32":
+        return home / "AppData" / "Roaming" / "Mozilla" / "Firefox"
+    return home / ".mozilla" / "firefox"
+
+
+def real_home_environment(home: Path) -> dict[str, str]:
+    """The variables that make a real ``python -m peek_a_foxy`` take ``home`` for its home."""
+    roaming = home / "AppData" / "Roaming"
+    return {"HOME": str(home), "USERPROFILE": str(home), "APPDATA": str(roaming)}
 
 
 def pin_loader(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -43,16 +68,16 @@ def make_firefox(
             f"[App]\nVendor=Mozilla\nName=Firefox\nVersion={version}\nBuildID=20261020000000\n"
         )
     if application_ini:
-        (folder / "application.ini").write_text(application_ini)
+        write(folder / "application.ini", application_ini)
     if channel:
         pref = folder / "defaults" / "pref"
         pref.mkdir(parents=True, exist_ok=True)
-        (pref / "channel-prefs.js").write_text(f'pref("app.update.channel", "{channel}");\n')
+        write(pref / "channel-prefs.js", f'pref("app.update.channel", "{channel}");\n')
     if loader:
         for name, text in LOADER_TEXT.items():
             path = folder / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text)
+            write(path, text)
     return folder
 
 
@@ -64,19 +89,23 @@ def make_profile(
     installed: bool = True,
     default: bool = True,
     with_ini: bool = True,
+    root: Path | None = None,
 ) -> Path:
-    """A profile that ``install`` would have produced (the real bundled files)."""
-    root = home / ".mozilla" / "firefox"
+    """A profile that ``install`` would have produced (the real bundled files).
+
+    ``root`` is the folder of profiles.ini, ``~/.mozilla/firefox`` (Linux's) unless given.
+    """
+    root = root or home / ".mozilla" / "firefox"
     path = root / folder
     chrome = path / "chrome"
     chrome.mkdir(parents=True, exist_ok=True)
     if with_ini:
         ini = root / "profiles.ini"
-        existing = ini.read_text() if ini.exists() else ""
+        existing = ini.read_text(encoding="utf-8") if ini.exists() else ""
         number = existing.count("[Profile")
         section = f"[Profile{number}]\nName={name}\nIsRelative=1\nPath={folder}\n"
         section += "Default=1\n\n" if default else "\n"
-        ini.write_text(existing + section)
+        write(ini, existing + section)
     if installed:
         source = assets.assets_dir()
         for rel in assets.FILES:
@@ -84,15 +113,14 @@ def make_profile(
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source / rel, target)
         (chrome / "utils").mkdir(exist_ok=True)
-        (chrome / "utils" / "boot.sys.mjs").write_text("boot\n")
-        (chrome / "userChrome.css").write_text(userfiles.CSS_IMPORT + "\n")
-        (path / "user.js").write_text(
+        write(chrome / "utils" / "boot.sys.mjs", "boot\n")
+        write(chrome / "userChrome.css", userfiles.CSS_IMPORT + "\n")
+        write(
+            path / "user.js",
             f'user_pref("{userfiles.STYLESHEETS_PREF}", true);\n'
-            f'user_pref("{userfiles.SUBDOCUMENTS_PREF}", true);\n'
+            f'user_pref("{userfiles.SUBDOCUMENTS_PREF}", true);\n',
         )
-    for file in (home / ".mozilla").rglob(
-        "*"
-    ):  # dated well before any test clock, so "newer than" is stable
+    for file in root.rglob("*"):  # dated well before any test clock, so "newer than" is stable
         if file.is_file():
             os.utime(file, (OLD, OLD))
     return path

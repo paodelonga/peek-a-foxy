@@ -15,7 +15,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "peekafoxy-status.json"
 
 
 def test_the_fixture_is_the_documented_example():
-    data = json.loads(FIXTURE.read_text())
+    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     assert data["schema"] == status.STATUS_SCHEMA == 1
     assert {"scriptVersion", "firefoxVersion", "buildID", "channel", "os", "locale"} <= set(data)
     assert {"updated", "windows", "health", "errors"} <= set(data)
@@ -23,7 +23,7 @@ def test_the_fixture_is_the_documented_example():
 
 
 def test_the_fixture_is_read_completely():
-    result = parse_status(FIXTURE.read_text())
+    result = parse_status(FIXTURE.read_text(encoding="utf-8"))
     assert result.updated.tzinfo is timezone.utc and result.updated.year == 2026
     assert (result.script_version, result.firefox_version) == ("0.2.0", "150.0")
     assert (result.build_id, result.channel, result.os, result.locale) == (
@@ -39,7 +39,7 @@ def test_the_fixture_is_read_completely():
 
 
 def test_unknown_keys_are_ignored_so_the_writer_can_add_some():
-    data = json.loads(FIXTURE.read_text()) | {"future": {"x": 1}}
+    data = json.loads(FIXTURE.read_text(encoding="utf-8")) | {"future": {"x": 1}}
     assert parse_status(json.dumps(data)).script_version == "0.2.0"
 
 
@@ -90,7 +90,9 @@ def test_reading_a_folder_without_the_file_gives_none(tmp_path: Path):
 
 
 def test_reading_a_folder_with_the_file(tmp_path: Path):
-    (tmp_path / status.STATUS_FILE).write_text("\ufeff" + FIXTURE.read_text())  # a BOM is tolerated
+    (tmp_path / status.STATUS_FILE).write_bytes(  # a BOM is tolerated
+        ("\ufeff" + FIXTURE.read_text(encoding="utf-8")).encode("utf-8")
+    )
     assert read_status(tmp_path).windows == 2
 
 
