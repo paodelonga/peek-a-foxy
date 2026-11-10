@@ -335,7 +335,13 @@ def aliased_folder(folder: str, resolve: Callable[[str], str] | None = None) -> 
     def same_place(path: str) -> str:
         return ntpath.normcase(ntpath.normpath(path)).rstrip("\\")
 
-    real = resolve(folder)
+    try:
+        real = resolve(folder)
+    except (OSError, ValueError):
+        # Python 3.10 raises for a path Windows cannot have (a NUL, more than 32 767 characters)
+        # where later versions return it unchanged; the checks after this one refuse such a folder
+        # with their own message.
+        return None
     return None if same_place(real) == same_place(folder) else real
 
 

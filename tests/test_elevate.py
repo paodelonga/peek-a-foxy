@@ -1147,6 +1147,24 @@ def test_elsewhere_than_windows_nothing_is_resolved_so_a_symbolic_link_is_not_an
     assert elevate.aliased_folder(str(link)) is None
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        ValueError("_getfinalpathname: embedded null character in path"),
+        ValueError("_getfinalpathname: path too long for Windows"),
+        OSError(22, "Invalid argument"),
+    ],
+    ids=["nul", "too-long", "oserror"],
+)
+def test_a_folder_that_windows_cannot_resolve_is_left_to_the_checks_after_it(error):
+    """Adversarial: os.path.realpath of Python 3.10 on Windows raises for such a path."""
+
+    def fails(path: str) -> str:
+        raise error
+
+    assert elevate.aliased_folder("C:\\Fire\x00fox", fails) is None
+
+
 def test_on_windows_the_real_path_function_is_asked(monkeypatch):
     asked: list[str] = []
     monkeypatch.setattr(sys, "platform", "win32")
