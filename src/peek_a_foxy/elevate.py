@@ -83,8 +83,9 @@ _SYSTEM_DIRECTORY = re.compile(r"[A-Za-z]:\\[^\x00-\x1f\"*<>?|]*")
 # @@NAME@@ is replaced in one pass by a single-quoted literal (see helper_script). $failure is the
 # exit code for an exception in the step that is running, so no exception ends with an unmapped 1.
 # Its steps are those of the former Python helper: the arguments (USAGE), the pinned hashes
-# (MISMATCH), a Firefox folder (NOT_FIREFOX), no link or junction from the drive root to the files
-# (LINKED), then each file written aside with CreateNew and renamed over the old one (WRITE_FAILED).
+# (MISMATCH), a Firefox folder (NOT_FIREFOX), no link, junction or short (8.3) name from the drive
+# root to the files (LINKED), then each file written aside with CreateNew and renamed over the old
+# one (WRITE_FAILED).
 HELPER_SCRIPT = r"""Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $failure = 10
@@ -146,7 +147,20 @@ try {
         if ([IO.File]::GetAttributes($path).HasFlag($reparse)) {
             exit 13
         }
-        $path = [IO.Path]::GetDirectoryName($path)
+        $parent = [IO.Path]::GetDirectoryName($path)
+        $leaf = [IO.Path]::GetFileName($path)
+        if ($parent -and $leaf) {
+            $listed = $false
+            foreach ($entry in [IO.Directory]::GetFileSystemEntries($parent, $leaf)) {
+                if ([string]::Equals([IO.Path]::GetFileName($entry), $leaf, $same)) {
+                    $listed = $true
+                }
+            }
+            if (-not $listed) {
+                exit 13
+            }
+        }
+        $path = $parent
     }
     foreach ($part in @('defaults', 'defaults\pref') + $names) {
         $found = attributes ([IO.Path]::Combine($full, $part))
@@ -294,6 +308,29 @@ def helper_command(firefox_dir: Path, payloads: list[bytes]) -> list[str]:
     return [powershell_path(system_directory()), *POWERSHELL_FLAGS, encoded_command(script)]
 
 
+def aliased_folder(folder: str, resolve: Callable[[str], str] | None = None) -> str | None:
+    """Where Windows really goes when ``folder`` is not that place spelled out, else ``None``.
+
+    ``os.path.realpath`` asks Windows for the final path (``GetFinalPathNameByHandle``), which turns
+    a short 8.3 name (``C:\\PROGRA~1``), a ``subst`` or mapped drive, a junction and a symbolic link
+    into the long path they stand for. The elevated script refuses a folder that is not the real
+    one; asking here first spares the user an administrator prompt that could only end in a refusal,
+    and sees the drives of this session, which the elevated process may not share. Only Windows has
+    such names, so elsewhere (where the command is built but never runs) nothing is resolved, unless
+    ``resolve`` is given.
+    """
+    if resolve is None:
+        if sys.platform != "win32":
+            return None
+        resolve = os.path.realpath
+
+    def same_place(path: str) -> str:
+        return ntpath.normcase(ntpath.normpath(path)).rstrip("\\")
+
+    real = resolve(folder)
+    return None if same_place(real) == same_place(folder) else real
+
+
 def parameters_of(command: list[str]) -> str:
     """The parameter string that ShellExecuteEx gets: every argument after the program, quoted."""
     return subprocess.list2cmdline(command[1:])
@@ -350,6 +387,17 @@ def copy_as_administrator(
             errors.UAC_ENV_OVERRIDE,
             "FXAC_REPO and FXAC_COMMIT are set: the administrator copy only accepts the pinned "
             "fx-autoconfig, so unset them",
+        )
+    folder = os.path.abspath(firefox_dir)
+    real = aliased_folder(folder)
+    if real is not None:
+        raise ElevationError(
+            errors.UAC_HELPER_FAILED,
+            f"could not install the loader into {firefox_dir}: {MESSAGES[LINKED]}",
+            detail=(
+                f"refused before the administrator step: {folder!r} is {real!r} for Windows "
+                "(a short name, a substituted or mapped drive, a junction or a link)"
+            ),
         )
     payloads = [(checkout / "program" / name).read_bytes() for name in PINNED_SHA256]
     run = elevator or windows_elevator

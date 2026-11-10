@@ -1024,3 +1024,195 @@ def test_the_standalone_program_takes_the_same_powershell_route(pinned, monkeypa
     monkeypatch.setattr(sys, "executable", str(tmp_path / "peek-a-foxy.exe"))
     assert elevate.helper_command(tmp_path, [CONFIG, PREFS]) == plain
     assert plain[0].endswith("\\powershell.exe") and "peek-a-foxy" not in plain[0]
+
+
+# --- a folder reached under another name: short names, substituted and mapped drives -------------
+# Windows resolves these to the long path they stand for; the helper script and the parent both
+# refuse a folder that is not the real one, so nothing is written through a name that is not the
+# folder's own.
+
+LONG = "C:\\Program Files\\Mozilla Firefox"
+
+
+@pytest.mark.parametrize(
+    ("given", "real", "alias"),
+    [
+        (LONG, LONG, None),
+        (LONG, LONG.upper(), None),  # case is not a difference
+        (LONG + "\\", LONG, None),
+        (LONG, LONG + "\\", None),
+        (LONG.replace("\\", "/"), LONG, None),
+        ("C:\\Program Files\\.\\Mozilla Firefox", LONG, None),
+        ("C:\\Program Files\\Other\\..\\Mozilla Firefox", LONG, None),
+        ("C:\\PROGRA~1\\MOZILL~1", LONG, LONG),  # 8.3 short names
+        ("C:\\PROGRA~1\\Mozilla Firefox", LONG, LONG),
+        ("X:\\", LONG, LONG),  # subst X: "C:\Program Files\Mozilla Firefox"
+        ("X:\\Firefox", "C:\\Apps\\Firefox", "C:\\Apps\\Firefox"),
+        ("Z:\\Firefox", "\\\\server\\share\\Firefox", "\\\\server\\share\\Firefox"),  # mapped
+        ("C:\\Link", LONG, LONG),  # a junction or a symbolic link
+        ("C:\\Users\\a\\..\\..\\Link\\x", "C:\\Link\\x", None),
+        ("\\\\?\\C:\\x", "C:\\x", "C:\\x"),  # a form the script does not accept either
+    ],
+)
+def test_a_folder_is_an_alias_when_windows_resolves_it_to_another_place(given, real, alias):
+    assert elevate.aliased_folder(given, lambda path: real) == alias
+
+
+@given(st.text(alphabet=st.characters(blacklist_categories=("Cs",)), max_size=40))
+def test_a_resolver_that_changes_only_case_and_separators_never_makes_an_alias(text):
+    assert elevate.aliased_folder(text, lambda path: path.lower().replace("\\", "/")) is None
+    assert elevate.aliased_folder(text, lambda path: path) is None
+
+
+@given(st.text(alphabet=st.characters(blacklist_categories=("Cs",)), max_size=40))
+def test_a_resolver_that_names_another_place_always_makes_an_alias(text):
+    assert elevate.aliased_folder(text, lambda path: path + "\\elsewhere") is not None
+
+
+@pytest.mark.skipif(WINDOWS, reason="on Windows a link is resolved on purpose")
+def test_elsewhere_than_windows_nothing_is_resolved_so_a_symbolic_link_is_not_an_alias(tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(real)
+    except OSError:
+        pytest.skip("cannot create a symbolic link here")
+    # The command is only ever run on Windows: the stand-in must not refuse a folder under a link.
+    assert elevate.aliased_folder(str(link)) is None
+
+
+def test_on_windows_the_real_path_function_is_asked(monkeypatch):
+    asked: list[str] = []
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(os.path, "realpath", lambda path: asked.append(path) or LONG)
+    assert elevate.aliased_folder("C:\\PROGRA~1\\MOZILL~1") == LONG
+    assert asked == ["C:\\PROGRA~1\\MOZILL~1"]
+
+
+def test_the_parent_refuses_an_alias_before_any_prompt(pinned, checkout, tmp_path, monkeypatch):
+    folder = firefox(tmp_path)
+    monkeypatch.setattr(elevate, "aliased_folder", lambda path: "C:\\Real\\Firefox")
+    asked: list[list[str]] = []
+    with pytest.raises(ElevationError) as caught:
+        elevate.copy_as_administrator(checkout, folder, lambda command: asked.append(command) or 0)
+    assert asked == []  # no administrator prompt for a folder that cannot be written
+    assert caught.value.code == errors.UAC_HELPER_FAILED
+    assert elevate.MESSAGES[elevate.LINKED] in caught.value.message
+    assert str(folder) in caught.value.message
+    assert repr("C:\\Real\\Firefox") in (caught.value.detail or "")
+    assert not (folder / "config.js").exists()
+
+
+def test_the_parent_passes_a_folder_that_is_the_real_one(pinned, checkout, tmp_path, monkeypatch):
+    folder = firefox(tmp_path)
+    monkeypatch.setattr(elevate, "aliased_folder", lambda path: None)
+    asked: list[list[str]] = []
+    elevate.copy_as_administrator(checkout, folder, lambda command: asked.append(command) or 0)
+    assert len(asked) == 1
+
+
+def test_the_script_compares_every_part_of_the_path_with_the_names_its_folder_really_has(pinned):
+    script = elevate.helper_script(REFERENCE_FOLDER, [CONFIG, PREFS])
+    linked = script[script.index("$failure = 13") : script.index("$failure = 14")]
+    assert "[IO.Directory]::GetFileSystemEntries($parent, $leaf)" in linked
+    assert "$same" in linked and "$listed" in linked
+    assert linked.index("GetFileSystemEntries") < linked.rindex("exit 13")  # a miss is a refusal
+    assert "Add-Type" not in script and "DllImport" not in script  # no native code to find a name
+
+
+def short_name(path: Path) -> str | None:
+    """The 8.3 name Windows gives ``path``, or ``None`` when this volume makes no short names."""
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    buffer = ctypes.create_unicode_buffer(32768)
+    length = kernel32.GetShortPathNameW(str(path), buffer, len(buffer))
+    return buffer.value if length and buffer.value.lower() != str(path).lower() else None
+
+
+@pytest.fixture
+def substituted_drive(tmp_path: Path):
+    """``subst`` a free drive letter to a folder of ``tmp_path`` and remove it afterwards."""
+    made: list[str] = []
+
+    def make(target: Path) -> str:
+        for letter in "ZYXWVUTSRQPONMLKJIHGFED":
+            if not os.path.exists(f"{letter}:\\"):
+                done = subprocess.run(
+                    ["subst", f"{letter}:", str(target)], capture_output=True, check=False
+                )
+                if done.returncode != 0:
+                    pytest.skip("subst is not available to this account")
+                made.append(letter)
+                return f"{letter}:\\"
+        pytest.skip("no free drive letter")
+
+    yield make
+    for letter in made:
+        subprocess.run(["subst", f"{letter}:", "/d"], capture_output=True, check=False)
+
+
+@windows_only
+def test_real_a_plain_long_path_is_not_an_alias_and_reaches_the_elevator(
+    pinned, checkout, tmp_path
+):
+    folder = firefox(tmp_path)
+    assert elevate.aliased_folder(str(folder)) is None
+    asked: list[list[str]] = []
+    elevate.copy_as_administrator(checkout, folder, lambda command: asked.append(command) or 0)
+    assert len(asked) == 1
+
+
+@windows_only
+def test_real_a_junction_is_an_alias_of_its_target(pinned, checkout, tmp_path, junction):
+    real = firefox(tmp_path, "real")
+    link = junction(tmp_path / "link", real)
+    resolved = elevate.aliased_folder(str(link))
+    assert resolved is not None and os.path.normcase(resolved) == os.path.normcase(str(real))
+    with pytest.raises(ElevationError):
+        elevate.copy_as_administrator(checkout, link, lambda command: 0)
+
+
+@windows_only
+def test_real_a_short_name_is_refused_by_the_parent_and_by_the_script(pinned, checkout, tmp_path):
+    folder = firefox(tmp_path, "Mozilla Firefox With A Long Name")
+    short = short_name(folder)
+    if short is None:
+        pytest.skip("this volume does not create 8.3 names")
+    resolved = elevate.aliased_folder(short)
+    assert resolved is not None and os.path.normcase(resolved) == os.path.normcase(str(folder))
+    with pytest.raises(ElevationError, match="symbolic link"):
+        elevate.copy_as_administrator(checkout, Path(short), lambda command: 0)
+    # The script alone, as when the parent's check is not there: the same refusal, nothing written.
+    assert run_script(elevate.helper_script(short, [CONFIG, PREFS])) == elevate.LINKED
+    assert not (folder / "config.js").exists()
+    assert run_folder(folder) == elevate.OK  # the long name of the same folder works
+
+
+@windows_only
+def test_real_a_short_name_further_up_the_path_is_refused_by_the_script(pinned, tmp_path):
+    parent = tmp_path / "A Parent Folder With A Long Name"
+    parent.mkdir()
+    folder = firefox(parent)
+    short = short_name(parent)
+    if short is None:
+        pytest.skip("this volume does not create 8.3 names")
+    assert run_script(elevate.helper_script(f"{short}\\{folder.name}", [CONFIG, PREFS])) == (
+        elevate.LINKED
+    )
+    assert not (folder / "config.js").exists()
+
+
+@windows_only
+def test_real_a_substituted_drive_is_an_alias_the_parent_refuses(
+    pinned, checkout, tmp_path, substituted_drive
+):
+    folder = firefox(tmp_path)
+    drive = substituted_drive(folder)
+    resolved = elevate.aliased_folder(drive)
+    assert resolved is not None and os.path.normcase(resolved) == os.path.normcase(str(folder))
+    asked: list[list[str]] = []
+    with pytest.raises(ElevationError):
+        elevate.copy_as_administrator(checkout, Path(drive), lambda c: asked.append(c) or 0)
+    assert asked == []
