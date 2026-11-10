@@ -175,6 +175,28 @@ def test_the_lowest_job_runs_the_whole_suite_and_says_what_it_does_not_lower():
     assert "Typer and Rich" in wording and "stays at the newest" in wording
 
 
+PRE_COMMIT_REV = re.compile(r"^\s*rev:\s*(?P<rev>\S+)(?P<comment>\s+#.*)?$")
+
+
+def test_every_pre_commit_hook_is_pinned_by_a_full_commit_with_its_version_in_a_comment():
+    """A tag of a hook repository can be moved; CI runs these hooks on every pull request."""
+    path = ROOT / ".pre-commit-config.yaml"
+    if not path.is_file():
+        pytest.skip("not a source checkout")
+    found = [
+        PRE_COMMIT_REV.match(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith("rev:")
+    ]
+    assert found and all(found), "a rev: line that the pattern does not understand"
+    for match in found:
+        assert match is not None
+        assert re.fullmatch(r"[0-9a-f]{40}", match["rev"]), match["rev"]
+        assert re.fullmatch(r"\s*# frozen: v\d+(\.\d+){1,2}", match["comment"] or "")
+    repos = yaml.safe_load(path.read_text(encoding="utf-8"))["repos"]
+    assert len(repos) == len(found)  # no repository escaped the check
+
+
 def floor_of(requirement: str) -> str:
     match = re.search(r">=\s*([0-9][0-9.]*)", requirement)
     assert match, requirement
