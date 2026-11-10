@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from doctor_support import make_firefox, make_profile
 from support import WINDOWS
 from typer.testing import CliRunner
 
@@ -200,6 +201,21 @@ def test_an_error_whose_message_cannot_be_written_keeps_its_exit_code_and_is_qui
     [["logs"], ["doctor", "--markdown"], ["doctor", "--json"]],
 )
 def test_a_report_nobody_reads_ends_quietly_with_the_failure_code(home: Path, args: list[str]):
+    """The failure code must come from the lost output and from nothing else.
+
+    In an empty home ``doctor`` exits 1 by itself (no Firefox, no profile), so this test used to
+    pass for the wrong reason. Here the machine is healthy and a control run with a reader that
+    stays proves that the same command exits 0.
+    """
+    if args[0] == "doctor":
+        firefox = make_firefox(home / "firefox-install")
+        profile = make_profile(home)
+        args = [*args, "--profile", str(profile), "--firefox-dir", str(firefox)]
+    control = subprocess.run(
+        command(*args), env=env(home), capture_output=True, text=True, timeout=120, check=False
+    )
+    assert control.returncode == 0, control.stderr  # nothing wrong but the missing reader, below
+    quiet(control.stderr)
     code, stderr = run_with_closed_reader(home, args)
     quiet(stderr)
     assert code == errors.EXIT_FAILURE, stderr
