@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGING = ROOT / "packaging"
+SOURCE = ROOT / "src" / "peek_a_foxy"
 DIGEST = "ab" * 32
 
 pytestmark = pytest.mark.skipif(not PACKAGING.is_dir(), reason="not a source checkout")
@@ -80,3 +83,74 @@ def test_the_exe_workflow_only_publishes_on_a_release_and_only_there_writes():
     assert publish["if"] == "github.event_name == 'release'"
     assert publish["permissions"] == {"contents": "write"}
     assert "permissions" not in workflow["jobs"]["build"]
+
+
+# --- what PyInstaller cannot see (PF-24) ---------------------------------------------------------
+
+
+def exe_workflow():
+    yaml = pytest.importorskip("yaml")
+    return yaml.safe_load((ROOT / ".github/workflows/exe.yml").read_text(encoding="utf-8"))
+
+
+def step(job: dict, name_start: str) -> dict:
+    found = [s for s in job["steps"] if str(s.get("name", "")).startswith(name_start)]
+    assert len(found) == 1, f"expected exactly one step starting with {name_start!r}"
+    return found[0]
+
+
+def hidden_imports() -> set[str]:
+    command = step(exe_workflow()["jobs"]["build"], "Build")["run"]
+    return set(re.findall(r"--hidden-import\s+(\S+)", command))
+
+
+def named_imports() -> tuple[set[str], list[str]]:
+    """Modules the package imports by a string (import_module, __import__), and the odd calls."""
+    constant: set[str] = set()
+    dynamic: list[str] = []
+    for path in sorted(SOURCE.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):
+                continue
+            function = node.func
+            name = (
+                function.attr
+                if isinstance(function, ast.Attribute)
+                else getattr(function, "id", "")
+            )
+            if name not in {"import_module", "__import__"}:
+                continue
+            first = node.args[0] if node.args else None
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                constant.add(first.value)
+            else:
+                dynamic.append(f"{path.name}:{node.lineno}")
+    return constant, dynamic
+
+
+def test_every_module_the_package_imports_by_name_is_a_hidden_import_of_the_build():
+    constant, dynamic = named_imports()
+    assert "winreg" in constant  # the one that matters: Firefox discovery through the registry
+    assert constant <= hidden_imports(), "a module imported by name is invisible to PyInstaller"
+    assert not dynamic, f"an import by a computed name cannot be checked: {dynamic}"
+
+
+def test_the_build_bundles_the_package_metadata_that_the_version_comes_from():
+    command = step(exe_workflow()["jobs"]["build"], "Build")["run"]
+    assert "--copy-metadata peek-a-foxy" in command
+    source = (SOURCE / "__init__.py").read_text(encoding="utf-8")
+    assert 'version("peek-a-foxy")' in source  # what makes the metadata necessary
+
+
+def test_the_smoke_test_proves_registry_discovery_and_the_version_and_cannot_be_ignored():
+    job = exe_workflow()["jobs"]["build"]
+    names = [s.get("name", "") for s in job["steps"]]
+    smoke = step(job, "Smoke test - registry")
+    assert names.index(smoke["name"]) > names.index("Build")
+    assert names.index(smoke["name"]) < names.index("Checksum")  # before anything is uploaded
+    assert not smoke.get("continue-on-error")
+    script = smoke["run"]
+    for needed in ("doctor --json", "HKCU:", "program.version", "firefox.path", "pyproject.toml"):
+        assert needed in script
+    # The registration is private to the run and removed even when the check throws.
+    assert re.search(r"finally\s*\{[^}]*Remove-Item", script)

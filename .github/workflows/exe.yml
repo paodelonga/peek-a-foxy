@@ -27,9 +27,14 @@ jobs:
           python-version: "3.13"
       - name: Install
         run: python -m pip install . pyinstaller==6.22.3
+      # PyInstaller follows static imports only, so what the program reaches by name or by metadata
+      # is listed here: winreg (platform._winreg imports it with importlib.import_module, to find
+      # Firefox through the registry) and the package metadata that __version__ reads.
       - name: Build
         run: >
           pyinstaller --onefile --name peek-a-foxy --noconfirm
+          --hidden-import winreg
+          --copy-metadata peek-a-foxy
           --add-data "chrome;peek_a_foxy/assets"
           packaging/entry.py
       - name: Smoke test
@@ -48,6 +53,41 @@ jobs:
           & $exe install --profile $profile --skip-loader --yes
           if ($LASTEXITCODE -ne 0) { throw "install failed" }
           if (-not (Test-Path "$profile\chrome\JS\autohide.uc.js")) { throw "autohide.uc.js was not installed" }
+      # The program must find a Firefox through the registry and report its own version, and both
+      # depend on things PyInstaller cannot see (see Build). A throwaway registration under HKCU
+      # (no administrator rights, removed afterwards) names a fake Firefox folder that no
+      # well-known folder or PATH entry would lead to, so it can only be found through winreg; a
+      # registry module that was left out would be swallowed by the discovery code as "no registry",
+      # which is why this looks at the folders doctor lists instead of at its exit code.
+      - name: Smoke test - registry discovery and version
+        shell: pwsh
+        env:
+          PEEK_A_FOXY_LOG: "off"
+        run: |
+          $exe = "dist\peek-a-foxy.exe"
+          $expected = python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+          $fake = Join-Path $env:RUNNER_TEMP "peek-a-foxy-smoke-firefox"
+          New-Item -ItemType Directory -Path $fake | Out-Null
+          foreach ($name in "firefox.exe", "omni.ja") { New-Item -ItemType File -Path (Join-Path $fake $name) | Out-Null }
+          Set-Content -Path (Join-Path $fake "application.ini") -Value "[App]", "Name=Firefox"
+          $key = "HKCU:\SOFTWARE\Mozilla\PeekAFoxySmoke"
+          try {
+            New-Item -Path "$key\999.0\Main" -Force | Out-Null
+            New-ItemProperty -Path "$key\999.0\Main" -Name "Install Directory" -Value $fake | Out-Null
+            $json = & $exe doctor --json
+            # 0 (all fine) and 1 (a check failed, such as a missing profile) are normal here.
+            if ($LASTEXITCODE -notin 0, 1) { throw "doctor returned $LASTEXITCODE" }
+            $report = ($json -join "`n") | ConvertFrom-Json
+          } finally {
+            Remove-Item -Path $key -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          $checks = @($report.sections | ForEach-Object { $_.checks })
+          $version = @($checks | Where-Object { $_.id -eq "program.version" })[0].value
+          if ($version -ne $expected) { throw "the program says it is version '$version', pyproject.toml says '$expected'" }
+          $folders = @($checks | Where-Object { $_.id -eq "firefox.path" } | ForEach-Object { $_.value })
+          if (-not ($folders | Where-Object { $_ -like "*peek-a-foxy-smoke-firefox" })) {
+            throw "the Firefox registered in the registry was not found; doctor listed: $($folders -join ', ')"
+          }
       - name: install.ps1 parses
         shell: pwsh
         run: |
