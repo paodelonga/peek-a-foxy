@@ -15,7 +15,7 @@ from types import ModuleType
 from typing import TypeVar
 
 from peek_a_foxy import errors
-from peek_a_foxy.errors import PlatformError
+from peek_a_foxy.errors import DiscoveryError, PlatformError
 
 FIREFOX_BINARIES = ("firefox", "firefox-developer-edition", "firefox-esr")
 LINUX_INSTALL_DIRS = (
@@ -87,17 +87,33 @@ def is_windows() -> bool:
     return sys.platform == "win32"
 
 
+def _home() -> Path:
+    """The user's home folder, or a coded error when the system cannot say where it is.
+
+    A service account, a scheduled task or a container may have no home at all; that is a
+    situation to explain (and to get around with ``--profile``), not a bug.
+    """
+    try:
+        return Path.home()
+    except (RuntimeError, OSError, KeyError) as error:
+        raise DiscoveryError(
+            errors.NO_PROFILES_INI,
+            "could not find your home folder, so Firefox's profiles cannot be located",
+            detail=repr(error),
+        ) from error
+
+
 def profiles_root() -> Path:
     """Directory that holds ``profiles.ini`` and the profiles."""
-    home = Path.home()
     kind = system()
-    if kind == "macos":
-        return home / "Library" / "Application Support" / "Firefox"
     if kind == "windows":
+        # APPDATA alone is enough: the home folder is only the fallback, so it is asked last.
         appdata = os.environ.get("APPDATA")
-        roaming = Path(appdata) if appdata else home / "AppData" / "Roaming"
+        roaming = Path(appdata) if appdata else _home() / "AppData" / "Roaming"
         return roaming / "Mozilla" / "Firefox"
-    return home / ".mozilla" / "firefox"
+    if kind == "macos":
+        return _home() / "Library" / "Application Support" / "Firefox"
+    return _home() / ".mozilla" / "firefox"
 
 
 def _looks_like_firefox(directory: Path) -> bool:

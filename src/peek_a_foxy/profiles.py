@@ -58,6 +58,10 @@ def read_profiles(root: Path) -> list[Profile]:
         raw_path = entry.get("path")
         if not raw_path:
             continue
+        if "\x00" in raw_path:
+            # No file system takes a NUL in a name: it would only fail later, in whatever touches
+            # the path first, as an exception that nobody explained.
+            raise _unreadable(ini, ValueError(f"a NUL character in the Path of [{section}]"))
         try:
             relative = entry.getboolean("isrelative", fallback=True)
         except ValueError as error:  # ``IsRelative=`` or ``IsRelative=maybe``: a hand-edited file

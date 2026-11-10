@@ -117,6 +117,124 @@ def test_clip_leaves_short_text_alone_and_says_how_much_was_cut():
     assert cut.startswith("x" * 10) and "990 more characters" in cut
 
 
+# --- no home folder is a situation to explain, not a bug (review 3, F-M3) ------------------------
+
+
+@pytest.fixture
+def without_a_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``Path.home()`` raises, as for a service account or a container with no passwd entry."""
+
+    def cannot(cls):
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(Path, "home", classmethod(cannot))
+
+
+@pytest.mark.parametrize("args", [["install", "--skip-loader"], ["uninstall"]])
+def test_without_a_home_folder_the_commands_ask_for_a_profile_instead_of_crashing(
+    without_a_home, args: list[str]
+):
+    result = runner.invoke(app, [*args, "--yes"])
+    assert result.exit_code == errors.EXIT_FAILURE, result.output
+    assert errors.NO_PROFILES_INI.code in result.output and "--profile" in result.output
+    assert errors.UNEXPECTED.code not in result.output and "Traceback" not in result.output
+
+
+def test_without_a_home_folder_a_profile_given_by_hand_still_works(without_a_home, profile: Path):
+    result = runner.invoke(app, ["install", "--profile", str(profile), "--skip-loader", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert (profile / "chrome" / "autohide.css").is_file()
+
+
+@pytest.mark.parametrize("args", [["doctor", "--json"], ["logs"], ["doctor", "--markdown"]])
+def test_without_a_home_folder_doctor_and_logs_still_answer(without_a_home, args: list[str]):
+    result = runner.invoke(app, args)
+    assert result.exit_code in (0, errors.EXIT_FAILURE), result.output
+    assert errors.UNEXPECTED.code not in result.output
+
+
+def test_shell_completion_without_a_home_folder_offers_nothing_and_does_not_fail(without_a_home):
+    from peek_a_foxy import cli
+
+    assert cli._complete_profile("") == []
+
+
+# --- a NUL byte in profiles.ini is a damaged file, not a bug (review 3, F-M4) -------------------
+
+
+def firefox_folder(tmp_path: Path, monkeypatch, ini: bytes) -> Path:
+    home = tmp_path / "home"
+    folder = home / ".mozilla" / "firefox"
+    folder.mkdir(parents=True)
+    (folder / "profiles.ini").write_bytes(ini)
+    monkeypatch.setenv("HOME", str(home))
+    return folder
+
+
+@pytest.mark.parametrize(
+    "ini",
+    [
+        b"[Profile0]\nName=x\nPath=ab\x00cd\nDefault=1\n",
+        b"[Profile0]\nName=x\nPath=\x00\nIsRelative=0\n",
+        b"[Profile0]\nName=x\nPath=/tmp/\x00/../etc\nIsRelative=0\n",
+        b"[Profile0]\nName=ok\nPath=fine\n[Profile1]\nName=bad\nPath=a\x00b\n",
+    ],
+)
+def test_a_nul_byte_in_a_profile_path_is_a_coded_error_for_every_command(
+    tmp_path: Path, monkeypatch, ini: bytes
+):
+    firefox_folder(tmp_path, monkeypatch, ini)
+    with pytest.raises(DiscoveryError) as caught:
+        read_profiles(tmp_path / "home" / ".mozilla" / "firefox")
+    assert caught.value.code is errors.PROFILES_UNREADABLE
+    for args in (
+        ["install", "--yes", "--skip-loader"],
+        ["install", "--yes", "--skip-loader", "--dry-run"],
+        ["uninstall", "--yes"],
+    ):
+        result = runner.invoke(app, args)
+        assert result.exit_code == errors.EXIT_FAILURE, (args, result.output)
+        assert errors.PROFILES_UNREADABLE.code in result.output
+        assert errors.UNEXPECTED.code not in result.output and "Traceback" not in result.output
+
+
+path_texts = st.lists(
+    st.sampled_from(
+        ["a", "b", "/", "\\", ".", "..", " ", "\x00", "\u202e", "\u200f", "~", "%", "é", "-", ":"]
+    ),
+    max_size=12,
+).map("".join)
+
+
+@settings(max_examples=250, deadline=None)
+@given(
+    path=path_texts,
+    relative=st.sampled_from(["0", "1", ""]),
+    crlf=st.booleans(),
+)
+def test_whatever_a_profile_path_holds_install_ends_in_success_or_a_coded_error(
+    tmp_path_factory, path, relative, crlf
+):
+    """End to end, not just ``read_profiles``: the fuzz of this file stopped there once, and a NUL
+    went through it to the file system. Exit 70 (a bug) is the one answer that must not happen."""
+    home = tmp_path_factory.mktemp("home")
+    root = home / ".mozilla" / "firefox"
+    root.mkdir(parents=True)
+    newline = "\r\n" if crlf else "\n"
+    ini = newline.join(
+        ["[Profile0]", "Name=fuzz", f"Path={path}", f"IsRelative={relative}", "Default=1", ""]
+    )
+    (root / "profiles.ini").write_bytes(ini.encode("utf-8"))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("HOME", str(home))
+        # Never touch the real file system outside the throwaway home: an absolute fuzzed path is
+        # a plan only.
+        for args in (["install", "--skip-loader"], ["uninstall"]):
+            result = runner.invoke(app, [*args, "--yes", "--dry-run"])
+            assert result.exit_code in (0, 1, 2), (ini, args, result.output)
+            assert errors.UNEXPECTED.code not in result.output, (ini, args, result.output)
+
+
 # --- PF-21: Ctrl-C says what was done -------------------------------------------------------------
 
 

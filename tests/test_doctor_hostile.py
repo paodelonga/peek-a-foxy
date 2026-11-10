@@ -119,11 +119,10 @@ def test_a_nul_in_profiles_ini_is_a_coded_finding_not_a_crash(home: Path):
     (root / "profiles.ini").write_bytes(PAYLOADS["nul-inside-ini"])
     found = run(home)
     assert_sound(found)
-    # configparser accepts the NUL, so the profile is listed and its folder is what is missing
-    assert (
-        not found.ok
-        and check_of(found, "profile.folder").code == errors.PROFILE_FOLDER_MISSING.code
-    )
+    # configparser accepts the NUL, but no file system does: it is the file that cannot be used,
+    # which is what ``install`` says about it too (PAF-102), not a folder that is "missing"
+    assert not found.ok
+    assert check_of(found, "profiles.ini").code == errors.PROFILES_UNREADABLE.code
 
 
 def test_invalid_utf8_in_profiles_ini_says_it_could_not_be_read(home: Path):
