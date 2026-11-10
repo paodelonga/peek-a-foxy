@@ -6,6 +6,10 @@ import pytest
 
 pytestmark = pytest.mark.browser
 
+# SYNTHETIC EVENTS: browser.keydown is a dispatchEvent on the window, which skips Firefox's key
+# handling (the capture phase, preventDefault, what a page receives). It is fast and fine for
+# "the shortcut toggles the bar"; the real key path is in test_real_keys.py, the real pointer in
+# test_pointer.py.
 HAS = "document.documentElement.hasAttribute(arguments[0])"
 
 
@@ -97,6 +101,7 @@ def test_new_windows_are_always_settled(browser, monkeypatch):
 
 
 def test_shortcuts_toggle_only_their_own_window(browser):
+    # Synthetic keydown (see Browser.keydown); the same with real keys: test_real_keys.py.
     first = browser.first_window
     second = browser.new_window()
     browser.switch_to(first)

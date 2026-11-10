@@ -1,0 +1,259 @@
+"""The pointer: a bar collapses to a strip and opens when the pointer is on it, as for a person.
+
+Every other test reaches a revealed bar by an attribute, focus, a popup or a drag marker, never by
+:hover, which is the way a bar is normally revealed. Here the pointer is real (Marionette actions,
+see ``Browser.move_pointer``): Firefox updates :hover only for such a move. Each test runs twice,
+with a native title bar and with ``customtitlebar`` (forced on Linux, as in test_customtitlebar.py).
+
+The waits poll for a condition. "Stays open" is the one thing that needs a stretch of time; it is
+looked at for a second, with the hide delay set to 0 so that a bar that is going to collapse does so
+well inside it.
+"""
+
+# ruff: noqa: E501  (the long lines are JavaScript snippets)
+
+from __future__ import annotations
+
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+
+import pytest
+
+pytestmark = pytest.mark.browser
+
+ROOT = "document.documentElement"
+BUTTON_HEIGHT = 30
+HIDE_DELAY = "peekafoxy.hide.delay.ms"
+OUTSIDE = (450, 450)  # the web page, far from every bar
+CENTER = """
+  const r = document.getElementById(arguments[0]).getBoundingClientRect();
+  return [r.left + r.width / 2, r.top + r.height / 2];
+"""
+# A stand-in for Firefox's window buttons (three 46 px wide ones), as in test_customtitlebar.py.
+CUSTOM_TITLE_BAR = f"""
+  const box = document.createXULElement('hbox');
+  box.className = 'titlebar-buttonbox-container';
+  box.id = 'peekafoxy-test-buttons';
+  for (let i = 0; i < 3; i++) {{
+    const button = document.createXULElement('hbox');
+    button.className = 'titlebar-button';
+    button.style.cssText = 'width: 46px; align-self: flex-start;'
+      + 'min-height: {BUTTON_HEIGHT}px; height: {BUTTON_HEIGHT}px;';
+    box.append(button);
+  }}
+  document.getElementById('TabsToolbar').append(box);
+  document.documentElement.setAttribute('customtitlebar', '');
+"""
+CLEAN_UP = """
+  for (const name of ['customtitlebar', 'autohide-tabs', 'autohide-urlbar']) {
+    document.documentElement.removeAttribute(name);
+  }
+  document.getElementById('peekafoxy-test-buttons')?.remove();
+  Services.prefs.clearUserPref(arguments[0]);
+  CustomizableUI.setToolbarVisibility('PersonalToolbar', false);
+"""
+NAV_HEIGHT = "Math.round(document.getElementById('nav-bar').getBoundingClientRect().height)"
+BOOKMARKS_HEIGHT = (
+    "Math.round(document.getElementById('PersonalToolbar').getBoundingClientRect().height)"
+)
+
+variants = pytest.mark.parametrize(
+    "customtitlebar", [False, True], ids=["native-title-bar", "customtitlebar"]
+)
+
+
+@pytest.fixture(autouse=True)
+def first_window_again(browser):
+    yield
+    for handle in browser.client.chrome_window_handles:
+        if handle != browser.first_window:
+            browser.switch_to(handle)
+            browser.js("window.close();")
+    browser.switch_to(browser.first_window)
+
+
+@contextmanager
+def collapsed_window(browser, customtitlebar: bool, bookmarks: bool = False) -> Iterator[dict]:
+    """A new window with both bars autohidden and the pointer on the page; yields the natural heights."""
+    browser.new_window()
+    browser.js("window.resizeTo(900, 600);")
+    browser.wait("window.innerHeight >= 500", 5, "the window did not get its size")
+    try:
+        if customtitlebar:
+            browser.js(CUSTOM_TITLE_BAR)
+        if bookmarks:
+            browser.js("CustomizableUI.setToolbarVisibility('PersonalToolbar', true);")
+            browser.wait(f"{BOOKMARKS_HEIGHT} > 0", 5, "the bookmarks bar did not show")
+        browser.move_pointer(*OUTSIDE)
+        natural = browser.settled_heights()
+        browser.js(
+            f"{ROOT}.setAttribute('autohide-tabs', ''); {ROOT}.setAttribute('autohide-urlbar', '');"
+        )
+        wait_collapsed(browser)
+        yield natural
+    finally:
+        browser.move_pointer(*OUTSIDE)
+        browser.js(CLEAN_UP, HIDE_DELAY)
+
+
+def wait_collapsed(browser, timeout: float = 8.0) -> None:
+    browser.wait(
+        f"{browser.TABS_HEIGHT} <= 8 && {NAV_HEIGHT} <= 8 && {BOOKMARKS_HEIGHT} === 0",
+        timeout,
+        "the bars did not collapse",
+    )
+
+
+def hover(browser, element_id: str) -> None:
+    """Put the pointer in the middle of an element, where it is now, and wait for Firefox to say so."""
+    browser.move_pointer(*browser.js(CENTER, element_id))
+    browser.wait(f"{element(element_id)}.matches(':hover')", 5, f"{element_id} never got the hover")
+
+
+def element(element_id: str) -> str:
+    return f"document.getElementById('{element_id}')"
+
+
+def leave(browser) -> None:
+    browser.move_pointer(*OUTSIDE)
+    wait_collapsed(browser)
+
+
+def leave_to_the_page(browser, element_id: str) -> None:
+    """Move off the page's bars and wait until Firefox has taken the hover away from an element."""
+    browser.move_pointer(*OUTSIDE)
+    browser.wait(f"!{element(element_id)}.matches(':hover')", 5, f"{element_id} kept the hover")
+
+
+def stays(browser, condition: str, message: str, seconds: float = 1.0) -> None:
+    """The condition holds throughout a stretch of time (a bar that is about to collapse has by then)."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        assert browser.js(f"return Boolean({condition});"), f"{message}: {browser.heights()}"
+        time.sleep(0.1)
+
+
+def no_delay(browser) -> None:
+    browser.js("Services.prefs.setIntPref(arguments[0], 0);", HIDE_DELAY)
+
+
+# --- the tab bar ----------------------------------------------------------------------------------
+
+
+@variants
+def test_the_pointer_on_the_tab_strip_opens_the_tab_bar_and_leaving_closes_it(
+    browser, customtitlebar
+):
+    """Default path, real pointer."""
+    with collapsed_window(browser, customtitlebar) as natural:
+        hover(browser, "TabsToolbar")
+        browser.wait(
+            f"{browser.TABS_HEIGHT} === {natural['tabs']}", 5, "the tab bar did not open on hover"
+        )
+        assert browser.js(
+            "const t = document.getElementById('TabsToolbar'); return t.scrollHeight <= t.clientHeight;"
+        ), "the opened tab bar is clipped"
+        browser.move_pointer(*OUTSIDE)
+        browser.wait(
+            f"{browser.TABS_HEIGHT} <= 8", 8, "the tab bar did not close after the pointer left"
+        )
+
+
+@variants
+def test_the_pointer_on_the_tab_strip_does_not_open_the_navigation_bar(browser, customtitlebar):
+    """Adversarial: one bar's strip is next to the other's; each opens only for its own pointer."""
+    with collapsed_window(browser, customtitlebar):
+        no_delay(browser)
+        hover(browser, "TabsToolbar")
+        browser.wait(f"{browser.TABS_HEIGHT} > 8", 5, "the tab bar did not open")
+        stays(browser, f"{NAV_HEIGHT} <= 8", "the navigation bar opened for the tab strip", 0.6)
+
+
+# --- the navigation bar -----------------------------------------------------------------------------
+
+
+@variants
+def test_the_pointer_on_the_navigation_strip_opens_the_navigation_bar_and_leaving_closes_it(
+    browser, customtitlebar
+):
+    with collapsed_window(browser, customtitlebar) as natural:
+        hover(browser, "nav-bar")
+        browser.wait(f"{NAV_HEIGHT} === {natural['nav']}", 5, "the navigation bar did not open")
+        browser.move_pointer(*OUTSIDE)
+        browser.wait(
+            f"{NAV_HEIGHT} <= 8", 8, "the navigation bar did not close after the pointer left"
+        )
+
+
+@variants
+def test_the_pointer_on_the_navigation_strip_does_not_open_the_tab_bar(browser, customtitlebar):
+    """Adversarial: the other way round."""
+    with collapsed_window(browser, customtitlebar):
+        no_delay(browser)
+        hover(browser, "nav-bar")
+        browser.wait(f"{NAV_HEIGHT} > 8", 5, "the navigation bar did not open")
+        stays(
+            browser,
+            f"{browser.TABS_HEIGHT} <= 8",
+            "the tab bar opened for the navigation strip",
+            0.6,
+        )
+
+
+@variants
+def test_moving_into_the_bookmarks_bar_keeps_the_navigation_group_open(browser, customtitlebar):
+    """The bookmarks bar has no strip of its own: it opens with the navigation bar and, once the
+    pointer is in it, keeps the pair open although the navigation bar has lost the hover."""
+    with collapsed_window(browser, customtitlebar, bookmarks=True) as natural:
+        no_delay(browser)
+        hover(browser, "nav-bar")
+        browser.wait(
+            f"{NAV_HEIGHT} === {natural['nav']} && {BOOKMARKS_HEIGHT} === {natural['bookmarks']}",
+            5,
+            "the navigation group did not open on hover",
+        )
+        hover(browser, "PersonalToolbar")
+        assert not browser.js(f"return {element('nav-bar')}.matches(':hover');"), (
+            "the pointer is still over the navigation bar: the test proves nothing"
+        )
+        stays(
+            browser,
+            f"{NAV_HEIGHT} === {natural['nav']} && {BOOKMARKS_HEIGHT} === {natural['bookmarks']}",
+            "the group closed under the pointer in the bookmarks bar",
+        )
+        browser.move_pointer(*OUTSIDE)
+        wait_collapsed(browser)
+
+
+# --- the hide delay ---------------------------------------------------------------------------------
+
+
+@variants
+@pytest.mark.parametrize(
+    ("bar", "height"),
+    [("TabsToolbar", "TABS_HEIGHT"), ("nav-bar", "NAV_HEIGHT")],
+    ids=["tabs", "navbar"],
+)
+def test_drifting_off_a_bar_and_back_within_the_hide_delay_does_not_close_it(
+    browser, customtitlebar, bar, height
+):
+    """Adversarial: the delay is what keeps a bar from flickering when the pointer leaves it briefly."""
+    with collapsed_window(browser, customtitlebar) as natural:
+        measure = browser.TABS_HEIGHT if height == "TABS_HEIGHT" else NAV_HEIGHT
+        key = "tabs" if height == "TABS_HEIGHT" else "nav"
+        browser.js("Services.prefs.setIntPref(arguments[0], 1500);", HIDE_DELAY)
+        hover(browser, bar)
+        browser.wait(f"{measure} === {natural[key]}", 5, "the bar did not open")
+        leave_to_the_page(browser, bar)
+        stays(browser, f"{measure} === {natural[key]}", "the bar closed before the hide delay", 0.4)
+        hover(browser, bar)  # back before the delay is over
+        # ... and past the moment the bar would have closed (the delay and the 0.2 s transition).
+        stays(
+            browser,
+            f"{measure} === {natural[key]}",
+            "the bar closed although the pointer came back",
+            1.8,
+        )
+        browser.move_pointer(*OUTSIDE)
+        browser.wait(f"{measure} <= 8", 8, "the bar never closed after the pointer left for good")

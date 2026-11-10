@@ -287,6 +287,53 @@ def test_the_navigation_group_stays_open_for_a_popup_of_either_bar(browser, anch
         browser.js("CustomizableUI.setToolbarVisibility('PersonalToolbar', false);")
 
 
+# --- Firefox's own "open" markers keep the navigation group open too -----------------------------------
+
+OPEN_MARKERS = {
+    "the urlbar is open": "#urlbar",  # the CSS has `:has(#urlbar[open])` for it
+    "a button of the bar is open": "#back-button",  # and `:has(toolbarbutton[open])` for this
+}
+
+
+@pytest.mark.parametrize("marker", OPEN_MARKERS)
+def test_the_navigation_group_stays_open_while_firefox_marks_something_in_it_as_open(
+    browser, marker
+):
+    """Firefox puts ``open`` on the urlbar while its results are showing and on a button while its
+    panel is. Those popups are not always anchored where the script looks, so the CSS reads the
+    attribute itself. The attribute is set by hand here (the pointer is on the page, nothing is
+    focused), which is the one way to have it without the focus or the hover that would also do."""
+    browser.new_window()
+    browser.js("CustomizableUI.setToolbarVisibility('PersonalToolbar', true);")
+    browser.wait("document.getElementById('PersonalToolbar').getBoundingClientRect().height > 0", 5)
+    normal = browser.settled_heights()
+    both_open = (
+        f"Math.round(document.getElementById('nav-bar').getBoundingClientRect().height)"
+        f" === {normal['nav']}"
+        f" && Math.round(document.getElementById('PersonalToolbar').getBoundingClientRect().height)"
+        f" === {normal['bookmarks']}"
+    )
+    both_closed = (
+        "document.getElementById('nav-bar').getBoundingClientRect().height <= 8"
+        " && document.getElementById('PersonalToolbar').getBoundingClientRect().height === 0"
+    )
+    selector = OPEN_MARKERS[marker]
+    try:
+        browser.js("document.getElementById('urlbar-autohide-button').click();")
+        move_pointer(browser, 500, 400)
+        browser.wait(both_closed, 8, "the navigation group did not collapse")
+        browser.js("document.querySelector(arguments[0]).setAttribute('open', 'true');", selector)
+        browser.wait(both_open, 5, f"the group did not open while {marker}")
+        browser.js("document.querySelector(arguments[0]).removeAttribute('open');", selector)
+        browser.wait(both_closed, 8, f"the group stayed open after {marker} ended")
+    finally:
+        browser.js(
+            "document.querySelector(arguments[0]).removeAttribute('open');"
+            "CustomizableUI.setToolbarVisibility('PersonalToolbar', false);",
+            selector,
+        )
+
+
 # --- how the popups are counted (adversarial) -----------------------------------------------------
 
 
