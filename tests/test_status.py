@@ -38,6 +38,26 @@ def test_the_fixture_is_read_completely():
     assert result.errors[1].where == "autohide.uc.js:reveal"
 
 
+@pytest.mark.parametrize(
+    ("windows", "expected"),
+    [
+        (2, 2),
+        (0, 0),
+        (True, None),  # a boolean is an int to Python, but not a number of windows
+        (False, None),
+        (1.5, None),
+        (2.0, None),
+        ("3", None),
+        ([2], None),
+        (None, None),
+        (-1, -1),  # odd, but it is a number: showing it is the doctor's job, not the reader's
+    ],
+)
+def test_the_number_of_windows_is_an_integer_or_nothing(windows, expected):
+    text = json.dumps({"schema": 1, "updated": "2026-11-05T00:00:00Z", "windows": windows})
+    assert parse_status(text).windows == expected
+
+
 def test_unknown_keys_are_ignored_so_the_writer_can_add_some():
     data = json.loads(FIXTURE.read_text(encoding="utf-8")) | {"future": {"x": 1}}
     assert parse_status(json.dumps(data)).script_version == "0.2.0"
