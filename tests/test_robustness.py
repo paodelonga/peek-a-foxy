@@ -2,6 +2,7 @@
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from peek_a_foxy.cli import app
 from peek_a_foxy.installer import UserFileError, plan_install, plan_uninstall
 
 runner = CliRunner()
+SRC = str(Path(__file__).resolve().parents[1] / "src")
 
 
 def tree(*roots: Path) -> dict[Path, bytes]:
@@ -357,6 +359,72 @@ def test_without_a_terminal_and_without_yes_nothing_is_applied(
     assert result.exit_code == 1 and "--yes" in result.output
     assert "Traceback" not in result.output
     assert tree(profile) == before
+
+
+class Stream:
+    """A stand-in for a standard stream that only says whether it is a terminal."""
+
+    def __init__(self, terminal: bool) -> None:
+        self.terminal = terminal
+
+    def isatty(self) -> bool:
+        return self.terminal
+
+
+@pytest.mark.parametrize(
+    ("stdin", "stdout", "yes", "expected"),
+    [
+        (True, True, False, True),  # the only case in which anybody can answer
+        (True, False, False, False),  # `peek-a-foxy install | tee out.txt`: the question would go
+        (False, True, False, False),  # into the pipe, where nobody reads it
+        (False, False, False, False),
+        (True, True, True, False),  # --yes: nothing to ask
+    ],
+)
+def test_the_person_is_only_asked_when_both_ends_are_a_terminal(
+    monkeypatch, stdin: bool, stdout: bool, yes: bool, expected: bool
+):
+    monkeypatch.setattr(cli.sys, "stdin", Stream(stdin))
+    monkeypatch.setattr(cli.sys, "stdout", Stream(stdout))
+    assert cli._interactive(yes) is expected
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs a pseudo-terminal")
+def test_a_terminal_in_and_a_pipe_out_refuses_to_prompt_into_the_pipe(profile: Path):
+    """The real thing, ``peek-a-foxy install | tee``: stdin is a terminal, stdout is a pipe.
+
+    The terminal is kept open and holds an end-of-input (Ctrl-D), so a prompt that went ahead
+    would read it and abort ("Aborted!", no code); only the refusal ends in PAF-502.
+    """
+    import os
+    import pty
+
+    master, slave = pty.openpty()
+    try:
+        os.write(master, b"\x04")  # Ctrl-D, waiting in the terminal for whoever reads it first
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "peek_a_foxy",
+                "install",
+                "--profile",
+                str(profile),
+                "--skip-loader",
+            ],
+            stdin=slave,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env={**os.environ, "PYTHONPATH": SRC, "PEEK_A_FOXY_LOG": "off", "NO_COLOR": "1"},
+        )
+        stdout, stderr = process.communicate(timeout=120)
+    finally:
+        os.close(slave)
+        os.close(master)
+    assert process.returncode == errors.EXIT_FAILURE, (stdout, stderr)
+    assert errors.NO_TERMINAL.code in stderr, stderr
+    assert not (profile / "chrome" / "autohide.css").exists()
 
 
 def test_a_dry_run_needs_no_terminal_and_no_yes(profile: Path):

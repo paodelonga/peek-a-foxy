@@ -208,6 +208,43 @@ def test_save_without_a_path_goes_next_to_the_log(
     assert len(list((tmp_path / "logfolder").glob("*.md"))) == 2
 
 
+@pytest.mark.parametrize(
+    "option",
+    ["--log-file={log}", "--profile={profile}", "--firefox-dir={firefox}", "--json", "-v"],
+    ids=["log-file=", "profile=", "firefox-dir=", "json", "v"],
+)
+def test_save_followed_by_another_option_is_save_without_a_path(
+    healthy: Path,
+    home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    option: str,
+):
+    """``--save --log-file=x``: the option with its ``=`` ends ``--save``, it is not the path."""
+    monkeypatch.setattr(cli, "_default_save_folder", lambda: tmp_path / "logfolder")
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    log = tmp_path / "mine.log"
+    given = option.format(log=log, profile=healthy, firefox=home / "ff")
+    result = runner.invoke(app, ["doctor", "--save", given])
+    assert result.exit_code == 0, result.output
+    assert list(cwd.iterdir()) == []  # nothing was saved under the name of the option
+    assert len(list((tmp_path / "logfolder").glob("doctor-*"))) == 1
+    if option.startswith("--log-file"):
+        assert "run started" in log.read_text(encoding="utf-8")
+
+
+def test_a_path_that_looks_like_an_option_is_still_a_path(healthy: Path, tmp_path: Path):
+    """Only an option that the command has ends ``--save``; ``-report.md`` is a file name."""
+    target = tmp_path / "-report.md"
+    result = runner.invoke(app, ["doctor", "--save", str(target)])
+    assert result.exit_code == 0 and target.is_file()
+    unknown = tmp_path / "--no-such-option=1"
+    result = runner.invoke(app, ["doctor", "--save", str(unknown)])
+    assert result.exit_code == 0 and unknown.is_file()
+
+
 def test_the_default_place_is_the_log_folder(monkeypatch: pytest.MonkeyPatch):
     # A Linux machine on every system: XDG wants an absolute POSIX path, which a Windows
     # temporary folder (C:\\...) is not, so the folder is named and never touched.
