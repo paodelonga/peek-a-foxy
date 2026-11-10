@@ -38,6 +38,11 @@ def repo_url() -> str:
     return os.environ.get("FXAC_REPO", DEFAULT_REPO)
 
 
+def is_commit_hash(text: str) -> bool:
+    """Whether ``text`` is a full 40-digit commit hash (the only thing ``FXAC_COMMIT`` may be)."""
+    return re.fullmatch(r"[0-9a-fA-F]{40}", text) is not None
+
+
 def pinned_commit() -> str:
     """The commit to install, as a lowercase 40-digit hash; anything else is refused.
 
@@ -45,7 +50,7 @@ def pinned_commit() -> str:
     ``-`` must never reach git as an option.
     """
     commit = os.environ.get("FXAC_COMMIT", DEFAULT_COMMIT)
-    if not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+    if not is_commit_hash(commit):
         raise LoaderError(
             errors.BAD_PINNED_COMMIT,
             f"FXAC_COMMIT must be a full 40-digit commit hash, not {commit!r}",

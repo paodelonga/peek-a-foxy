@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from doctor_support import (
+    LOADER_TEXT,
     NOW,
     PROFILE_DIR,
     check_of,
@@ -19,8 +20,8 @@ from doctor_support import (
 )
 from support import needs_permissions
 
-from peek_a_foxy import assets, doctor, errors, userfiles
-from peek_a_foxy.errors import PlatformError
+from peek_a_foxy import assets, doctor, elevate, errors, loader, userfiles
+from peek_a_foxy.errors import PeekError, PlatformError
 from peek_a_foxy.report import FAIL, OK, WARN
 
 CRLF = b"\r\n"
@@ -126,13 +127,73 @@ def test_a_git_that_does_not_run_is_a_warning_too(home: Path):
     assert check.status == WARN and "could not be run" in check.message
 
 
-def test_the_loader_override_variables_are_flagged(home: Path):
-    check = check_of(run(home, environ={"FXAC_REPO": "/x"}), "program.loader_pin")
-    assert check.status == WARN and check.code == errors.UAC_ENV_OVERRIDE.code
-    assert (
-        check_of(run(home, environ={"FXAC_COMMIT": "a" * 40}), "program.loader_pin").value
-        == "a" * 40
-    )
+VALID = "a" * 40
+
+
+def what_install_does(kind: str, environ: dict[str, str], monkeypatch, tmp_path: Path):
+    """The code that ``install`` ends with for these variables, or ``None`` if it goes on.
+
+    The pin is read the way ``install`` reads it (``loader.pinned_commit``); an override is then
+    refused by the copy that needs rights: the administrator step on Windows, sudo elsewhere.
+    """
+    for name in ("FXAC_COMMIT", "FXAC_REPO"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+    try:
+        loader.pinned_commit()
+        for name, text in LOADER_TEXT.items():  # the files that the pinned hashes stand for
+            source = tmp_path / "program" / name
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text(text)
+        if kind == "windows":
+            elevate.copy_as_administrator(tmp_path, tmp_path, lambda command: 0)
+        else:
+            loader.verified_bytes(
+                tmp_path / "program" / "config.js", "config.js", allow_unverified=False
+            )
+    except PeekError as error:
+        return error.code
+    return None
+
+
+@pytest.mark.parametrize("kind", ["linux", "macos", "windows"])
+@pytest.mark.parametrize(
+    "environ",
+    [
+        {},
+        {"FXAC_COMMIT": ""},  # `export FXAC_COMMIT=` in a shell file
+        {"FXAC_REPO": ""},
+        {"FXAC_COMMIT": "main"},
+        {"FXAC_COMMIT": "a" * 39},
+        {"FXAC_COMMIT": "--upload-pack=x"},
+        {"FXAC_COMMIT": "a" * 40 + "\n"},
+        {"FXAC_COMMIT": VALID},
+        {"FXAC_COMMIT": VALID.upper()},
+        {"FXAC_REPO": "/some/repo"},
+        {"FXAC_REPO": "/some/repo", "FXAC_COMMIT": VALID},
+        {"FXAC_REPO": "/some/repo", "FXAC_COMMIT": "main"},
+        {"FXAC_REPO": "", "FXAC_COMMIT": ""},
+    ],
+    ids=lambda environ: ",".join(f"{k}={v[:12]!r}" for k, v in environ.items()) or "unset",
+)
+def test_the_doctor_names_the_loader_pin_the_way_install_would_refuse_it(
+    home: Path, monkeypatch, tmp_path: Path, kind: str, environ: dict[str, str]
+):
+    """Three modules once read 'is it set' three ways; the doctor must agree with ``install``."""
+    wanted = what_install_does(kind, environ, monkeypatch, tmp_path)
+    check = check_of(run(home, kind=kind, environ=environ), "program.loader_pin")
+    if wanted is None:  # install goes on with the pinned loader (the empty values mean "not set")
+        assert check.status == OK and check.code == "", check
+        assert check.value == f"commit {doctor.loader.DEFAULT_COMMIT}"
+    else:
+        assert check.status == WARN and check.code == wanted.code, (check, wanted.code)
+        assert check.hint == wanted.hint  # the same way forward that the error would give
+
+
+def test_a_pin_of_a_hostile_length_is_shortened_in_the_report(home: Path):
+    check = check_of(run(home, environ={"FXAC_COMMIT": "x" * 100_000}), "program.loader_pin")
+    assert check.code == errors.BAD_PINNED_COMMIT.code and len(check.value) < 500
 
 
 def test_missing_bundled_files_fail(home: Path, tmp_path: Path):

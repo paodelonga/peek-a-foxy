@@ -383,19 +383,33 @@ def _git_check(ctx: Context) -> Check:
 
 
 def _pin(ctx: Context) -> Check:
-    commit = ctx.environ.get("FXAC_COMMIT", loader.DEFAULT_COMMIT)
+    commit = ctx.environ.get("FXAC_COMMIT")
     repo = ctx.environ.get("FXAC_REPO")
-    if "FXAC_COMMIT" in ctx.environ or repo:
+    title = "Pinned loader (fx-autoconfig)"
+    if commit is not None and not loader.is_commit_hash(commit):
+        # What `install` does with it, an empty value included: it refuses before any download.
         return _bad(
             "program.loader_pin",
-            "Pinned loader (fx-autoconfig)",
+            title,
             WARN,
-            errors.UAC_ENV_OVERRIDE,
+            errors.BAD_PINNED_COMMIT,
+            errors.BAD_PINNED_COMMIT.meaning,
+            value=_short(commit),
+        )
+    if commit or repo:
+        # Only Windows copies the loader through the administrator step (305); elsewhere the
+        # same refusal belongs to the copy with sudo (207).
+        code = errors.UAC_ENV_OVERRIDE if ctx.kind == "windows" else errors.LOADER_UNVERIFIED
+        return _bad(
+            "program.loader_pin",
+            title,
+            WARN,
+            code,
             "The FXAC_REPO or FXAC_COMMIT environment variable is set, so the loader would not be "
             "downloaded from the usual place.",
-            value=commit,
+            value=commit or loader.DEFAULT_COMMIT,
         )
-    return _ok("program.loader_pin", "Pinned loader (fx-autoconfig)", f"commit {commit}")
+    return _ok("program.loader_pin", title, f"commit {loader.DEFAULT_COMMIT}")
 
 
 def _assets_check(ctx: Context) -> Check:
