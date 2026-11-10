@@ -401,14 +401,14 @@ def test_clearing_removes_only_the_log_and_its_rotated_copies(tmp_path: Path):
     assert logs.clear(path) == 0
 
 
-@pytest.mark.parametrize(
-    ("kind", "command"),
-    [("linux", ["xdg-open", "/some/dir"]), ("macos", ["open", "/some/dir"])],
-)
-def test_opening_the_folder_uses_the_systems_opener(kind, command):
+@pytest.mark.parametrize(("kind", "opener"), [("linux", "xdg-open"), ("macos", "open")])
+def test_opening_the_folder_uses_the_systems_opener(kind, opener):
+    folder = Path("/some/dir")
     calls: list[list[str]] = []
-    assert logs.open_folder(Path("/some/dir"), kind=kind, run=lambda c, **kw: calls.append(c))
-    assert calls == [command]
+    assert logs.open_folder(folder, kind=kind, run=lambda c, **kw: calls.append(c))
+    # str(folder) is how the program spells it on the machine running the test: on Windows a
+    # Path turns "/some/dir" into "\some\dir", whatever the opener being tested.
+    assert calls == [[opener, str(folder)]]
 
 
 def test_opening_the_folder_on_windows_uses_startfile():
