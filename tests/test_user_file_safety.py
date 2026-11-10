@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from support import flat, needs_permissions, needs_symlinks
+from support import WINDOWS, flat, needs_permissions, needs_symlinks
 
 from peek_a_foxy import errors, installer, platform
 from peek_a_foxy import userfiles as uf
@@ -57,6 +57,9 @@ def test_an_edit_replaces_the_file_in_one_step_and_leaves_no_temporary_file(tmp_
     assert leftovers(tmp_path) == []
 
 
+@pytest.mark.skipif(
+    WINDOWS, reason="Windows has no permission bits: chmod only sets or clears the read-only flag"
+)
 def test_the_edit_keeps_the_permissions_of_the_file(tmp_path: Path):
     user_js = tmp_path / "user.js"
     user_js.write_text("")
@@ -174,7 +177,7 @@ def test_a_crash_between_the_temporary_file_and_the_rename_is_cleaned_up(
     tmp_path: Path, monkeypatch, crash
 ):
     css = tmp_path / "userChrome.css"
-    css.write_text("body{}\n")
+    css.write_bytes(b"body{}\n")  # LF on every system: the copy is compared byte for byte
 
     def dies(*args: object) -> None:
         raise crash()
@@ -335,12 +338,12 @@ def test_a_dangling_link_at_the_backup_name_is_left_alone(tmp_path: Path):
 
 def test_a_change_made_while_the_edit_is_prepared_is_not_overwritten(tmp_path: Path):
     css = tmp_path / "userChrome.css"
-    css.write_text("body{}\n")
+    css.write_bytes(b"body{}\n")  # LF on every system, as the editor below writes it
     calls: list[int] = []
 
     def transform(text: str) -> str:
         if not calls:  # the first time, another program saves the file meanwhile
-            css.write_text(text + "/* added by an editor */\n")
+            css.write_bytes((text + "/* added by an editor */\n").encode())
         calls.append(1)
         return uf.with_css_import(text)
 
@@ -497,7 +500,7 @@ def test_a_file_that_is_not_utf8_is_refused_while_planning_and_keeps_no_copy(pro
 def test_a_large_file_is_edited(tmp_path: Path):
     body = ("a { color: red; }\n" * 1000 + "\n") * 1100  # about 20 MB
     css = tmp_path / "userChrome.css"
-    css.write_text(body)
+    css.write_bytes(body.encode())  # LF on every system: the copy's size is compared
     add_import(css)
     assert css.read_text() == f"{uf.CSS_IMPORT}\n{body}"
     assert backup_path(css).stat().st_size == len(body.encode())
