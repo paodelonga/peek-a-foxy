@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-import traceback
+from collections.abc import Callable
 from pathlib import Path
 from typing import IO, Any
 
@@ -150,8 +150,18 @@ def _error_line(text: Text | str) -> None:
     _print(errors, text if isinstance(text, Text) else Text(text), soft_wrap=True)
 
 
-def report(error: PeekError, *, verbose: bool, log_path: Path | None) -> None:
-    """Print an expected failure: the code and message, what to do, then the extras."""
+def report(
+    error: PeekError,
+    *,
+    verbose: bool,
+    log_path: Path | None,
+    redact: Callable[[str], str],
+) -> None:
+    """Print an expected failure: the code and message, what to do, then the extras.
+
+    ``redact`` hides the user name and home folder in the technical extras (``--verbose``), which
+    people paste into public places.
+    """
     _error_line(Text.assemble((f"error [{error.code.code}]: ", "bold red"), error.message))
     if error.hint:
         _error_line(Text.assemble(("What to do: ", "bold"), error.hint))
@@ -159,29 +169,33 @@ def report(error: PeekError, *, verbose: bool, log_path: Path | None) -> None:
     if context:
         _error_line(context)
     if verbose:
-        _verbose_details(error, error.detail)
+        _verbose_details(error, error.detail, redact)
     _log_line(log_path)
 
 
-def report_unexpected(error: BaseException, *, verbose: bool, log_path: Path | None) -> None:
-    """Print a bug: the unexpected-error code and hint, and (verbose) the traceback."""
+def report_unexpected(error: BaseException, *, log_path: Path | None) -> None:
+    """Print a bug: the unexpected-error code and hint.
+
+    The traceback is not printed here: with ``--verbose`` the log's console handler has already
+    shown it, redacted, and without it the log file keeps it.
+    """
     code = paf.UNEXPECTED
     _error_line(Text.assemble((f"error [{code.code}]: ", "bold red"), code.meaning))
     _error_line(Text.assemble(("What to do: ", "bold"), code.hint))
     context = paf.get_context(error)
     if context:
         _error_line(context)
-    if verbose:
-        _error_line("".join(traceback.format_exception(error)).rstrip())
     _log_line(log_path)
 
 
-def _verbose_details(error: BaseException, detail: str) -> None:
+def _verbose_details(error: BaseException, detail: str, redact: Callable[[str], str]) -> None:
     if detail:
-        _error_line(Text.assemble(("Details: ", "bold"), detail))
+        _error_line(Text.assemble(("Details: ", "bold"), redact(detail)))
     cause = error.__cause__
     if cause is not None:
-        _error_line(Text.assemble(("Caused by: ", "bold"), f"{type(cause).__name__}: {cause}"))
+        _error_line(
+            Text.assemble(("Caused by: ", "bold"), redact(f"{type(cause).__name__}: {cause}"))
+        )
 
 
 def _log_line(log_path: Path | None) -> None:

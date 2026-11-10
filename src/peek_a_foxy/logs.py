@@ -430,9 +430,20 @@ class Session:
     path: Path | None  # the file being written, or None
     started: float
     verbose: bool = False
+    redact: Callable[[str], str] | None = None  # the redaction that the records go through
 
 
 _session: Session | None = None
+
+
+def redact_text(text: str) -> str:
+    """``text`` as the log would write it: the same redaction, for what is printed to the terminal.
+
+    A person who is asked to re-run a command with ``--verbose`` pastes what the terminal shows, so
+    that must hide the user name and the home folder just as the log does.
+    """
+    redactor = _session.redact if _session and _session.redact else Redactor.for_this_machine()
+    return _CONTROL.sub("\ufffd", redactor(text))
 
 
 def active_path() -> Path | None:
@@ -488,7 +499,7 @@ def start(
         logger.addHandler(console)
 
     global _session
-    _session = Session(run, path, time.monotonic(), verbose)
+    _session = Session(run, path, time.monotonic(), verbose, redact)
     how = doctor.how_it_runs(bool(getattr(sys, "frozen", False)), peek_a_foxy.__file__)
     logger.info(
         "%s peek-a-foxy %s, %s, Python %s, %s %s, args: %s",

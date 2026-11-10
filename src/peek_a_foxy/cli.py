@@ -122,10 +122,10 @@ def _handle_failure(error: Exception) -> int:
         log.error("failed [%s] %s", error.code.code, error.message, exc_info=error)
         if error.detail:
             log.error("detail: %s", error.detail)
-        ui.report(error, verbose=verbose, log_path=path)
+        ui.report(error, verbose=verbose, log_path=path, redact=logs.redact_text)
         return errors.EXIT_FAILURE
     log.error("unexpected error [%s]", errors.UNEXPECTED.code, exc_info=error)
-    ui.report_unexpected(error, verbose=verbose, log_path=path)
+    ui.report_unexpected(error, log_path=path)
     return errors.EXIT_UNEXPECTED
 
 

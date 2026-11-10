@@ -134,6 +134,65 @@ def test_verbose_prints_the_traceback_of_a_bug_but_never_local_variables(
     assert "a-value-held-in-a-local-variable" not in result.output
 
 
+# --- --verbose is pasted into public places: it must hide who the person is, and say it once ---
+
+ME = "zoltanquux"  # nothing like the name of whoever runs the suite
+
+
+@pytest.fixture
+def someone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The machine of a person called ``ME``; the home folder is what the redaction must hide."""
+    home = tmp_path / "people" / ME
+    home.mkdir(parents=True)
+    for name in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(name, str(home))
+    for name in ("USER", "LOGNAME", "USERNAME"):
+        monkeypatch.setenv(name, ME)
+    return home
+
+
+def test_the_traceback_of_a_bug_is_shown_once_and_without_the_name_of_the_person(
+    profile: Path, someone: Path, monkeypatch
+):
+    def explode(*args, **kwargs):
+        raise ValueError(f"cannot read {someone}/secret.txt for {ME}")
+
+    monkeypatch.setattr(cli, "plan_install", explode)
+    result = install(profile, "-v", "--no-log")
+    assert result.exit_code == 70
+    assert "ValueError: cannot read" in result.output
+    assert result.output.count("Traceback") == 1  # the log's console shows it; ui adds nothing
+    assert str(someone) not in result.output and ME not in result.output
+    assert "~/secret.txt" in result.output  # redacted, not dropped
+
+
+def test_the_details_and_the_cause_of_an_expected_failure_hide_the_person_too(
+    profile: Path, someone: Path, monkeypatch
+):
+    def refuse(*args, **kwargs):
+        try:
+            raise OSError(f"no access to {someone}/chrome for {ME}")
+        except OSError as cause:
+            raise errors.UserFileError(
+                errors.FILE_IO, "could not edit the file", detail=f"{someone}/user.js of {ME}"
+            ) from cause
+
+    monkeypatch.setattr(cli, "plan_install", refuse)
+    result = install(profile, "--verbose", "--no-log")
+    assert result.exit_code == 1 and "error [PAF-402]" in result.output
+    assert "Details: ~/user.js of <user>" in result.output
+    assert "Caused by: OSError: no access to ~/chrome for <user>" in result.output
+    assert str(someone) not in result.output and ME not in result.output
+    assert result.output.count("Traceback") == 2  # once per exception of the chain, not per copy
+
+
+def test_a_run_without_a_started_log_still_redacts_what_it_prints(someone: Path):
+    """``redact_text`` must not depend on a session: the first failure may come before the log."""
+    logs.stop()
+    assert logs.redact_text(f"{someone}/x and {ME}") == "~/x and <user>"
+    assert logs.redact_text("a\x9b[31mred") == "a\ufffd[31mred"  # no escape sequence either
+
+
 def test_typer_is_told_never_to_show_locals():
     assert cli.app.pretty_exceptions_show_locals is False
 
