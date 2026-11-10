@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 pytestmark = pytest.mark.browser
@@ -431,6 +433,32 @@ def test_when_firefox_changes_the_page_nothing_breaks_and_the_console_says_why(
     assert any("#mainPrefPane-renamed" not in m and "#mainPrefPane" in m for m in messages), (
         messages
     )
+    assert browser.js("return !!document.getElementById('tabs-autohide-button');") is True
+    browser.close_settings_tabs()
+
+
+def test_when_firefox_renames_the_last_category_the_page_is_not_left_half_installed(
+    browser_with_a_renamed_last_category,
+):
+    """Adversarial: opened straight at #peekafoxy, the page used to attach itself and then fail."""
+    browser = browser_with_a_renamed_last_category
+    browser.open_settings("#peekafoxy")
+    browser.wait(
+        "gBrowser.selectedBrowser.contentDocument.getElementById('category-downloads')", 10
+    )
+    time.sleep(1)  # the script has run by now, whichever way it went
+    assert browser.settings("return doc.getElementById('category-peekafoxy');") is None
+    assert browser.settings("return doc.getElementById('peekafoxy-pane');") is None
+    messages = browser.js(
+        """const storage = Cc["@mozilla.org/consoleAPI-storage;1"]
+             .getService(Ci.nsIConsoleAPIStorage);
+           return storage.getEvents().filter(e => e.level === "warn")
+             .map(e => e.arguments.map(String).join(" "))
+             .filter(m => m.includes("peekafoxy settings"));"""
+    )
+    assert any("gLastCategoryRenamedByFirefox" in m for m in messages), (
+        messages
+    )  # it names the cause
     assert browser.js("return !!document.getElementById('tabs-autohide-button');") is True
     browser.close_settings_tabs()
 

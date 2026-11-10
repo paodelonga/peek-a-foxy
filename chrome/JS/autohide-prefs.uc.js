@@ -27,6 +27,7 @@
     if (typeof gCategoryInits === "undefined" || typeof gCategoryInits?.set !== "function") missing.push("gCategoryInits");
     if (typeof gCategoryModules === "undefined" || typeof gCategoryModules?.set !== "function") missing.push("gCategoryModules");
     if (typeof gotoPref !== "function") missing.push("gotoPref");
+    if (typeof gLastCategory === "undefined") missing.push("gLastCategory");
     return missing;
   };
 

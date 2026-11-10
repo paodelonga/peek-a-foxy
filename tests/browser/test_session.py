@@ -63,7 +63,7 @@ def tracking_noise(found: list[dict]) -> list[dict]:
 
 
 def quit_with_saved_session(browser) -> Path:
-    """Wait until both values are saved with the window, then quit the way a person does."""
+    """Quit the way a person does: Firefox saves the session on the way out (the caller waits)."""
     profile = browser.profile
     browser.quit_gracefully()
     return profile
@@ -258,14 +258,62 @@ def test_every_restored_window_state_is_applied_again(browser):
     assert browser.js(SAVED, "autohideTabs") == "0"
 
 
-def test_a_window_closed_while_it_is_starting_leaves_no_error_behind(browser):
-    before = len(browser.client.chrome_window_handles)
-    handle = browser.new_window()
-    browser.js("window.close();")
-    time.sleep(1.5)  # long enough for every retry of the closed window to have come and gone
-    browser.switch_to(browser.first_window)
-    assert len(browser.client.chrome_window_handles) == before
-    assert handle not in browser.client.chrome_window_handles
-    assert [
-        e for e in events(browser) if e["level"] == "error" and e["where"].startswith("autohide")
-    ] == []
+# Like FAKE, but every call is also counted where the window's own death cannot hide it: in a pref.
+COUNT_IN_A_PREF = (
+    "window.__calls.get++;"
+    ' const n = Services.prefs.getIntPref("peekafoxytest", 0);'
+    ' Services.prefs.setIntPref("peekafoxytest", n + 1);'
+)
+COUNTING_FAKE = FAKE.replace("window.__calls.get++;", COUNT_IN_A_PREF)
+# What a test that closes a window the moment it has loaded sets up: a listener on every new window,
+# added before the script's own, so that it runs first and the script's load handler meets a window
+# that is already closing (``window.closed`` is true, the window is still there to run it).
+CLOSE_AT_LOAD = """
+  const done = arguments[arguments.length - 1];
+  const seen = {closedAtLoad: false};
+  const observer = {observe(win, topic) {
+    if (topic !== "domwindowopened") return;
+    Services.ww.unregisterNotification(observer);
+    win.addEventListener("load", () => {
+      win.close();
+      seen.closedAtLoad = win.closed;
+    }, {once: true});
+  }};
+  Services.ww.registerNotification(observer);
+  OpenBrowserWindow();
+  setTimeout(() => done(seen), 4000);
+"""
+
+
+def test_a_window_closed_while_it_is_starting_leaves_no_error_behind_and_asks_nothing_more(
+    firefox_install, tmp_path
+):
+    """Adversarial: the window is closed in its own load event, while the script is still starting.
+
+    The script's load handler then runs in a window that is closing; without the ``window.closed``
+    guard it would still ask SessionStore about it (and keep retrying until the window is gone).
+    """
+
+    def edit(source: str) -> str:
+        if "@include        main" not in source:
+            return source
+        assert source.count("Peek.registerDefaults();") == 1
+        return source.replace(
+            "Peek.registerDefaults();",
+            COUNTING_FAKE % {"error": json.dumps("Window is not tracked")},
+        )
+
+    with launched(firefox_install, tmp_path, edit_script=edit) as browser:
+        time.sleep(3.5)  # the first window has asked, and given up
+        before = len(browser.client.chrome_window_handles)
+        browser.js("Services.prefs.setIntPref('peekafoxytest', 0);")
+        browser.client.set_context(browser.client.CONTEXT_CHROME)
+        seen = browser.client.execute_async_script(CLOSE_AT_LOAD)
+        assert seen == {"closedAtLoad": True}  # the window really closed while it was loading
+        assert len(browser.client.chrome_window_handles) == before
+        assert browser.js("return Services.prefs.getIntPref('peekafoxytest', 0);") == 0
+        assert [
+            e
+            for e in events(browser)
+            if e["level"] == "error" and e["where"].startswith("autohide")
+        ] == []

@@ -498,6 +498,7 @@ const events = []; // {time, level, where, message, base, count}
 let spentMs = 0; // time the synchronous parts of Diag took (see Diag.stats)
 let writes = 0;
 let writesFailed = 0;
+let skippedClosed = 0; // window checks that were not run because the window had closed (see Diag.check)
 let writeTimer = null;
 let writeChain = Promise.resolve();
 let notifyTimer = null;
@@ -731,15 +732,17 @@ const healthBySource = new Map(); // a window, or a string for something that is
 let checkTimer = null;
 let checkWindow = null;
 
+const isClosed = (win) => {
+  try {
+    return win.closed;
+  } catch (e) {
+    return true; // a dead window reference counts as closed
+  }
+};
+
 const liveWindows = () => {
   for (const win of [...started]) {
-    let closed = true;
-    try {
-      closed = win.closed;
-    } catch (e) {
-      // A dead window reference counts as closed.
-    }
-    if (closed) forget(win);
+    if (isClosed(win)) forget(win);
   }
   return [...started];
 };
@@ -871,7 +874,10 @@ export const Diag = {
 
   // A copy of the events, oldest first.
   events: () => events.map(publicEvent),
-  stats: () => ({ events: events.length, writes, writesFailed, syncMs: spentMs }),
+  stats: () => ({
+    events: events.length, writes, writesFailed, syncMs: spentMs, skippedClosed,
+    checkedWindows: [...healthBySource.keys()].filter((source) => typeof source !== "string").length,
+  }),
   redact: (text, max = MAX_MESSAGE) => sanitize(text, max, machineRedactor()),
 
   // Records the errors that come from the Peek-a-Foxy files: Firefox's own are not ours to report.
@@ -912,7 +918,10 @@ export const Diag = {
   check(win) {
     try {
       const began = now();
-      if (win && isNormalWindow(win)) healthBySource.set(win, browserChecks(win));
+      // A window that has closed since the check was asked for must not get an entry again: nothing
+      // would ever remove it (forget() already ran when the window unloaded).
+      if (win && isClosed(win)) skippedClosed += 1;
+      else if (win && isNormalWindow(win)) healthBySource.set(win, browserChecks(win));
       healthBySource.set("global", globalChecks());
       spentMs += now() - began;
       scheduleWrite();
@@ -963,5 +972,6 @@ export const Diag = {
     spentMs = 0;
     writes = 0;
     writesFailed = 0;
+    skippedClosed = 0;
   },
 };

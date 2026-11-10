@@ -25,7 +25,7 @@ are ignored, so the writer can add keys without breaking the reader::
       },
       "errors": [                           the most recent errors, newest last
         {"time": "2026-11-04T12:00:01.000Z", "level": "error",
-         "where": "autohide.uc.js:init", "message": "text"}
+         "where": "autohide:init", "message": "text"}
       ]
     }
 

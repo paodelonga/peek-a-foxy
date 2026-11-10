@@ -12,6 +12,17 @@
 (() => {
   const Peek = ChromeUtils.importESModule("chrome://userchrome/content/peekafoxy.sys.mjs");
   const { PREFS, Diag } = Peek;
+
+  // A window that a page opens (window.open with features) runs this script twice: first while it has
+  // no browser UI yet (no gBrowser, no toolbox), then again once it has. The early run does nothing
+  // and says so only as information; the mark keeps any later run from registering everything twice.
+  if (typeof gBrowser === "undefined" || !document.getElementById("navigator-toolbox")) {
+    Diag.info("autohide:init", "the window has no browser UI yet; the script waits for its next run");
+    return;
+  }
+  if (window.__peekAFoxyStarted) return;
+  window.__peekAFoxyStarted = true;
+
   Diag.watch(window, "autohide");
 
   // Whatever goes wrong in the script is recorded (and shown in the Browser Console) instead of
@@ -61,11 +72,22 @@
     // The state of a bar is an attribute on the window root. Changing it with setEnabled() also saves
     // it with the window (SessionStore), so that a session restore brings it back; applyState() only
     // changes the attribute (used at startup, before the window is known to SessionStore).
-    const applyState = (target, on) => root.toggleAttribute(target.attr, on);
+    //
+    // A window that a page opened with features (a popup: window.toolbar.visible is false) always shows
+    // its address, so that the person can tell which site it is; its navigation bar is never hidden.
+    const isPopup = () => {
+      try {
+        return window.toolbar.visible === false;
+      } catch (e) {
+        return false;
+      }
+    };
+    const mayHide = (target) => target.name !== "urlbar" || !isPopup();
+    const applyState = (target, on) => root.toggleAttribute(target.attr, on && mayHide(target));
     const setEnabled = (target, on) => {
       applyState(target, on);
       try {
-        SessionStore.setCustomWindowValue(window, target.session, on ? "1" : "0");
+        SessionStore.setCustomWindowValue(window, target.session, root.hasAttribute(target.attr) ? "1" : "0");
       } catch (e) {
         // Not fatal: the state just won't survive a session restore.
         Diag.warn("autohide:session", e);
@@ -232,7 +254,8 @@
     // The drag is over on dragend/drop, or, if the source node was rebuilt and those never arrive, on
     // the first mouse movement once no drag session is running (mouse events pause during a drag).
 
-    const DRAG_SOURCES = { TabsToolbar: "tabs", "nav-bar": "navbar", PersonalToolbar: "bookmarks" };
+    const BAR_NAMES = { TabsToolbar: "tabs", "nav-bar": "navbar", PersonalToolbar: "bookmarks" };
+    const barOf = (node) => (node?.closest ? node : node?.parentElement)?.closest("#TabsToolbar, #nav-bar, #PersonalToolbar");
     const endDrag = () => root.removeAttribute("peekafoxy-dragging");
     const dragInProgress = () => {
       try {
@@ -243,13 +266,50 @@
       }
     };
     window.addEventListener("dragstart", (event) => {
-      const node = event.composedTarget ?? event.target;
-      const bar = (node?.closest ? node : node?.parentElement)?.closest("#TabsToolbar, #nav-bar, #PersonalToolbar");
-      if (bar) root.setAttribute("peekafoxy-dragging", DRAG_SOURCES[bar.id]);
+      const bar = barOf(event.composedTarget ?? event.target);
+      if (bar) root.setAttribute("peekafoxy-dragging", BAR_NAMES[bar.id]);
     }, true);
     for (const type of ["dragend", "drop"]) window.addEventListener(type, endDrag, true);
     window.addEventListener("mousemove", () => {
       if (root.hasAttribute("peekafoxy-dragging") && !dragInProgress()) endDrag();
+    }, true);
+
+    // --- keep a bar open while a popup that belongs to it is open ---
+    //
+    // A popup (the list of all tabs, a button's menu, a bookmarks folder) is a window of its own: while
+    // the pointer is in it, hover has left the bar, which would collapse under its popup. The bars that
+    // have an open popup are recorded on the window root as peekafoxy-popup-open="tabs navbar bookmarks"
+    // (the ones that apply); the CSS treats that as one more way to reveal them. The popups are kept in
+    // a set, so that nested ones count correctly, and a popup that is gone without a popuphidden (it was
+    // removed, or its popupshowing was cancelled) is dropped the next time anything is looked at.
+
+    const openPopups = new Map(); // popup element -> name of the bar it belongs to
+    const showPopupBars = () => {
+      for (const popup of [...openPopups.keys()]) {
+        if (popup.state === "closed") openPopups.delete(popup); // also what a removed popup reports
+      }
+      const bars = [...new Set(openPopups.values())].join(" ");
+      if (bars) root.setAttribute("peekafoxy-popup-open", bars);
+      else root.removeAttribute("peekafoxy-popup-open");
+    };
+    window.addEventListener("popupshowing", (event) => {
+      const popup = event.target;
+      if (popup.localName === "tooltip") return; // a tooltip is not something to keep a bar open for
+      try {
+        const bar = barOf(popup.anchorNode ?? popup.triggerNode ?? popup.parentNode);
+        if (bar) openPopups.set(popup, BAR_NAMES[bar.id]);
+      } catch (e) {
+        Diag.warn("autohide:popup", e);
+      }
+      showPopupBars();
+      setTimeout(showPopupBars, 0); // a popupshowing that was cancelled never gets a popuphidden
+    }, true);
+    window.addEventListener("popuphidden", (event) => {
+      openPopups.delete(event.target);
+      showPopupBars();
+    }, true);
+    window.addEventListener("mousemove", () => {
+      if (openPopups.size) showPopupBars();
     }, true);
 
     // --- the shortcuts (Ctrl+Alt+T and Ctrl+Alt+U by default) toggle the current window only ---

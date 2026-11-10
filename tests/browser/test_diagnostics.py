@@ -914,6 +914,61 @@ WINDOWS_OPEN = (
     "ChromeUtils.importESModule('chrome://userchrome/content/peekafoxy.sys.mjs')"
     ".Diag.status().windows"
 )
+CHECK_SKIPPED = (
+    "ChromeUtils.importESModule('chrome://userchrome/content/peekafoxy.sys.mjs')"
+    ".Diag.stats().skippedClosed === 1"
+)
+
+
+def _close_the_new_window_keeping_a_handle_on_it(browser, stash: str) -> None:
+    """Close the current (new) window; the first window keeps ``window.<stash>`` = its root element."""
+    browser.js(
+        """const first = [...Services.wm.getEnumerator('navigator:browser')].find(w => w !== window);
+           first[arguments[0]] = document.documentElement;""",
+        stash,
+    )
+    browser.js("window.close();")
+    browser.switch_to(browser.first_window)
+    browser.wait(f"{WINDOWS_OPEN} === 1", 10, "the closed window was still counted")
+
+
+def test_a_closed_window_no_longer_hears_about_changed_settings(browser):
+    """Adversarial: the closed window's root is still reachable, so a leftover observer shows."""
+    browser.new_window()
+    _close_the_new_window_keeping_a_handle_on_it(browser, "__closedRoot")
+    browser.diag("Diag.reset();")
+    browser.js("Services.prefs.setIntPref('peekafoxy.strip.px', 12);")
+    browser.wait(
+        "document.documentElement.style.getPropertyValue('--autohide-strip') === '12px'",
+        5,
+        "a live window did not apply the setting",  # the control: the observer machinery works
+    )
+    time.sleep(0.5)  # a leftover observer would have run by now, and so would the check it asks for
+    assert (
+        browser.js("return window.__closedRoot.style.getPropertyValue('--autohide-strip');") == ""
+    )
+    assert not [
+        e for e in browser.diag("return Diag.events();") if e["where"] == "autohide:tooltip"
+    ]
+    assert status_of(browser).windows == 1
+    browser.js("delete window.__closedRoot;")
+
+
+def test_a_check_asked_for_as_a_window_closes_does_not_bring_it_back(browser):
+    """Adversarial: ``checkSoon`` runs 300 ms later, when the window is gone and already forgotten."""
+    before = browser.diag("return Diag.stats().checkedWindows;")
+    browser.new_window()
+    # Asked for in the window's own unload, after Diag has forgotten the window.
+    browser.diag(
+        "Diag.check(window);"
+        "window.addEventListener('unload', () => Diag.checkSoon(window), {once: true});"
+    )
+    assert browser.diag("return Diag.stats().checkedWindows;") == before + 1
+    browser.js("window.close();")
+    browser.switch_to(browser.first_window)
+    browser.wait(f"{WINDOWS_OPEN} === 1", 10, "the closed window was still counted")
+    browser.wait(CHECK_SKIPPED, 5, "the late check never ran")  # it saw a closed window
+    assert browser.diag("return Diag.stats().checkedWindows;") == before
 
 
 def test_windows_writing_at_once_never_leave_a_torn_file(browser):
