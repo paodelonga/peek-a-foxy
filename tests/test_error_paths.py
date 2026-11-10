@@ -176,6 +176,13 @@ def answer_of_the_prompt(monkeypatch: pytest.MonkeyPatch, outcome: object) -> li
         return outcome
 
     monkeypatch.setattr(_winapi, "run_elevated", run_elevated)
+    # The prompt is replaced, not the check that its program exists, so say that it does.
+    real_isfile = elevate.os.path.isfile
+    monkeypatch.setattr(
+        elevate.os.path,
+        "isfile",
+        lambda path: True if str(path).lower().endswith("powershell.exe") else real_isfile(path),
+    )
     return seen
 
 

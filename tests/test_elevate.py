@@ -532,10 +532,18 @@ def test_the_exit_code_of_the_elevated_process_passes_through_and_the_call_is_ex
     ],
 )
 def test_the_mapping_is_what_copy_as_administrator_hands_on(
-    winapi, pinned, checkout, tmp_path, number, code
+    winapi, pinned, checkout, tmp_path, monkeypatch, number, code
 ):
     """End to end through the default elevator, not a fake that raises the coded error itself."""
     module, _, outcome = winapi
+    real_isfile = (
+        elevate.os.path.isfile
+    )  # the prompt is replaced, not the check that PowerShell exists
+    monkeypatch.setattr(
+        elevate.os.path,
+        "isfile",
+        lambda path: True if str(path).lower().endswith("powershell.exe") else real_isfile(path),
+    )
     outcome[0] = module.ElevationFailed(number, "no")
     with pytest.raises(ElevationError) as caught:
         elevate.copy_as_administrator(checkout, firefox(tmp_path))
