@@ -45,6 +45,20 @@ if ($Version -eq "latest") {
     throw "Version must look like 1.2.3 (or be 'latest'), not '$Version'."
 }
 
+# The hash file is saved and then read as text. Invoke-WebRequest's own .Content is a byte array,
+# not a string, whenever the server does not say the file is text (GitHub serves release assets as
+# application/octet-stream), and a byte array turns into numbers instead of the hash.
+function Read-PublishedHash([string]$Path) {
+    if ([IO.FileInfo]::new($Path).Length -gt 1024) {
+        throw "The published hash file is too large to be a SHA-256 value."
+    }
+    $text = Get-Content -Raw -LiteralPath $Path -Encoding UTF8  # nothing at all for an empty file
+    $word = ""
+    if ($text) { $word = @($text.Trim() -split '\s+')[0] }
+    if ($word -notmatch '^[0-9a-fA-F]{64}$') { throw "The published hash file is not a SHA-256 value." }
+    return $word
+}
+
 Write-Host "This will:"
 Write-Host "  1. download peek-a-foxy.exe and peek-a-foxy.exe.sha256 from $base"
 Write-Host "  2. check the file against the hash"
@@ -58,9 +72,9 @@ New-Item -ItemType Directory -Path $temporary | Out-Null
 try {
     $exe = Join-Path $temporary "peek-a-foxy.exe"
     Invoke-WebRequest -UseBasicParsing -Uri "$base/peek-a-foxy.exe" -OutFile $exe
-    $line = (Invoke-WebRequest -UseBasicParsing -Uri "$base/peek-a-foxy.exe.sha256").Content
-    $expected = ([Text.Encoding]::UTF8.GetString([Text.Encoding]::UTF8.GetBytes([string]$line))).Trim().Split()[0]
-    if ($expected -notmatch '^[0-9a-fA-F]{64}$') { throw "The published hash file is not a SHA-256 value." }
+    $hashFile = Join-Path $temporary "peek-a-foxy.exe.sha256"
+    Invoke-WebRequest -UseBasicParsing -Uri "$base/peek-a-foxy.exe.sha256" -OutFile $hashFile
+    $expected = Read-PublishedHash $hashFile
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash
     if ($actual -ne $expected.ToUpperInvariant()) {
         throw "The download does not match its published SHA-256 (got $actual, expected $expected). Nothing was installed."
