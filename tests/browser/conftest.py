@@ -93,6 +93,9 @@ class Browser:
     TABS_HOLDER = TABS_HOLDER
     TABS_HEIGHT = TABS_HEIGHT
 
+    profile: Path
+    install_dir: Path
+
     def __init__(self, client) -> None:
         self.client = client
         self.first_window = client.current_chrome_window_handle
@@ -150,6 +153,38 @@ class Browser:
         )
         self.js("gURLBar.blur(); gBrowser.selectedBrowser.focus();")
         self.wait("!gURLBar.focused", message="the URL bar kept the focus")
+
+    #: A function body that has the shared module (``Peek``) and its ``Diag`` at hand.
+    DIAG = (
+        "const Peek = ChromeUtils.importESModule("
+        "'chrome://userchrome/content/peekafoxy.sys.mjs'); const Diag = Peek.Diag;"
+    )
+
+    def diag(self, script: str, *args):
+        """Run ``script`` (a function body) with ``Peek`` and ``Diag`` of the real module."""
+        return self.js(self.DIAG + script, *args)
+
+    def flush(self) -> None:
+        """Wait until Diag has written the status file (or failed to)."""
+        self.client.set_context(self.client.CONTEXT_CHROME)
+        self.client.execute_async_script(
+            self.DIAG + "const done = arguments[arguments.length - 1];"
+            "Diag.flush().then(() => done(true));"
+        )
+
+    @property
+    def chrome_dir(self) -> Path:
+        return self.profile / "chrome"
+
+    def wait_for_status_file(self, timeout: float = 30.0) -> Path:
+        """The status file once Firefox has written it (it is written after the window is idle)."""
+        path = self.chrome_dir / "peekafoxy-status.json"
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if path.is_file():
+                return path
+            time.sleep(0.2)
+        raise AssertionError(f"{path} was never written")
 
     def open_settings(self, hash_: str = "") -> None:
         """Open about:preferences in a new tab of the current window and wait for it to be ready."""
@@ -228,10 +263,14 @@ def launched(
     root: Path,
     extra_user_js: str = "",
     edit_script: Callable[[str], str] | None = None,
+    edit_module: Callable[[str], str] | None = None,
+    before_start: Callable[[Path], None] | None = None,
 ) -> Iterator[Browser]:
     """Install into a fresh profile, start Firefox headless on it, and yield a connected helper.
 
-    ``edit_script`` may rewrite each installed ``*.uc.js`` before Firefox starts.
+    ``edit_script`` may rewrite each installed ``*.uc.js`` and ``edit_module`` the shared module
+    before Firefox starts; ``before_start`` is called with the profile folder, once everything is
+    installed, to set up a state (a hostile file, a read-only folder) for Firefox to find.
     """
     profile = root / "profile"
     profile.mkdir()
@@ -244,6 +283,12 @@ def launched(
             installed.write_text(
                 edit_script(installed.read_text(encoding="utf-8")), encoding="utf-8"
             )
+
+    if edit_module is not None:
+        module = profile / "chrome" / "resources" / "peekafoxy.sys.mjs"
+        module.write_text(edit_module(module.read_text(encoding="utf-8")), encoding="utf-8")
+    if before_start is not None:
+        before_start(profile)
 
     process = subprocess.Popen(
         [
@@ -271,6 +316,8 @@ def launched(
                     raise
                 time.sleep(0.5)
         helper = Browser(client)
+        helper.profile = profile
+        helper.install_dir = install_dir
         helper.wait(
             "typeof UC_API !== 'undefined'", timeout=30, message="fx-autoconfig did not load"
         )

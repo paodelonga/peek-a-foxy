@@ -10,9 +10,9 @@
 // the settings are real prefs, so they can still be changed in about:config.
 
 (() => {
-  const LOG = "[peekafoxy settings]";
   const Peek = ChromeUtils.importESModule("chrome://userchrome/content/peekafoxy.sys.mjs");
-  const { PREFS } = Peek;
+  const { PREFS, Diag } = Peek;
+  Diag.watch(window, "settings");
 
   const CATEGORY = "panePeekafoxy"; // what Firefox derives from the address about:preferences#peekafoxy
   const FRIENDLY = "peekafoxy";
@@ -50,6 +50,13 @@
     #peekafoxy-pane .pf-note { color: var(--text-color-deemphasized); margin-block: 4px; }
     #peekafoxy-pane .pf-problem { color: var(--text-color-error, #c50042); margin-block: 0 8px; min-height: 1.2em; }
     #peekafoxy-pane h2 { margin-block: 0 8px; font-size: 1.2em; }
+    #peekafoxy-pane .pf-status { margin-block: 0 8px; padding: 8px 12px; border-inline-start: 4px solid var(--border-color-success, #058b00); border-radius: 4px; background: var(--background-color-box, transparent); }
+    #peekafoxy-pane .pf-status[data-state="errors"] { border-color: var(--border-color-warning, #cc9900); }
+    #peekafoxy-pane .pf-status[data-state="problem"], #peekafoxy-pane .pf-status[data-state="notstarted"] { border-color: var(--border-color-critical, #c50042); }
+    #peekafoxy-pane .pf-status p { margin: 0; }
+    #peekafoxy-pane .pf-status p + p { margin-block-start: 4px; }
+    #peekafoxy-pane .pf-fallback { box-sizing: border-box; inline-size: 100%; max-inline-size: 100%; font-family: monospace; }
+    @media (forced-colors: active) { #peekafoxy-pane .pf-status { border: 1px solid CanvasText; border-inline-start-width: 6px; } }
   `;
 
   // --- the controls ---
@@ -131,6 +138,81 @@
     return el("div", { class: "pf-row" }, button, done);
   };
 
+  // --- the Support group: how things stand, and the diagnostic info for a bug report ---
+
+  // The browser window this settings tab belongs to (its script is the one that has to be running).
+  const ownerWindow = () => {
+    try {
+      return window.browsingContext?.topChromeWindow ?? Services.wm.getMostRecentWindow("navigator:browser");
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const supportStatus = () => {
+    const line = el("div", { class: "pf-status", id: "peekafoxy-status" });
+    const refresh = () => {
+      const { state, version, failed } = Diag.summary(ownerWindow());
+      const lines = [];
+      if (state === "ok") lines.push(fill(TEXT.supportOk, { version }));
+      else if (state === "errors") lines.push(fill(TEXT.supportErrors, { version }));
+      else if (state === "notstarted") lines.push(TEXT.supportNotStarted);
+      else {
+        lines.push(fill(TEXT.supportProblem, { note: Peek.noteFor(failed[0], TEXT.health) }));
+        if (failed.length > 1) lines.push(TEXT.supportMore);
+      }
+      line.dataset.state = state;
+      line.replaceChildren(...lines.map((text) => el("p", { text })));
+    };
+    const observer = { observe: refresh };
+    Services.obs.addObserver(observer, "peekafoxy-diag-changed");
+    window.addEventListener("unload", () => Services.obs.removeObserver(observer, "peekafoxy-diag-changed"), { once: true });
+    controls.push({ refresh });
+    return line;
+  };
+
+  // A live region only announces a change, so the text is cleared first and set a moment later.
+  const announce = (node, text) => {
+    node.textContent = "";
+    if (text) window.setTimeout(() => { node.textContent = text; }, 50);
+  };
+
+  const issuesNote = () => {
+    const link = el("a", { href: Peek.ISSUES_URL, target: "_blank", rel: "noopener noreferrer", text: TEXT.supportLink });
+    const [before, after = ""] = TEXT.supportNote.split("{link}");
+    return el("p", { class: "pf-note" }, before, link, after);
+  };
+
+  const supportCopy = () => {
+    const button = el("button", { type: "button", id: "peekafoxy-copy", text: TEXT.supportCopy });
+    const done = el("p", { class: "pf-note", id: "peekafoxy-copy-done", role: "status" });
+    const failure = el("p", { class: "pf-problem", id: "peekafoxy-copy-failed", role: "alert" });
+    // Shown only when the clipboard is not available: the text to select and copy by hand.
+    const fallback = el("textarea", {
+      class: "pf-fallback", id: "peekafoxy-copy-text", readonly: "", rows: 12, dir: "ltr", lang: "en",
+      "aria-label": TEXT.supportFallbackLabel, hidden: "",
+    });
+    button.addEventListener("click", () => {
+      Diag.check(ownerWindow()); // the report is as fresh as the click
+      const text = Diag.report();
+      try {
+        Peek.Clipboard.copy(text);
+        fallback.hidden = true;
+        announce(failure, "");
+        announce(done, TEXT.supportCopied);
+      } catch (e) {
+        Diag.warn("settings:copy", e);
+        announce(done, "");
+        announce(failure, TEXT.supportCopyFailed);
+        fallback.value = text;
+        fallback.hidden = false;
+        fallback.focus();
+        fallback.select();
+      }
+    });
+    return el("div", {}, el("div", { class: "pf-row" }, button, done), failure, fallback);
+  };
+
   const buildPage = () => {
     const header = customElements.get("moz-page-header")
       ? el("moz-page-header", { heading: TEXT.category, description: TEXT.description })
@@ -156,6 +238,7 @@
         shortcutField(PREFS.urlbarShortcut, PREFS.tabsShortcut, TEXT.urlbarShortcut),
         el("p", { class: "pf-note", text: Peek.shortcutHint(TEXT) })),
       group(TEXT.greetingGroup, greetingButton()),
+      group(TEXT.supportGroup, supportStatus(), supportCopy(), issuesNote()),
     );
   };
 
@@ -165,7 +248,7 @@
     const missing = requirements();
     if (missing.length) throw new Error(`missing from about:preferences: ${missing.join(", ")}`);
 
-    Peek.registerDefaults(console);
+    Peek.registerDefaults();
     const nav = document.getElementById("categories");
     const mainPane = document.getElementById("mainPrefPane");
 
@@ -204,7 +287,10 @@
 
   try {
     install();
+    Diag.setHealth("settings", [{ name: "settings-page", ok: true, parts: [], note: "" }]);
+    Diag.check(ownerWindow()); // so the status line is up to date as soon as the page is opened
   } catch (e) {
-    console.warn(`${LOG} the Peek-a-Foxy category was not added:`, e);
+    Diag.warn("settings:install", `the Peek-a-Foxy category was not added: ${Peek.describe(e)}`, e);
+    Diag.setHealth("settings", [Peek.healthFail("settings-page", ["settingsPage", { what: e?.message }])]);
   }
 })();

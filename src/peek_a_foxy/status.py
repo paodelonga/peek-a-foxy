@@ -1,8 +1,10 @@
 """The status file the Firefox script leaves in the profile, and a reader for it (schema 1).
 
-The script (a later change writes it, through ``IOUtils``, debounced and small) saves
-``<profile>/chrome/peekafoxy-status.json`` so that ``peek-a-foxy doctor`` can see what Firefox
-itself saw. This module only reads it; a missing, old or damaged file is a finding, never a crash.
+The script (``Diag`` in ``chrome/resources/peekafoxy.sys.mjs``, through ``IOUtils``, debounced and
+small) saves ``<profile>/chrome/peekafoxy-status.json`` so that ``peek-a-foxy doctor`` can see what
+Firefox itself saw. This module only reads it; a missing, old or damaged file is a finding, never
+a crash. The writer already redacts the home folder, the user name and the profile folder and name,
+and cleans control characters; the reader redacts and cleans again, because it cannot trust a file.
 
 Schema 1, one JSON object. Keys other than ``schema`` and ``updated`` may be missing; unknown keys
 are ignored, so the writer can add keys without breaking the reader::
@@ -36,6 +38,8 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+
+from peek_a_foxy import platform
 
 STATUS_FILE = "peekafoxy-status.json"
 STATUS_SCHEMA = 1
@@ -153,12 +157,18 @@ def parse_status(text: str) -> Status:
     )
 
 
+def _read_file(path: Path) -> bytes:
+    with open(path, "rb") as handle:
+        return handle.read(MAX_BYTES + 1)
+
+
 def read_status(chrome_dir: Path) -> Status | None:
     """The status in ``chrome_dir``; ``None`` when there is no file; :class:`StatusError` if bad."""
     path = chrome_dir / STATUS_FILE
     try:
-        with open(path, "rb") as handle:
-            raw = handle.read(MAX_BYTES + 1)
+        # Firefox saves the file by renaming a new one over it, and while that happens Windows
+        # refuses to open it for a moment.
+        raw = platform.retry_if_denied(lambda: _read_file(path))
     except (FileNotFoundError, NotADirectoryError):
         return None
     except OSError as error:

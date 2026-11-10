@@ -8,9 +8,11 @@ import ntpath
 import os
 import shutil
 import sys
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType
+from typing import TypeVar
 
 from peek_a_foxy import errors
 from peek_a_foxy.errors import PlatformError
@@ -30,6 +32,12 @@ MACOS_APPS = (
 # Folder names Firefox's Windows installers use, under Program Files and in the user's local folder.
 WINDOWS_APP_DIRS = ("Mozilla Firefox", "Firefox Developer Edition", "Firefox Nightly")
 WINDOWS_BASE_VARIABLES = ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)", "LOCALAPPDATA")
+# Windows refuses to open, replace or remove a file for a moment while another program has it open
+# or is replacing it ("access denied"): a virus scanner, Firefox saving a file, a second run of this
+# program. Elsewhere a denial comes from the permissions, which waiting does not change.
+DENIED_WAITS: tuple[float, ...] = (
+    (0.01, 0.02, 0.04, 0.08, 0.16, 0.32) if sys.platform == "win32" else ()
+)
 # Lowercase: Windows paths do not care about case. Each marker names the kind of build it betrays.
 SANDBOX_MARKERS = {
     "/snap/": "Snap",
@@ -42,6 +50,21 @@ BACKSLASH = "\\"
 
 
 UnsupportedPlatformError = PlatformError  # the name this error had before codes
+
+_T = TypeVar("_T")
+
+
+def retry_if_denied(action: Callable[[], _T]) -> _T:
+    """``action()``, tried again after each wait of :data:`DENIED_WAITS` while it is denied.
+
+    A denial that lasts (about 0.6 s on Windows, at once elsewhere) is raised as it is.
+    """
+    for wait in DENIED_WAITS:
+        try:
+            return action()
+        except PermissionError:
+            time.sleep(wait)
+    return action()
 
 
 def system() -> str:

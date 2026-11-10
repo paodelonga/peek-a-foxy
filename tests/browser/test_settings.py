@@ -417,6 +417,7 @@ def test_the_page_is_in_portuguese_for_a_portuguese_firefox(browser_in_portugues
             "Tamanho e tempos",
             "Atalhos",
             "Saudação",
+            "Suporte",
         ],
         "start": "Ocultar a barra de abas automaticamente em novas janelas",
         "reset": "Restaurar",
