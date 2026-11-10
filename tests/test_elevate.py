@@ -364,7 +364,7 @@ def test_the_parent_hands_the_elevator_the_helper_command(pinned, checkout, tmp_
     [
         (elevate.NOT_FIREFOX, "not a Firefox"),
         (elevate.MISMATCH, "pinned"),
-        (elevate.LINKED, "symbolic link"),
+        (elevate.LINKED, "reached through a link, a junction, a short name or a substituted drive"),
         (elevate.WRITE_FAILED, "even with administrator"),
         (elevate.USAGE, "bad arguments"),
         (77, "exit code 77"),
@@ -1190,7 +1190,7 @@ def test_real_a_short_name_is_refused_by_the_parent_and_by_the_script(pinned, ch
         pytest.skip("this volume does not create 8.3 names")
     resolved = elevate.aliased_folder(short)
     assert resolved is not None and os.path.normcase(resolved) == os.path.normcase(str(folder))
-    with pytest.raises(ElevationError, match="symbolic link"):
+    with pytest.raises(ElevationError, match="short name"):
         elevate.copy_as_administrator(checkout, Path(short), lambda command: 0)
     # The script alone, as when the parent's check is not there: the same refusal, nothing written.
     assert run_script(elevate.helper_script(short, [CONFIG, PREFS])) == elevate.LINKED

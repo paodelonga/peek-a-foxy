@@ -66,7 +66,8 @@ MESSAGES = {
     NOT_FIREFOX: "it is not a Firefox installation folder (firefox.exe, omni.ja or application.ini "
     "is missing or says another product)",
     MISMATCH: "the files to install do not match the pinned fx-autoconfig",
-    LINKED: "a symbolic link or junction is in the way, so nothing was written",
+    LINKED: "the folder is reached through a link, a junction, a short name or a substituted "
+    "drive, so nothing was written; give the full path",
     WRITE_FAILED: "writing the files failed even with administrator rights",
 }
 
