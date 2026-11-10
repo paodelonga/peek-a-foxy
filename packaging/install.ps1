@@ -59,6 +59,83 @@ function Read-PublishedHash([string]$Path) {
     return $word
 }
 
+# The user PATH is the registry value HKCU\Environment\Path. It is read as the raw text, with the
+# %VARIABLES% still unexpanded, and written back with the kind it had (REG_EXPAND_SZ for almost
+# everybody), so entries such as %USERPROFILE%\bin stay variables. [Environment]::Get/Set-
+# EnvironmentVariable would expand them for good and save the result as a plain string.
+function Split-PathList([string]$List) {
+    # A semicolon inside double quotes belongs to the entry (Windows allows "C:\a;b" in a PATH).
+    $entries = [Collections.Generic.List[string]]::new()
+    $current = [Text.StringBuilder]::new()
+    $quoted = $false
+    foreach ($char in $List.ToCharArray()) {
+        if ($char -eq '"') { $quoted = -not $quoted }
+        if ($char -eq ';' -and -not $quoted) {
+            $entries.Add($current.ToString())
+            [void]$current.Clear()
+        } else {
+            [void]$current.Append($char)
+        }
+    }
+    $entries.Add($current.ToString())
+    return $entries.ToArray()
+}
+
+function Get-PathKey([string]$Entry) {
+    # What an entry points at, for comparing: no quotes, variables expanded, no trailing slash.
+    $text = [Environment]::ExpandEnvironmentVariables($Entry.Trim().Trim('"').Trim())
+    return $text.TrimEnd('\', '/')
+}
+
+function Get-PathWithEntry([string]$Raw, [string]$Directory) {
+    # The value with $Directory added at the end, or $null when it is already an entry. Everything
+    # that was there stays as it was; only the separator at the join is made right.
+    $wanted = Get-PathKey $Directory
+    foreach ($entry in (Split-PathList $Raw)) {
+        $key = Get-PathKey $entry
+        if ($key -and [string]::Equals($key, $wanted, [StringComparison]::OrdinalIgnoreCase)) {
+            return $null
+        }
+    }
+    $kept = $Raw.TrimEnd(';')
+    if (-not $kept.Trim()) { return $Directory }
+    return "$kept;$Directory"
+}
+
+function Add-UserPathEntry([string]$Directory, [string]$SubKey = "Environment") {
+    # True when the folder was added, false when it was already in the PATH.
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($SubKey)
+    try {
+        $none = [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+        $kind = [Microsoft.Win32.RegistryValueKind]::ExpandString
+        $raw = ""
+        if ($key.GetValueNames() -contains "Path") {
+            $kind = $key.GetValueKind("Path")
+            if ($kind -ne "String" -and $kind -ne "ExpandString") {
+                throw "The user PATH is not a text value in the registry, so it was left alone."
+            }
+            $raw = [string]$key.GetValue("Path", "", $none)
+        }
+        $updated = Get-PathWithEntry $raw $Directory
+        if ($null -eq $updated) { return $false }
+        $key.SetValue("Path", $updated, $kind)
+        return $true
+    } finally {
+        $key.Dispose()
+    }
+}
+
+function Send-EnvironmentChange {
+    # Deleting a variable that does not exist changes nothing, but .NET announces the change to the
+    # running programs (WM_SETTINGCHANGE), so a new terminal started from Explorer sees the PATH.
+    try { [Environment]::SetEnvironmentVariable("PEEK_A_FOXY_NOTIFY", $null, "User") } catch { }
+}
+
+if (-not $NoPath -and $InstallDir -match '[%;"]') {
+    # A % would be read as a variable in the PATH, and a ; or " would split or quote the entry.
+    throw "The folder '$InstallDir' has a %, a ; or a double quote in its name, which cannot go in the PATH safely. Pick another folder or use -NoPath."
+}
+
 Write-Host "This will:"
 Write-Host "  1. download peek-a-foxy.exe and peek-a-foxy.exe.sha256 from $base"
 Write-Host "  2. check the file against the hash"
@@ -86,10 +163,8 @@ try {
     Write-Host "Installed $target"
 
     if (-not $NoPath) {
-        $current = [Environment]::GetEnvironmentVariable("Path", "User")
-        $entries = @(); if ($current) { $entries = $current.Split(";") | Where-Object { $_ } }
-        if ($entries -notcontains $InstallDir) {
-            [Environment]::SetEnvironmentVariable("Path", (($entries + $InstallDir) -join ";"), "User")
+        if (Add-UserPathEntry $InstallDir) {
+            Send-EnvironmentChange
             Write-Host "Added $InstallDir to your user PATH."
         }
     }
