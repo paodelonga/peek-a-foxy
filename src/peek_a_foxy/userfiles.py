@@ -49,6 +49,7 @@ OWN_PREFS = (
     "peekafoxy.tabs.reveal.load",
     "peekafoxy.tabs.reveal.download",
     "peekafoxy.tabs.reveal.title",
+    "peekafoxy.tabs.reveal.move",
     "peekafoxy.tabs.shortcut",
     "peekafoxy.urlbar.shortcut",
     "peekafoxy.welcomed",

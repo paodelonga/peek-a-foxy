@@ -376,6 +376,7 @@
         checkbox(PREFS.revealLoad, TEXT.revealLoad),
         checkbox(PREFS.revealDownload, TEXT.revealDownload),
         checkbox(PREFS.revealTitle, TEXT.revealTitle),
+        checkbox(PREFS.revealMove, TEXT.revealMove),
         numberField(PREFS.flashMs, TEXT.flashMs),
         el("p", { class: "pf-note", text: TEXT.revealNote })),
       group(TEXT.timingGroup,

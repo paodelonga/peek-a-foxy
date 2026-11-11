@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import pytest
+from marionette_driver.keys import Keys
 
 pytestmark = pytest.mark.browser
 
@@ -502,6 +503,7 @@ def test_prefs_are_real_and_listed_with_their_types(browser):
         "peekafoxy.tabs.reveal.load": "bool",
         "peekafoxy.tabs.reveal.download": "bool",
         "peekafoxy.tabs.reveal.title": "bool",
+        "peekafoxy.tabs.reveal.move": "bool",
         "peekafoxy.tabs.shortcut": "string",
         "peekafoxy.urlbar.shortcut": "string",
         "peekafoxy.welcomed": "bool",
@@ -566,7 +568,7 @@ CLEAR_FLASH = (
     "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.switch', false);"
 )
 RESET_FLASH = (
-    "for (const name of ['load', 'download', 'title', 'new', 'link', 'switch'])"
+    "for (const name of ['load', 'download', 'title', 'move', 'new', 'link', 'switch'])"
     " Services.prefs.clearUserPref('peekafoxy.tabs.reveal.' + name);"
     "Services.prefs.clearUserPref('peekafoxy.tabs.flash.ms');"
 )
@@ -581,7 +583,7 @@ def quiet_flash(browser):
     browser.js(REMOVE_TABS)
 
 
-@pytest.mark.parametrize("name", ["load", "download", "title"])
+@pytest.mark.parametrize("name", ["load", "download", "title", "move"])
 def test_the_extra_reveal_checkboxes_start_off_and_write_real_prefs(browser, name):
     pref = f"peekafoxy.tabs.reveal.{name}"
     browser.open_settings("#peekafoxy")
@@ -662,3 +664,62 @@ def test_a_background_tab_changing_its_title_flashes_the_bar_only_when_asked(
     else:
         time.sleep(3)
         assert not browser.js(f"return {FLASHING};")
+
+
+TABS_IN_A_ROW = """
+  for (let i = 0; i < 2; i++) {
+    gBrowser.addTab('about:blank', {
+      inBackground: true, triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+  }
+  gBrowser.selectedTab = gBrowser.tabs[2];
+  window.focus(); gBrowser.selectedBrowser.focus();
+  document.documentElement.removeAttribute('tabs-flash');
+"""
+SELECTED_INDEX = "return [...gBrowser.tabs].indexOf(gBrowser.selectedTab);"
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_moving_a_tab_with_the_keyboard_flashes_the_bar_only_when_asked(
+    browser, quiet_flash, enabled
+):
+    """Real keys: Ctrl+Shift+PageUp moves the selected tab one place to the left."""
+    browser.js(f"Services.prefs.setBoolPref('peekafoxy.tabs.reveal.move', {str(enabled).lower()});")
+    browser.js(TABS_IN_A_ROW)
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 3)
+    assert browser.js(SELECTED_INDEX) == 2
+    browser.real_keys(Keys.PAGE_UP, Keys.CONTROL, Keys.SHIFT)
+    browser.wait(
+        "[...gBrowser.tabs].indexOf(gBrowser.selectedTab) === 1", 5, "the tab did not move"
+    )
+    if enabled:
+        browser.wait(FLASHING, 5, "the moved tab did not flash the bar")
+    else:
+        time.sleep(1.5)
+        assert not browser.js(f"return {FLASHING};")
+
+
+def test_moving_a_tab_in_both_directions_and_by_code_flashes_each_time(browser, quiet_flash):
+    """Adversarial: down as well as up, and a move made by the browser's own code."""
+    browser.js("Services.prefs.setBoolPref('peekafoxy.tabs.reveal.move', true);")
+    browser.js(TABS_IN_A_ROW)
+    for move in (
+        "gBrowser.moveTabTo(gBrowser.selectedTab, {tabIndex: 0});",
+        "gBrowser.moveTabForward();",
+        "gBrowser.moveTabBackward();",
+    ):
+        browser.js("document.documentElement.removeAttribute('tabs-flash');")
+        browser.js(move)
+        browser.wait(FLASHING, 5, f"{move} did not flash the bar")
+
+
+def test_the_tab_that_stays_where_it_is_does_not_flash(browser, quiet_flash):
+    """Adversarial: pressing the move key on the first tab moves nothing, so nothing flashes."""
+    browser.js("Services.prefs.setBoolPref('peekafoxy.tabs.reveal.move', true);")
+    browser.js(TABS_IN_A_ROW)
+    browser.js("gBrowser.selectedTab = gBrowser.tabs[0]; gBrowser.selectedBrowser.focus();")
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 3)
+    browser.real_keys(Keys.PAGE_UP, Keys.CONTROL, Keys.SHIFT)
+    time.sleep(1.5)
+    assert not browser.js(f"return {FLASHING};")
+    assert browser.js(SELECTED_INDEX) == 0

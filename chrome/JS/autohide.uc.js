@@ -283,6 +283,12 @@
       Diag.warn("autohide:load", e); // only this reason is lost
     }
 
+    // Tabs reordered (Ctrl+Shift+PageUp and Ctrl+Shift+PageDown, or a drag that ends): with the bar
+    // hidden, a person who moves a tab could not see where it went.
+    gBrowser.tabContainer.addEventListener("TabMove", () => {
+      if (Peek.read(PREFS.revealMove)) flashTabs();
+    });
+
     gBrowser.tabContainer.addEventListener("TabAttrModified", (event) => {
       const tab = event.target;
       if (!event.detail?.changed?.includes("label") || tab.selected || tab.hasAttribute("busy")) return;

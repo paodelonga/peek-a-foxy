@@ -237,6 +237,7 @@ Every setting is a real pref, listed in `about:config` with its type, and nothin
 | `peekafoxy.tabs.reveal.load` | `false` | Same, when the page of the current tab finishes loading. |
 | `peekafoxy.tabs.reveal.download` | `false` | Same, when a download finishes. |
 | `peekafoxy.tabs.reveal.title` | `false` | Same, when the title of a tab in the background changes. |
+| `peekafoxy.tabs.reveal.move` | `false` | Same, when tabs are reordered (`Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` or a drag). |
 | `peekafoxy.tabs.reveal.link` | `true` | Same, when a tab opens straight to any other address (a link, a bookmark, `window.open`...). |
 | `peekafoxy.easing` | `smooth` | Animation curve: `smooth`, `linear` or `snappy`. |
 | `peekafoxy.bookmarks` | `follow` | `follow`: the bookmarks bar opens and closes with the navigation bar; `visible`: it always stays visible. |
