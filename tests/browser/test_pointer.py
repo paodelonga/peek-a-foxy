@@ -506,16 +506,16 @@ def test_what_concerns_the_other_bar_does_not_cancel_the_show_delay(
 def test_a_bookmarks_bar_that_always_stays_visible_is_not_capped_when_the_group_opens(
     browser, customtitlebar
 ):
-    """Adversarial: a bookmarks bar taller than the 40 px cap (90 px asked, about 70 shown) of the reveal rules keeps its height."""
+    """Adversarial: the reveal rules would give it ``max-height`` of the cap (40 px) while the group
+    is open, which cuts a taller bar. The rendered height depends on the system's fonts, so the test
+    reads the computed ``max-height`` instead of measuring a tall bar."""
+    max_height = "getComputedStyle(document.getElementById('PersonalToolbar')).maxHeight"
     with collapsed_window(browser, customtitlebar, bookmarks=True) as natural:
         browser.js("Services.prefs.setStringPref('peekafoxy.bookmarks', 'visible');")
-        browser.js("document.getElementById('PersonalToolbar').style.height = '90px';")
-        try:
-            browser.wait(
-                f"{BOOKMARKS_HEIGHT} >= 50 && {NAV_HEIGHT} <= 8", 5, "not tall and visible"
-            )
-            hover(browser, "nav-bar")
-            browser.wait(f"{NAV_HEIGHT} === {natural['nav']}", 5, "the group did not open")
-            stays(browser, f"{BOOKMARKS_HEIGHT} >= 50", "the bookmarks bar was capped", 0.8)
-        finally:
-            browser.js("document.getElementById('PersonalToolbar').style.height = '';")
+        browser.wait(
+            f"{BOOKMARKS_HEIGHT} > 0 && {NAV_HEIGHT} <= 8", 5, "not visible with a hidden bar"
+        )
+        assert browser.js(f"return {max_height};") != "40px"
+        hover(browser, "nav-bar")
+        browser.wait(f"{NAV_HEIGHT} === {natural['nav']}", 5, "the group did not open")
+        stays(browser, f"{max_height} !== '40px'", "the bookmarks bar got the cap", 0.8)
