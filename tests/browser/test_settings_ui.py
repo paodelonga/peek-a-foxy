@@ -529,9 +529,9 @@ def test_each_reset_button_is_named_after_its_field(browser):
     names = browser.settings(
         """return [...doc.querySelectorAll('#peekafoxy-pane .pf-reset')].map(b => b.getAttribute('aria-label'));"""
     )
-    assert len(names) == 7 and len(set(names)) == 7, names
+    assert len(names) == 10 and len(set(names)) == 10, names
     assert all(name.startswith("Restore default: ") for name in names), names
-    assert "Restore default: Hover strip thickness (px)" in names
+    assert "Restore default: Activation strip thickness (px)" in names
     assert "Restore default: Toggle tab bar visibility" in names
 
 
@@ -542,7 +542,7 @@ def test_the_reset_buttons_are_named_in_portuguese_for_a_portuguese_firefox(brow
         "return [...doc.querySelectorAll('#peekafoxy-pane .pf-reset')].map(b => b.getAttribute('aria-label'));"
     )
     browser.close_settings_tabs()
-    assert len(set(names)) == 7 and all(n.startswith("Restaurar padrão: ") for n in names), names
+    assert len(set(names)) == 10 and all(n.startswith("Restaurar padrão: ") for n in names), names
     assert "Restaurar padrão: Alternar a exibição da barra de abas" in names
 
 
@@ -792,7 +792,7 @@ ROWS = """
 def test_the_reset_button_is_on_the_same_row_as_its_field(browser):
     browser.open_settings("#peekafoxy")
     rows = browser.settings(ROWS)
-    assert len(rows) == 7
+    assert len(rows) == 10
     if rows[0]["pane"] < 520:
         pytest.skip(f"the window is too narrow for one row ({rows[0]['pane']}px)")
     for row in rows:

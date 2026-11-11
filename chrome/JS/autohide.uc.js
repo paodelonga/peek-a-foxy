@@ -103,8 +103,11 @@
 
     const CSS_SETTINGS = [
       [PREFS.stripPx, "--autohide-strip", (v) => `${v}px`],
+      [PREFS.tabsStripPx, "--autohide-tabs-strip", (v) => (v > 0 ? `${v}px` : null)], // 0: follow the shared strip
+      [PREFS.urlbarStripPx, "--autohide-nav-strip", (v) => (v > 0 ? `${v}px` : null)],
       [PREFS.showMs, "--autohide-show-duration", (v) => `${v}ms`],
       [PREFS.showDelayMs, "--autohide-show-delay", (v) => `${v}ms`],
+      [PREFS.hideMs, "--autohide-hide-duration", (v) => `${v}ms`],
       [PREFS.hideDelayMs, "--autohide-hide-delay", (v) => `${v}ms`],
     ];
 
@@ -122,7 +125,8 @@
 
     const applySettings = () => {
       for (const [pref, variable, css] of CSS_SETTINGS) {
-        if (Peek.hasUserValue(pref)) root.style.setProperty(variable, css(Peek.read(pref)));
+        const value = Peek.hasUserValue(pref) ? css(Peek.read(pref)) : null;
+        if (value !== null) root.style.setProperty(variable, value);
         else root.style.removeProperty(variable);
       }
       for (const target of TARGETS) target.binding = Peek.bindingFor(target.shortcut);

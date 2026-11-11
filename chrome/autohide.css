@@ -31,9 +31,12 @@
   --autohide-hide-delay: 0.3s;
   --autohide-show-delay: 0.1s;
   --autohide-show: var(--autohide-show-duration) ease-out 0s;
-  --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);
+  --autohide-hide-duration: 0.2s;
+  --autohide-hide: var(--autohide-hide-duration) ease-in var(--autohide-hide-delay);
   /* Collapsed hover strip and expanded bar heights. */
   --autohide-strip: 8px;
+  --autohide-tabs-strip: var(--autohide-strip);  /* each bar's own strip: follows --autohide-strip unless set */
+  --autohide-nav-strip: var(--autohide-strip);
   --autohide-tabs-height: 64px;  /* ceiling: the bar opens to its natural height, up to this */
   --autohide-nav-height: 52px;  /* close to the navbar's natural height, so the animation has no dead time */
   --autohide-bookmarks-height: 40px;
@@ -66,7 +69,7 @@
    so a window without caption buttons still has something to hover); the tabs holder is what
    clips and animates */
 :root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar {
-  min-height: var(--autohide-strip) !important;
+  min-height: var(--autohide-tabs-strip) !important;
 }
 :root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar .toolbar-items {
   min-height: 0 !important;
@@ -82,7 +85,7 @@
 /* 2. collapsed: none of the reveal conditions below holds */
 :root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]):not([tabs-flash], [peekafoxy-dragging="tabs"], [peekafoxy-popup-open~="tabs"], [peekafoxy-peek~="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
   #TabsToolbar:not(:hover, :focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])) {
-  max-height: var(--autohide-strip) !important;
+  max-height: var(--autohide-tabs-strip) !important;
   padding: 0 !important;
   margin: 0 !important;
   border-width: 0 !important;
@@ -151,7 +154,7 @@
 :root[autohide-urlbar]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
   #navigator-toolbox:not(:has(#PersonalToolbar:is(:hover, :focus-within)))
   #nav-bar:not(:hover, :focus-within, :has(toolbarbutton[open])) {
-  max-height: var(--autohide-strip) !important;
+  max-height: var(--autohide-nav-strip) !important;
   padding: 0 !important;
   margin: 0 !important;
   border-width: 0 !important;

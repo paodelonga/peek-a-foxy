@@ -51,8 +51,8 @@ CLEAN_UP = """
   }
   document.getElementById('peekafoxy-test-buttons')?.remove();
   Services.prefs.clearUserPref(arguments[0]);
-  Services.prefs.clearUserPref('peekafoxy.show.delay.ms');
-  document.documentElement.style.removeProperty('--autohide-show-delay');
+  for (const pref of ['show.delay.ms', 'tabs.strip.px', 'urlbar.strip.px', 'hide.ms', 'strip.px']) Services.prefs.clearUserPref('peekafoxy.' + pref);
+  for (const v of ['show-delay', 'tabs-strip', 'nav-strip', 'hide-duration', 'strip']) document.documentElement.style.removeProperty('--autohide-' + v);
   CustomizableUI.setToolbarVisibility('PersonalToolbar', false);
 """
 NAV_HEIGHT = "Math.round(document.getElementById('nav-bar').getBoundingClientRect().height)"
@@ -290,3 +290,50 @@ def test_the_pointer_must_rest_for_the_show_delay_before_a_bar_opens(
         stays(browser, f"{measure} <= 8", "the bar opened for a pointer that had left", 0.8)
         hover(browser, bar)
         browser.wait(f"{measure} === {natural[key]}", 6, "the bar never opened after the delay")
+
+
+# --- the strip of each bar, and the closing animation ------------------------------------------
+
+
+def collapsed_tabs_and_nav(browser):
+    return browser.settled_heights()
+
+
+def test_each_bar_can_have_a_strip_of_its_own_and_zero_follows_the_shared_one(browser):
+    """Adversarial: the shared strip moves both bars, a per-bar value moves only its bar, and 0
+    (the default) hands the bar back to the shared strip."""
+    with collapsed_window(browser, False):
+        browser.js("Services.prefs.setIntPref('peekafoxy.strip.px', 14);")
+        browser.wait(
+            f"{browser.TABS_HEIGHT} === 14 && {NAV_HEIGHT} === 14",
+            5,
+            "the shared strip did not apply",
+        )
+        browser.js("Services.prefs.setIntPref('peekafoxy.tabs.strip.px', 24);")
+        browser.wait(
+            f"{browser.TABS_HEIGHT} === 24 && {NAV_HEIGHT} === 14",
+            5,
+            "the tab bar's own strip did not apply",
+        )
+        browser.js("Services.prefs.setIntPref('peekafoxy.urlbar.strip.px', 6);")
+        browser.wait(
+            f"{browser.TABS_HEIGHT} === 24 && {NAV_HEIGHT} === 6",
+            5,
+            "the navigation bar's own strip did not apply",
+        )
+        browser.js("Services.prefs.setIntPref('peekafoxy.tabs.strip.px', 0);")
+        browser.wait(
+            f"{browser.TABS_HEIGHT} === 14",
+            5,
+            "0 did not hand the tab bar back to the shared strip",
+        )
+
+
+def test_the_closing_animation_duration_follows_its_pref(browser):
+    with collapsed_window(browser, False):
+        browser.js("Services.prefs.setIntPref('peekafoxy.hide.ms', 750);")
+        browser.wait(
+            "getComputedStyle(document.getElementById('TabsToolbar')).transitionDuration.includes('0.75s')",
+            5,
+            "the closing duration did not follow the pref",
+        )
