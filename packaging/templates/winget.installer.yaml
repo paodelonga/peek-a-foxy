@@ -4,9 +4,6 @@ PackageVersion: @VERSION@
 InstallerType: portable
 Commands:
   - peek-a-foxy
-Dependencies:
-  PackageDependencies:
-    - PackageIdentifier: Git.Git
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/paodelonga/peek-a-foxy/releases/download/v@VERSION@/peek-a-foxy.exe

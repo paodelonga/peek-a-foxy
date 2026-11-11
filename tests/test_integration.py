@@ -1,5 +1,6 @@
 """Checks against the real fx-autoconfig repository. Opt-in: ``pytest -m network``."""
 
+import json
 import subprocess
 
 import pytest
@@ -48,3 +49,27 @@ def test_the_pinned_hashes_of_the_administrator_copy_match_the_real_files(monkey
         for name, digest in elevate.PINNED_SHA256.items():
             data = (checkout / "program" / name).read_bytes()
             assert hashlib.sha256(data).hexdigest() == digest, name
+
+
+def test_the_files_that_come_with_the_program_are_the_ones_upstream_at_the_pinned_commit(
+    monkeypatch,
+):
+    # The bundled folder is a copy of these files: if upstream was rewritten, or the copy was
+    # edited, this says so (packaging/update_loader.py --check does the same without git).
+    monkeypatch.delenv("FXAC_REPO", raising=False)
+    monkeypatch.delenv("FXAC_COMMIT", raising=False)
+    root = loader.bundled_dir()
+    with loader.fetch_loader() as checkout:
+        for relative in json.loads((root / "manifest.json").read_text())["files"]:
+            assert (root / relative).read_bytes() == (checkout / relative).read_bytes(), relative
+
+
+def test_the_update_script_agrees_that_the_bundled_files_are_genuine():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "packaging" / "update_loader.py"
+    spec = importlib.util.spec_from_file_location("update_loader_network", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.check() == []
