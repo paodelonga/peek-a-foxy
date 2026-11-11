@@ -228,6 +228,22 @@ def wait_until_closed(browser) -> None:
     browser.wait(f"!{DIALOG} && !{PLAYER}", 10, "the player was not removed")
 
 
+BOO = "document.getElementById('peekafoxy-boo')"
+
+
+def wait_for_show(browser, timeout: float = 12.0) -> None:
+    """The BOO! of the "peek" show is on screen (after the bars peeked)."""
+    browser.wait(f"{BOO} !== null", timeout, "the BOO! never came")
+
+
+def wait_until_at_rest(browser, seconds: float = 12.0) -> None:
+    """No egg is running any more (the show is over or the player is closed)."""
+    deadline = time.monotonic() + seconds
+    while busy(browser):
+        assert time.monotonic() < deadline, "the egg did not end"
+        time.sleep(0.1)
+
+
 def wait_for_processes(browser, expected: list[str]) -> None:
     """The content processes (not the spare ones Firefox keeps ready) are back to ``expected``."""
     deadline = time.monotonic() + 15
@@ -442,13 +458,19 @@ def test_swswsad_makes_the_bars_peek_and_then_opens_the_player(browser, video):
     assert browser.js("return window.__peekHeights;")[3] <= 8
 
 
-def test_typing_peek_opens_the_player_without_the_bars_peeking(browser, video):
-    """Default path, real keys."""
+def test_typing_peek_starts_the_show_and_not_the_video(browser, video):
+    """Default path, real keys: the bars peek tinted, then BOO! and fireworks, no player; it ends."""
     open_page(browser)
     record_peeks(browser)
     type_real(browser, "peek")
-    wait_for_player(browser)
-    assert peeks(browser) == []
+    wait_for_show(browser)
+    assert not player_open(browser)
+    assert peeks(browser)[:2] == ["", "tabs"]  # the same peek-a-boo pattern as the konami sequence
+    assert video.seen == []
+    wait_until_at_rest(browser)
+    assert browser.js(f"return {BOO} === null;")
+    assert browser.js("return document.getElementById('peekafoxy-show-style') === null;")
+    assert not browser.js("return document.documentElement.hasAttribute('peekafoxy-peek');")
 
 
 def test_capital_letters_count_too(browser, video):
@@ -459,7 +481,14 @@ def test_capital_letters_count_too(browser, video):
     caps = ("CapsLock", {"key": "CapsLock"})
     type_synthetic(
         browser,
-        [caps, *codes("pe", shiftKey=True), shift, *codes("e", shiftKey=True), shift, *codes("k")],
+        [
+            caps,
+            *codes("sw", shiftKey=True),
+            shift,
+            *codes("sws", shiftKey=True),
+            shift,
+            *codes("ad"),
+        ],
     )
     wait_for_player(browser)
 
@@ -504,10 +533,10 @@ def test_keys_with_ctrl_alt_meta_or_altgr_do_not_count(browser, video, held):
     """Adversarial: each letter with the modifier, then one modifier press in the middle of a plain
     sequence; the plain sequence at the end proves the page was listening."""
     open_page(browser)
-    type_synthetic(browser, codes("peek", **held))
-    type_synthetic(browser, codes("pe") + codes("e", **held) + codes("ek"))
+    type_synthetic(browser, codes("peek", **held) + codes("swswsad", **held))
+    type_synthetic(browser, codes("sws") + codes("w", **held) + codes("sad"))
     assert stays_closed(browser)
-    type_synthetic(browser, codes("peek"))
+    type_synthetic(browser, codes("swswsad"))
     wait_for_player(browser)
 
 
@@ -542,12 +571,12 @@ def test_typing_works_in_another_category_and_in_a_normal_page(browser, video):
     browser.settings("win.gotoPref('paneGeneral');")
     browser.settings("doc.activeElement?.blur?.();")
     type_real(browser, "peek")
-    wait_for_player(browser)
+    wait_for_show(browser)
     browser.real_keys(Keys.ESCAPE)
-    wait_until_closed(browser)
+    wait_until_at_rest(browser)
     browser.js("gBrowser.selectedBrowser.focus();")
     type_real(browser, "peek")
-    wait_for_player(browser)
+    wait_for_show(browser)
 
 
 def test_typing_in_a_text_field_of_a_web_page_does_not_count(browser, video):
@@ -600,7 +629,7 @@ def test_triggers_are_ignored_while_the_player_is_open(browser, video):
     """Adversarial: a second trigger, sent straight to the page (which is inert behind the dialog)
     and straight to the module, opens nothing more."""
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     type_synthetic(browser, codes("peek"))
     click_fox(browser)
@@ -649,7 +678,7 @@ def test_the_video_is_loaded_with_the_repository_as_its_referrer(browser, video)
     """Default path: without a Referer YouTube refuses the embed (Error 153)."""
     point_player(browser, video.origin + "/embed/video.html?start=59")
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     browser.wait(f"{PLAYER}.contentTitle === 'video'", 10)
     assert video.seen == [{"path": "/embed/video.html?start=59", "referer": REPO}]
@@ -660,7 +689,7 @@ def test_the_player_cannot_navigate_to_another_site(browser, video, other):
     the video stays, and the attempt is recorded."""
     point_player(browser, video.origin + "/embed/video.html?go=" + quote(other.origin + "/x"))
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     browser.wait(f"{PLAYER}.contentTitle === 'video'", 10)
     time.sleep(1.5)
@@ -676,7 +705,7 @@ def test_the_player_cannot_leave_the_embed_folder_of_the_same_site(browser, vide
     """Adversarial: same host, another path (YouTube's own watch page, for the real one)."""
     point_player(browser, video.origin + "/embed/video.html?go=/watch.html")
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     time.sleep(1.5)
     assert "/watch.html" not in video.paths()
@@ -687,7 +716,7 @@ def test_the_player_may_move_inside_the_embed_folder(browser, video):
     """The control for the two tests above: the same mechanism lets the video page change itself."""
     point_player(browser, video.origin + "/embed/video.html?go=/embed/next.html")
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     browser.wait(f"{PLAYER}.contentTitle === 'next'", 10, "an allowed navigation was stopped")
 
@@ -697,7 +726,7 @@ def test_a_player_that_ends_up_on_about_blank_is_closed(browser, video):
     closes the player instead."""
     point_player(browser, video.origin + "/embed/video.html?go=about:blank")
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     wait_until_closed(browser)
     assert events_at(browser, "easter-egg:blocked")
@@ -712,7 +741,7 @@ def test_the_player_cannot_open_windows_or_tabs(browser, video):
     open_page(browser)
     tabs = browser.js("return gBrowser.tabs.length;")
     windows = len(browser.client.chrome_window_handles)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     browser.wait(f"{PLAYER}.contentTitle.startsWith('popped:')", 10)
     time.sleep(1)
@@ -728,7 +757,7 @@ def test_focus_goes_into_the_dialog_and_back_to_the_page(browser, video):
     While it is open the rest of the window takes no focus (the dialog is modal)."""
     open_page(browser)
     browser.settings("doc.getElementById('peekafoxy-peekafoxy.tabs.reveal.switch').focus();")
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     assert browser.js(f"return document.activeElement === {PLAYER};")
     browser.js("gURLBar.focus();")
@@ -746,7 +775,7 @@ def test_focus_goes_back_to_the_settings_tab_after_a_tab_switch(browser, video):
     """Adversarial: a keyboard shortcut still switches tabs behind the dialog; closing brings the
     settings tab back to the front."""
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     browser.js("gBrowser.selectedTab = gBrowser.tabs[0];")
     browser.real_keys(Keys.ESCAPE)
@@ -766,7 +795,7 @@ def test_every_way_of_closing_removes_everything(browser, video, way):
     if way == "escape-in-video":
         point_player(browser, video.origin + "/embed/video.html?swallow=1")
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     browser.wait(f"{PLAYER}.contentTitle === 'video'", 10)
     assert browser.js(OBSERVERS) == observers + 1
@@ -790,7 +819,7 @@ def test_every_way_of_closing_removes_everything(browser, video, way):
 def test_a_click_on_the_video_area_does_not_close_it(browser, video):
     """Adversarial: only the dark area around the video closes it, not the frame around the video."""
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     browser.js(
         CLICK
@@ -819,7 +848,7 @@ def test_ten_rounds_leak_nothing(browser, video):
     try:
         open_page(browser)
         for _ in range(10):
-            type_real(browser, "peek")
+            click_fox(browser)
             wait_for_player(browser)
             browser.wait(f"{PLAYER}.contentTitle === 'video'", 10)
             browser.real_keys(Keys.ESCAPE)
@@ -843,7 +872,7 @@ def test_closing_the_window_while_the_player_is_open(browser, video):
     browser.diag("Diag.reset();")
     second = browser.new_window()
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     browser.js("window.close();")
     browser.switch_to(browser.first_window)
@@ -852,7 +881,7 @@ def test_closing_the_window_while_the_player_is_open(browser, video):
     assert browser.js(OBSERVERS) == observers
     assert browser.diag("return Diag.events().filter(e => e.level !== 'info');") == []
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
 
 
@@ -928,7 +957,7 @@ def test_reduced_motion_means_no_fade_and_no_peeking(browser, video):
     """Adversarial: with reduced motion the dialog has no animation and S W S W S A D goes straight
     to the player; the default (control) has the 0.4 s fade."""
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     assert browser.js(
         f"const s = getComputedStyle({DIALOG}); return [s.animationName, s.animationDuration];"
@@ -957,7 +986,7 @@ def test_high_contrast_keeps_the_overlay_opaque_in_system_colours(browser, video
     browser.js("Services.prefs.setIntPref('ui.useAccessibilityTheme', 1);")
     browser.wait("matchMedia('(prefers-contrast: more)').matches", 5)
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     look = browser.js(
         f"""const d = {DIALOG};
@@ -984,7 +1013,7 @@ def test_the_player_in_a_private_window_is_private(browser, video):
     browser.wait("typeof gBrowser !== 'undefined' && gBrowserInit.delayedStartupFinished", 15)
     assert browser.js("return PrivateBrowsingUtils.isWindowPrivate(window);")
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     assert browser.js(f"return {PLAYER}.browsingContext.usePrivateBrowsing;")
     browser.switch_to(browser.first_window)
@@ -996,7 +1025,7 @@ def test_the_player_opens_and_closes_in_full_screen(browser, video):
     browser.js("window.fullScreen = true;")
     browser.wait("window.fullScreen", 5, "the window did not go full screen")
     open_page(browser)
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
     covers = browser.js(
         f"const r = {DIALOG}.getBoundingClientRect(); return r.width >= innerWidth - 1 && r.height >= innerHeight - 1;"
@@ -1014,7 +1043,7 @@ def test_a_player_that_cannot_be_made_leaves_the_window_as_it_was(browser, video
     browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 5)
     before = browser.js(ROOT_STATE)
     point_player(browser, "not an address")
-    type_real(browser, "peek")
+    click_fox(browser)
     time.sleep(0.5)
     assert not player_open(browser)
     assert not busy(browser)
@@ -1023,7 +1052,7 @@ def test_a_player_that_cannot_be_made_leaves_the_window_as_it_was(browser, video
     browser.js("document.createXULElement = () => { throw new Error('no browser today'); };")
     try:
         browser.js("gBrowser.selectedBrowser.focus();")
-        type_real(browser, "peek")
+        click_fox(browser)
         time.sleep(0.5)
         assert not player_open(browser)
         assert not busy(browser)
@@ -1034,7 +1063,7 @@ def test_a_player_that_cannot_be_made_leaves_the_window_as_it_was(browser, video
     assert browser.diag("return Diag.summary(window).state;") in ("ok",)
     assert video.seen == []
     browser.js("gBrowser.selectedBrowser.focus();")
-    type_real(browser, "peek")
+    click_fox(browser)
     wait_for_player(browser)
 
 
@@ -1044,7 +1073,7 @@ def test_the_labels_are_in_portuguese_for_a_portuguese_firefox(browser_in_portug
     point_player(browser, sites[0].origin + "/embed/video.html")
     try:
         open_page(browser)
-        type_real(browser, "peek")
+        click_fox(browser)
         wait_for_player(browser)
         assert browser.js(f"return {DIALOG}.getAttribute('aria-label');") == "Peek-A-Boo"
     finally:
@@ -1234,3 +1263,153 @@ def test_the_konami_sequence_works_with_the_keyboard_page_in_front(browser, vide
     wait_for_player(browser)
     browser.real_keys(Keys.ESCAPE)
     wait_until_closed(browser)
+
+
+# --- the "peek" show -------------------------------------------------------------------------------
+
+
+def test_the_show_paints_the_bars_red_and_burgundy_while_they_peek(browser, video):
+    """Default path: while a bar peeks it is red (tabs) or burgundy (navigation bar), swapped when both
+    are open, and the colours are gone afterwards."""
+    open_page(browser)
+    type_real(browser, "peek")
+    colours = []
+    deadline = time.monotonic() + 8
+    seen = set()
+    while (
+        time.monotonic() < deadline and len(seen) < 4 and not browser.js(f"return {BOO} !== null;")
+    ):
+        state = browser.js(
+            """const root = document.documentElement;
+               const colour = (id) => getComputedStyle(document.getElementById(id)).backgroundColor;
+               return [root.getAttribute('peekafoxy-peek'), colour('TabsToolbar'), colour('nav-bar')];"""
+        )
+        if state[0]:
+            seen.add(tuple(state))
+            colours.append(state)
+        time.sleep(0.05)
+    wait_for_show(browser)
+    by_step = {state[0]: state for state in colours}
+    red, velvet = "rgb(224, 16, 46)", "rgb(74, 13, 31)"
+    assert by_step["tabs"][1] == red
+    assert by_step["navbar"][2] == velvet
+    if "tabs navbar" in by_step:
+        assert by_step["tabs navbar"][1:] == [velvet, red]
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_at_rest(browser)
+    after = browser.js(
+        "return [getComputedStyle(document.getElementById('TabsToolbar')).backgroundColor,"
+        " getComputedStyle(document.getElementById('nav-bar')).backgroundColor];"
+    )
+    assert red not in after and velvet not in after
+
+
+def test_the_fireworks_really_draw_and_the_word_is_red(browser, video):
+    """The canvas gets sparks (pixels that are not transparent) and the word is the BOO! in red."""
+    open_page(browser)
+    type_real(browser, "peek")
+    wait_for_show(browser)
+    browser.wait(
+        """(() => { const c = document.querySelector('#peekafoxy-boo canvas');
+             const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+             for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return true; return false; })()""",
+        6,
+        "the canvas stayed empty",
+    )
+    assert browser.js(f"return {BOO}.textContent;") == "BOO!"
+    assert browser.js(
+        f"return getComputedStyle({BOO}.firstElementChild.nextElementSibling).color;"
+    ) == ("rgb(224, 16, 46)")
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_at_rest(browser)
+
+
+def test_escape_ends_the_show_at_once_and_a_click_does_too(browser, video):
+    """Adversarial: both, in the middle of the peeking and in the middle of the fireworks; the click
+    does not press whatever is under it."""
+    open_page(browser)
+    type_real(browser, "peek")
+    browser.wait("document.documentElement.hasAttribute('peekafoxy-peek')", 5)
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_at_rest(browser, 3)
+    assert not browser.js("return document.documentElement.hasAttribute('peekafoxy-peek');")
+    browser.js("gBrowser.selectedBrowser.focus();")
+    type_real(browser, "peek")
+    wait_for_show(browser)
+    tabs_before = browser.js("return gBrowser.tabs.length;")
+    browser.js(CLICK + "click(window, 300, 14); click(window, 300, 60);")
+    wait_until_at_rest(browser, 3)
+    assert browser.js(f"return {BOO} === null;")
+    assert browser.js("return gBrowser.tabs.length;") == tabs_before
+
+
+def test_the_show_with_reduced_motion_is_only_the_word(browser, video):
+    """Adversarial: no bars peeking, no tint, no canvas; the word shows for a moment and goes."""
+    browser.js("Services.prefs.setIntPref('ui.prefersReducedMotion', 1);")
+    open_page(browser)
+    record_peeks(browser)
+    type_real(browser, "peek")
+    wait_for_show(browser, 3)
+    assert browser.js("return document.querySelector('#peekafoxy-boo canvas') === null;")
+    assert browser.js("return document.getElementById('peekafoxy-show-style') === null;")
+    assert peeks(browser) == []
+    wait_until_at_rest(browser, 5)
+    assert browser.js(f"return {BOO} === null;")
+
+
+def test_the_show_leaves_the_bars_exactly_as_they_were(browser, video):
+    """Adversarial: with both bars showing (nothing hidden) the attributes, saved state and buttons are
+    what they were after the show."""
+    open_page(browser)
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 5)
+    before = browser.js(ROOT_STATE)
+    browser.js("gBrowser.selectedBrowser.focus();")
+    type_real(browser, "peek")
+    wait_for_show(browser)
+    wait_until_at_rest(browser)
+    assert browser.js(ROOT_STATE) == before
+
+
+def test_other_triggers_wait_during_the_show_and_a_second_peek_runs_once(browser, video):
+    """Adversarial: the konami sequence and a second peek in the middle of the show do
+    nothing; only one layer ever exists and no player opens."""
+    open_page(browser)
+    type_real(browser, "peek")
+    wait_for_show(browser)
+    type_synthetic(browser, codes("peek") + codes("swswsad"))
+    time.sleep(0.5)
+    assert browser.js("return document.querySelectorAll('#peekafoxy-boo').length;") == 1
+    assert not player_open(browser)
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_at_rest(browser)
+
+
+def test_the_show_cannot_start_while_the_player_is_open(browser, video):
+    open_page(browser)
+    click_fox(browser)
+    wait_for_player(browser)
+    type_synthetic(browser, codes("peek"))
+    time.sleep(0.5)
+    assert browser.js(f"return {BOO} === null;")
+
+
+def test_closing_the_window_in_the_middle_of_the_show_leaves_nothing_behind(browser, video):
+    """Adversarial: the window goes away while it peeks or bursts; the module is free again."""
+    for wait in (0.5, 3.5):
+        browser.new_window()
+        browser.js(PEEK + "Peek.EasterEgg.show(window);")
+        time.sleep(wait)
+        browser.js("window.close();")
+        browser.switch_to(browser.first_window)
+        wait_until_at_rest(browser, 5)
+
+
+def test_the_show_can_be_repeated(browser, video):
+    open_page(browser)
+    for _ in range(2):
+        browser.js("gBrowser.selectedBrowser.focus();")
+        type_real(browser, "peek")
+        wait_for_show(browser)
+        browser.real_keys(Keys.ESCAPE)
+        wait_until_at_rest(browser)
+    assert browser.js(f"return {BOO} === null;")
