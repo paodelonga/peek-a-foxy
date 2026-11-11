@@ -251,6 +251,52 @@
       }, 0);
     });
 
+    // Three more reasons, all off by default. The page of the current tab finishing its load (the
+    // top-level document of the selected tab only, so pages that load in the background stay quiet), a
+    // download finishing (each download once), and the title of a tab in the background changing after
+    // it has loaded (a chat or mail tab announcing something in its title).
+    const loadListener = {
+      QueryInterface: ChromeUtils.generateQI(["nsIWebProgressListener", "nsISupportsWeakReference"]),
+      onStateChange(browser, webProgress, request, flags) {
+        const done = Ci.nsIWebProgressListener.STATE_STOP | Ci.nsIWebProgressListener.STATE_IS_WINDOW;
+        if ((flags & done) !== done || !webProgress.isTopLevel) return;
+        if (browser !== gBrowser.selectedBrowser || !Peek.read(PREFS.revealLoad)) return;
+        if (browser.currentURI?.spec === "about:blank") return;
+        flashTabs();
+      },
+    };
+    try {
+      gBrowser.addTabsProgressListener(loadListener);
+      window.addEventListener("unload", () => gBrowser.removeTabsProgressListener(loadListener), { once: true });
+    } catch (e) {
+      Diag.warn("autohide:load", e); // only this reason is lost
+    }
+
+    gBrowser.tabContainer.addEventListener("TabAttrModified", (event) => {
+      const tab = event.target;
+      if (!event.detail?.changed?.includes("label") || tab.selected || tab.hasAttribute("busy")) return;
+      if (Peek.read(PREFS.revealTitle)) flashTabs();
+    });
+
+    (async () => {
+      try {
+        const { Downloads } = ChromeUtils.importESModule("resource://gre/modules/Downloads.sys.mjs");
+        const list = await Downloads.getList(Downloads.ALL);
+        const seen = new WeakSet();
+        const view = {
+          onDownloadChanged(download) {
+            if (!download.succeeded || seen.has(download)) return;
+            seen.add(download);
+            if (Peek.read(PREFS.revealDownload) && !window.closed) flashTabs();
+          },
+        };
+        await list.addView(view);
+        window.addEventListener("unload", () => list.removeView(view), { once: true });
+      } catch (e) {
+        Diag.warn("autohide:download", e); // only this reason is lost
+      }
+    })();
+
     // --- keep a bar open while something is dragged out of it ---
     //
     // Hover is not updated during a drag, so a bar would collapse under the item being dragged (a tab, a
