@@ -42,7 +42,7 @@ def test_the_greeting_is_shown_once_in_the_firefox_language(browser):
     assert browser.js("return Services.prefs.getBoolPref('peekafoxy.welcomed', false);")
 
 
-def test_the_greeting_button_opens_the_song_without_errors(browser):
+def test_the_greeting_button_opens_the_project_page_without_errors(browser):
     browser.switch_to(browser.first_window)
     before = browser.js("return gBrowser.tabs.length;")
     browser.js(
@@ -51,8 +51,8 @@ def test_the_greeting_button_opens_the_song_without_errors(browser):
     )
     browser.wait(f"gBrowser.tabs.length === {before + 1}", message="the button opened no tab")
     browser.wait(
-        "[...gBrowser.tabs].some(t => t.linkedBrowser.currentURI.spec.includes('6uJf2IT2Zh8'))",
-        message="the new tab did not go to the song",
+        "[...gBrowser.tabs].some(t => t.linkedBrowser.currentURI.spec.startsWith('https://github.com/paodelonga/peek-a-foxy'))",
+        message="the new tab did not go to the project page",
     )
     errors = browser.js(
         """return Services.console.getMessageArray().map(m => String(m.message))

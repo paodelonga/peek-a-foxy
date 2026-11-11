@@ -87,7 +87,7 @@ def test_the_category_is_listed_and_opens_its_pane_from_the_address(browser):
     )
     assert shown == {
         "current": "panePeekafoxy",
-        "label": "Peek a Foxy 🦊",
+        "label": "Peek a Foxy",
         "hash": "#peekafoxy",
         "visible": ["panePeekafoxy"],
     }
@@ -487,6 +487,7 @@ def test_prefs_are_real_and_listed_with_their_types(browser):
         "peekafoxy.urlbar.autohide": "bool",
         "peekafoxy.strip.px": "int",
         "peekafoxy.show.ms": "int",
+        "peekafoxy.show.delay.ms": "int",
         "peekafoxy.hide.delay.ms": "int",
         "peekafoxy.tabs.flash.ms": "int",
         "peekafoxy.tabs.reveal.switch": "bool",
@@ -531,12 +532,12 @@ def test_the_reveal_checkboxes_start_on_and_write_real_prefs(browser, name):
     browser.wait(f"{FIELD % pref}.checked === true", message="the box did not follow the pref")
 
 
-def test_the_shortcut_hint_matches_the_operating_system_running_firefox(browser):
+def test_the_shortcut_hint_has_the_windows_note_only_on_windows(browser):
     browser.open_settings("#peekafoxy")
     system = browser.js("return Services.appinfo.OS;")
     hint = browser.settings(
         "return doc.getElementById('peekafoxy-peekafoxy.urlbar.shortcut')"
         ".closest('.pf-card').lastElementChild.textContent;"
     )
-    assert ("GNOME" in hint) is (system == "Linux")
+    assert "GNOME" not in hint  # no system-specific note besides the AltGr one on Windows
     assert ("AltGr" in hint) is (system == "WINNT")

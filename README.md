@@ -179,12 +179,12 @@ A Firefox update can remove the loader from its install directory; run `peek-a-f
 
 | | Tab bar | Navigation bar |
 | --- | --- | --- |
-| Toggle for the current window | `Ctrl+Alt+Shift+T` (`Ctrl+Alt+T` on Windows and macOS) or toolbar button | `Ctrl+Alt+Shift+U` or toolbar button |
+| Toggle for the current window | `Ctrl+Alt+T` or toolbar button | `Ctrl+Alt+Shift+U` or toolbar button |
 | Reveal temporarily | hover the top strip, switch or open a tab | hover its strip, focus the URL bar |
 
 The buttons are in *Customize Toolbar* as **Auto-hide the tab bar** and **Auto-hide the navigation bar** (in a Portuguese Firefox: **Ocultar a barra de abas automaticamente** and **Ocultar a barra de navegação automaticamente**). While a bar's autohide is on in a window, the button looks pressed in that window. The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
 
-The default shortcuts avoid combinations that something else already uses. On Linux, `Ctrl+Alt+T` opens a terminal on GNOME, Ubuntu and Linux Mint, and the desktop takes it before Firefox sees it, so the tab bar uses `Ctrl+Alt+Shift+T` there (and on any system Peek-a-Foxy does not recognize); Windows and macOS keep `Ctrl+Alt+T`. `Ctrl+Alt+U` is Firefox's own shortcut for the Open Tabs sidebar, so the navigation bar uses `Ctrl+Alt+Shift+U` on every system. Versions up to 0.2.0 used `Ctrl+Alt+T` and `Ctrl+Alt+U` everywhere: if you never changed the shortcuts, they changed with the update. A shortcut that you chose yourself is kept, and you can change either one in Firefox's settings (see [Settings](#settings)); the page warns you when the shortcut you record is one that Firefox already uses.
+`Ctrl+Alt+U` is Firefox's own shortcut for the Open Tabs sidebar, so the navigation bar uses `Ctrl+Alt+Shift+U` instead of it. Versions up to 0.2.0 used `Ctrl+Alt+U` for the navigation bar: if you never changed that shortcut, it changed with the update. If a shortcut clashes with something on your system, change it in Firefox's settings (see [Settings](#settings)); a shortcut that you chose yourself is kept, and the page warns you when the one you record is already used by Firefox.
 
 A bar also stays open while a popup that belongs to it is open (the menu of one of its buttons, the list of all tabs, a bookmarks folder). A window that a page opens as a popup never hides its navigation bar, so its address stays visible. With Firefox's vertical tabs turned on there is no tab bar to hide, so the tab bar options do nothing, and the settings page says so.
 
@@ -227,12 +227,13 @@ Every setting is a real pref, listed in `about:config` with its type, and nothin
 | `peekafoxy.urlbar.autohide` | `false` | Start new windows with the navigation bar hidden. |
 | `peekafoxy.strip.px` | `8` | Hover strip thickness, in pixels (1 to 40). |
 | `peekafoxy.show.ms` | `120` | Opening animation, in milliseconds (0 to 2000). |
+| `peekafoxy.show.delay.ms` | `100` | How long the pointer has to stay on the activation strip before its bar opens, in milliseconds (0 to 5000). |
 | `peekafoxy.hide.delay.ms` | `300` | Wait before a bar closes, in milliseconds (0 to 5000). |
 | `peekafoxy.tabs.reveal.switch` | `true` | Open the tab bar for a moment when you switch to another tab. |
 | `peekafoxy.tabs.reveal.new` | `true` | Same, when you open a new tab (the new-tab page or your home page). |
 | `peekafoxy.tabs.reveal.link` | `true` | Same, when a tab opens straight to any other address (a link, a bookmark, `window.open`...). |
 | `peekafoxy.tabs.flash.ms` | `1500` | How long the tab bar stays open after one of those (0 to 10000). |
-| `peekafoxy.tabs.shortcut` | `Ctrl+Alt+Shift+T` (`Ctrl+Alt+T` on Windows and macOS) | Shortcut that toggles the tab bar in the current window. |
+| `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Shortcut that toggles the tab bar in the current window. |
 | `peekafoxy.urlbar.shortcut` | `Ctrl+Alt+Shift+U` | Shortcut that toggles the navigation bar. |
 | `peekafoxy.welcomed` | `false` | Set to `true` after the one-time greeting. Set it back to `false` to see it again. |
 
@@ -254,6 +255,7 @@ These are the defaults in the stylesheet. The strip thickness and the two timing
   --autohide-nav-height: 52px;            /* the navigation bar's open height (close to its natural one) */
   --autohide-bookmarks-height: 40px;      /* the bookmarks bar's open height */
   --autohide-show-duration: 0.12s;        /* opening: how long it takes */
+  --autohide-show-delay: 0.1s;            /* opening: how long the pointer stays on the strip first */
   --autohide-hide-delay: 0.3s;            /* closing: how long to wait before collapsing */
   --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* opening: duration, easing, delay */
   --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);       /* closing: duration, easing, delay */
@@ -520,7 +522,7 @@ Removes this project's files and prefs. It leaves `chrome/utils` and the loader 
 
 ## Roadmap
 
-Planned work is tracked in the GitHub Project [Peek-a-Foxy](https://github.com/users/paodelonga/projects/22), and contributions are welcome. It lists, among other things, code signing for the Windows program through SignPath (a long-term goal) and the idea of splitting Peek-a-Foxy into modular tools.
+Planned work is tracked in the GitHub Project [Peek-a-Foxy](https://github.com/users/paodelonga/projects/22), and contributions are welcome.
 
 Known limits that you may run into today:
 
@@ -534,6 +536,8 @@ Known limits that you may run into today:
 **Peek-a-Foxy** is a pun on *peek-a-boo*, the game where something hides and then pops back out with a cheerful "found you!". That is what the bars do: they hide, and peek back out 👀 when you hover over their strip.
 
 > And when I picked the name I was listening to "Peek-A-Boo", and [AT THAT EXACT MOMENT](https://youtu.be/6uJf2IT2Zh8?t=59) my bar disappeared and came back, giving me a little scare 😅
+
+👀 And there are a few easter eggs hiding around, including in the settings page.
 
 ## Contributing
 

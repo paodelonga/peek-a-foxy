@@ -49,8 +49,10 @@
     #peekafoxy-pane .pf-row > label { flex: 1 1 10em; }
     #peekafoxy-pane .pf-row input[type="number"] { width: 7em; }
     #peekafoxy-pane .pf-row input[type="text"] { width: 12em; }
-    #peekafoxy-pane .pf-reset { flex: none; background: url("chrome://global/skin/icons/reset.svg") no-repeat 8px center / 16px;
+    #peekafoxy-pane .pf-reset { flex: none; background-image: url("chrome://global/skin/icons/arrow-counterclockwise-16.svg");
+      background-repeat: no-repeat; background-position: 8px center; background-size: 16px;
       padding-inline-start: 32px; -moz-context-properties: fill; fill: currentColor; }
+    #peekafoxy-pane .pf-reset:dir(rtl) { background-position: right 8px center; }
     #peekafoxy-pane .pf-note { color: var(--text-color-deemphasized); margin-block: 4px; }
     #peekafoxy-pane .pf-problem { color: var(--text-color-error, #c50042); margin-block: 0; }
     #peekafoxy-pane .pf-problem:not(:empty) { margin-block: 0 8px; }
@@ -268,10 +270,84 @@
     return el("div", {}, el("div", { class: "pf-row" }, button, done), failure, fallback);
   };
 
+  // --- the easter eggs (see EasterEgg in peekafoxy.sys.mjs) ---
+  //
+  // Three quick clicks on the 🦊 of the title open the video player in the browser window. The fox
+  // gets a span of its own so that only it counts for the clicks; the span has no role, name or tab
+  // stop, so the title reads and is announced exactly as before (keyboard users have the two typed
+  // ways, which the browser window's own script listens for).
+
+  const FOX = "🦊";
+  const CLICKS = 3, CLICKS_MS = 2800;
+  let fox = null;
+
+  // Wraps the first fox in the text of `heading` in a span and returns it, or null if there is none.
+  const wrapFox = (heading) => {
+    const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const at = node.data.indexOf(FOX);
+      if (at < 0) continue;
+      const found = node.splitText(at);
+      found.splitText(FOX.length);
+      const span = el("span", { class: "pf-fox" });
+      found.replaceWith(span);
+      span.append(found);
+      return span;
+    }
+    return null;
+  };
+  // Firefox's moz-page-header draws its heading in its shadow root, once it is defined and rendered.
+  const findFox = (header) => {
+    const wrap = (heading) => {
+      fox = heading ? wrapFox(heading) : null;
+      if (!fox) Diag.info("settings:fox", "the title has no fox to click; the keys still work");
+    };
+    try {
+      if (header.localName !== "moz-page-header") wrap(header.querySelector("h1"));
+      else {
+        customElements.whenDefined("moz-page-header")
+          .then(() => header.updateComplete)
+          .then(() => wrap(header.shadowRoot?.getElementById("heading")))
+          .catch((e) => Diag.info("settings:fox", e));
+      }
+    } catch (e) {
+      Diag.info("settings:fox", e); // only the clicks are lost
+    }
+  };
+
+  const armEggs = () => {
+    const play = () => {
+      try {
+        Peek.EasterEgg.play(ownerWindow(), { locale: LOCALE });
+      } catch (e) {
+        Diag.warn("easter-egg:play", e);
+      }
+    };
+
+    let clicks = 0, firstClick = 0;
+    const onClick = (event) => {
+      if (!fox || !event.composedPath().includes(fox)) {
+        clicks = 0; // a click anywhere else starts the count over
+        return;
+      }
+      if (!clicks || event.timeStamp - firstClick > CLICKS_MS) {
+        clicks = 0;
+        firstClick = event.timeStamp;
+      }
+      clicks += 1;
+      if (clicks === CLICKS && !Peek.EasterEgg.busy()) play();
+      if (clicks >= CLICKS) clicks = 0;
+    };
+
+    document.addEventListener("click", onClick, true);
+    window.addEventListener("pagehide", () => document.removeEventListener("click", onClick, true), { once: true });
+  };
+
   const buildPage = () => {
     const header = customElements.get("moz-page-header")
       ? el("moz-page-header", { heading: TEXT.category, description: TEXT.description })
       : el("div", {}, el("h1", { text: TEXT.category }), el("p", { text: TEXT.description }));
+    findFox(header);
     return el("section", {},
       header,
       verticalTabsNote(),
@@ -287,6 +363,7 @@
         el("p", { class: "pf-note", text: TEXT.revealNote })),
       group(TEXT.timingGroup,
         numberField(PREFS.stripPx, TEXT.stripPx),
+        numberField(PREFS.showDelayMs, TEXT.showDelayMs),
         numberField(PREFS.showMs, TEXT.showMs),
         numberField(PREFS.hideDelayMs, TEXT.hideDelayMs)),
       group(TEXT.shortcutsGroup,
@@ -308,7 +385,7 @@
     const mainPane = document.getElementById("mainPrefPane");
 
     const button = el("moz-page-nav-button", {
-      id: "category-peekafoxy", view: CATEGORY, iconsrc: "chrome://browser/skin/tabs.svg", text: TEXT.category,
+      id: "category-peekafoxy", view: CATEGORY, iconsrc: "chrome://browser/skin/tabs.svg", text: TEXT.category.replace(FOX, "").trim(),
     });
     // The texts are in the language Peek.textFor chose, which is English for a Firefox in a language
     // that has no texts: the pane says so, so a right-to-left Firefox does not lay them out as such.
@@ -337,6 +414,11 @@
       throw e;
     }
     window.addEventListener("unload", () => Services.prefs.removeObserver(Peek.PREF_BRANCH, observer), { once: true });
+    try {
+      armEggs();
+    } catch (e) {
+      Diag.warn("easter-egg:arm", e); // the page works without them
+    }
 
     // The page was opened straight at #peekafoxy and Firefox has already fallen back to its default.
     if (startedOnOurPage && gLastCategory?.category && gLastCategory.category !== CATEGORY) {

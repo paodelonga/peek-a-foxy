@@ -1517,9 +1517,9 @@ def test_the_support_group_stays_readable_in_light_dark_and_high_contrast(browse
     open_support(browser)
     time.sleep(0.5)
     ratios = browser.settings(CONTRAST)
-    # Not a test that measures nothing: the six reset buttons and the message lines are in it.
-    assert sum(name.startswith("button.pf-reset") for name in ratios) == 6, ratios
-    assert sum(name.startswith("p.pf-problem") for name in ratios) == 7, ratios
+    # Not a test that measures nothing: the seven reset buttons and the message lines are in it.
+    assert sum(name.startswith("button.pf-reset") for name in ratios) == 7, ratios
+    assert sum(name.startswith("p.pf-problem") for name in ratios) == 8, ratios
     assert sum(name.startswith("p.pf-note") for name in ratios) >= 5, ratios
     for name, ratio in ratios.items():
         if name in ("dark", "forced"):

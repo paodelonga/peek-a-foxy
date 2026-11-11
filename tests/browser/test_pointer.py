@@ -51,6 +51,8 @@ CLEAN_UP = """
   }
   document.getElementById('peekafoxy-test-buttons')?.remove();
   Services.prefs.clearUserPref(arguments[0]);
+  Services.prefs.clearUserPref('peekafoxy.show.delay.ms');
+  document.documentElement.style.removeProperty('--autohide-show-delay');
   CustomizableUI.setToolbarVisibility('PersonalToolbar', false);
 """
 NAV_HEIGHT = "Math.round(document.getElementById('nav-bar').getBoundingClientRect().height)"
@@ -257,3 +259,34 @@ def test_drifting_off_a_bar_and_back_within_the_hide_delay_does_not_close_it(
         )
         browser.move_pointer(*OUTSIDE)
         browser.wait(f"{measure} <= 8", 8, "the bar never closed after the pointer left for good")
+
+
+# --- the show delay -------------------------------------------------------------------------------
+
+
+@variants
+@pytest.mark.parametrize(
+    ("bar", "height"),
+    [("TabsToolbar", "TABS_HEIGHT"), ("nav-bar", "NAV_HEIGHT")],
+    ids=["tabs", "nav"],
+)
+def test_the_pointer_must_rest_for_the_show_delay_before_a_bar_opens(
+    browser, customtitlebar, bar, height
+):
+    """Adversarial: with a 1.2 s show delay the bar is still closed after 0.5 s of hover, opens after
+    the delay, and a pointer that leaves earlier never opens it. The variable follows the pref."""
+    with collapsed_window(browser, customtitlebar) as natural:
+        measure = browser.TABS_HEIGHT if height == "TABS_HEIGHT" else NAV_HEIGHT
+        key = "tabs" if height == "TABS_HEIGHT" else "nav"
+        browser.js("Services.prefs.setIntPref('peekafoxy.show.delay.ms', 1200);")
+        browser.wait(
+            f"{ROOT}.style.getPropertyValue('--autohide-show-delay') === '1200ms'",
+            5,
+            "the pref did not reach the CSS variable",
+        )
+        hover(browser, bar)
+        stays(browser, f"{measure} <= 8", "the bar opened before the show delay", 0.5)
+        leave(browser)  # leaves early: it never opened
+        stays(browser, f"{measure} <= 8", "the bar opened for a pointer that had left", 0.8)
+        hover(browser, bar)
+        browser.wait(f"{measure} === {natural[key]}", 6, "the bar never opened after the delay")

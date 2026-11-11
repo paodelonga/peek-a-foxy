@@ -11,6 +11,8 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ### Added
 
+- **A new setting: how long the pointer must stay on an activation strip before its bar opens** (`peekafoxy.show.delay.ms`, 0 to 5000, default 100, so a pointer that only brushes past a strip no longer opens the bar; set it to 0 for the old behaviour). It applies to the hover strips only; shortcuts, flashes and popups still open the bars at once. In the CSS it is `--autohide-show-delay`.
+- Something small is hiding in the settings page.
 - **Windows support** (Windows 10/11, tested in CI on a real Windows runner and not yet by hand on a
   desktop; see the README's *Windows notes*):
   - **Profiles and Firefox are found.** Profiles in `%APPDATA%\Mozilla\Firefox` (falling back to the
@@ -118,13 +120,7 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ### Changed
 
-- **The default shortcuts changed.** The tab bar uses `Ctrl+Alt+Shift+T` on Linux, and on any system that
-  is not Windows or macOS, because `Ctrl+Alt+T` opens a terminal on GNOME, Ubuntu and Linux Mint; Windows
-  and macOS keep `Ctrl+Alt+T`. The navigation bar uses `Ctrl+Alt+Shift+U` everywhere, because
-  `Ctrl+Alt+U` is Firefox's own shortcut for the Open Tabs sidebar. **If you never changed the shortcuts
-  in 0.2.0 or earlier, your shortcuts change with this update.** A value that you set yourself is kept;
-  to go back to the old ones, set `peekafoxy.tabs.shortcut` to `Ctrl+Alt+T` and
-  `peekafoxy.urlbar.shortcut` to `Ctrl+Alt+U` in the settings page or in `about:config`.
+- **The default shortcut of the navigation bar changed** to `Ctrl+Alt+Shift+U`, because `Ctrl+Alt+U` is Firefox's own shortcut for the Open Tabs sidebar. The tab bar keeps `Ctrl+Alt+T` on every system. **If you never changed the navigation bar shortcut in 0.2.0 or earlier, it changes with this update.** A value that you set yourself is kept; to go back to the old one, set `peekafoxy.urlbar.shortcut` to `Ctrl+Alt+U` in the settings page or in `about:config`.
 - **The settings page and the toolbar buttons are reworded** in English and Portuguese so that they read
   naturally. The section is called **Peek a Foxy 🦊**, the buttons are **Auto-hide the tab bar** and
   **Auto-hide the navigation bar** (the Portuguese ones say "barra de navegação", not "barra de

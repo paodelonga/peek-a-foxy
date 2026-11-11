@@ -5,8 +5,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 from peek_a_foxy import cli, errors, logs, report, status, userfiles
 from peek_a_foxy.assets import FILES, MODULE_NAME, PREFS_SCRIPT_NAME, SCRIPT_NAME, assets_dir
 
@@ -36,28 +34,14 @@ def test_the_legacy_prefs_map_onto_current_names():
 def test_the_default_shortcuts_the_cli_announces_are_the_ones_in_the_module():
     module = source(f"resources/{MODULE_NAME}")
     assert _module_constant("DEFAULT_TABS_SHORTCUT") == cli.TABS_SHORTCUT
-    assert _module_constant("DEFAULT_TABS_SHORTCUT_LINUX") == cli.TABS_SHORTCUT_LINUX
     assert _module_constant("DEFAULT_URLBAR_SHORTCUT") == cli.URLBAR_SHORTCUT
     # the prefs take their defaults from those constants, not from a literal that could drift
     assert re.findall(
         r'name: "peekafoxy\.\w+\.shortcut", type: "string", default: ([^}]+) \}', module
     ) == [
-        "defaultTabsShortcut(Services.appinfo.OS)",
+        "DEFAULT_TABS_SHORTCUT",
         "DEFAULT_URLBAR_SHORTCUT",
     ]
-
-
-@pytest.mark.parametrize(
-    ("platform", "expected"),
-    [("win32", cli.TABS_SHORTCUT), ("darwin", cli.TABS_SHORTCUT)]
-    + [
-        (p, cli.TABS_SHORTCUT_LINUX)
-        for p in ("linux", "linux2", "freebsd14", "", "cygwin", "WIN32")
-    ],
-)
-def test_the_cli_announces_the_tab_bar_shortcut_of_the_system(monkeypatch, platform, expected):
-    monkeypatch.setattr(cli.sys, "platform", platform)
-    assert cli.tabs_shortcut() == expected
 
 
 def test_every_installed_file_exists_in_the_sources():
@@ -76,7 +60,7 @@ def test_the_readmes_css_example_shows_the_real_defaults():
     root = ROOT
     css = (assets_dir() / "autohide.css").read_text(encoding="utf-8")
     real = _variables(css.split(":root {")[1].split("}")[0])  # the defaults, not the overrides
-    assert len(real) == 8
+    assert len(real) == 9
     for name in ("README.md", "README.pt-BR.md"):
         text = (root / name).read_text(encoding="utf-8")
         blocks = [b for b in text.split("```css")[1:] if "--autohide-strip:" in b.split("```")[0]]
