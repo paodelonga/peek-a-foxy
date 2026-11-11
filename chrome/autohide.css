@@ -127,6 +127,10 @@
     margin var(--autohide-show), border-width var(--autohide-show);
 }
 
+:root[autohide-urlbar]:not([inFullscreen], [customizing]) #urlbar {
+  transition: opacity var(--autohide-show);
+}
+
 #tabs-autohide-button {
   list-style-image: url("chrome://browser/skin/tabs.svg");
 }
@@ -163,6 +167,21 @@
   margin: 0 !important;
   border-width: 0 !important;
   opacity: 0;
+}
+
+/* The address bar itself. Firefox 153 (ESR) keeps #urlbar open as a popover in the top layer, where the
+   collapsing of #nav-bar (overflow, max-height, opacity) does not reach it: it stayed painted over the
+   top of the page, took the clicks there and, hovered, opened the bar. While the bar is collapsed it is
+   transparent and takes no pointer events; it stays focusable, so Ctrl+L, Alt+D and F6 still reveal the
+   bar through :focus-within. */
+:root[autohide-urlbar]:not([peekafoxy-bookmarks="visible"], [inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
+  #navigator-toolbox:not(:has(#PersonalToolbar:is(:hover, :focus-within)))
+  #nav-bar:not(:hover, :focus-within, :has(toolbarbutton[open])) #urlbar,
+:root[autohide-urlbar][peekafoxy-bookmarks="visible"]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
+  #navigator-toolbox #nav-bar:not(:hover, :focus-within, :has(toolbarbutton[open])) #urlbar {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--autohide-hide);
 }
 
 /* 3. revealed */
