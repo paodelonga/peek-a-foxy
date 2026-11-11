@@ -463,3 +463,59 @@ def test_the_address_bar_is_back_when_the_navigation_bar_opens_and_takes_clicks(
         )
         browser.js("gBrowser.selectedBrowser.focus();")
         browser.wait(f"{NAV_HEIGHT} <= 8", 8, "the bar did not close after the focus left")
+
+
+# --- the show delay and the always visible bookmarks bar ---------------------------------------
+
+
+@variants
+@pytest.mark.parametrize(
+    ("marker", "strip", "other", "key"),
+    [
+        ("peekafoxy-popup-open", "nav-bar", "tabs", "nav"),
+        ("peekafoxy-popup-open", "TabsToolbar", "navbar", "tabs"),
+        ("peekafoxy-peek", "nav-bar", "tabs", "nav"),
+    ],
+    ids=["popup-on-tabs-nav-strip", "popup-on-nav-tabs-strip", "peek-of-tabs"],
+)
+def test_what_concerns_the_other_bar_does_not_cancel_the_show_delay(
+    browser, customtitlebar, marker, strip, other, key
+):
+    """Adversarial: a popup or a peek of one bar must not make the other bar open at once; it still
+    waits for the show delay (1.2 s here). A drag marker is not tried: the script ends a drag it did
+    not see begin on the first mouse movement."""
+    with collapsed_window(browser, customtitlebar) as natural:
+        measure = browser.TABS_HEIGHT if key == "tabs" else NAV_HEIGHT
+        browser.js("Services.prefs.setIntPref('peekafoxy.show.delay.ms', 1200);")
+        browser.wait(
+            f"{ROOT}.style.getPropertyValue('--autohide-show-delay') === '1200ms'",
+            5,
+            "delay not set",
+        )
+        browser.js(f"{ROOT}.setAttribute('{marker}', '{other}');")
+        try:
+            browser.settled_heights()  # the other bar opens and moves this strip: aim after that
+            hover(browser, strip)
+            stays(browser, f"{measure} <= 8", "the bar opened before the show delay", 0.6)
+            browser.wait(f"{measure} === {natural[key]}", 6, "the bar never opened after the delay")
+        finally:
+            browser.js(f"{ROOT}.removeAttribute('{marker}');")
+
+
+@variants
+def test_a_bookmarks_bar_that_always_stays_visible_is_not_capped_when_the_group_opens(
+    browser, customtitlebar
+):
+    """Adversarial: a bookmarks bar taller than the 40 px cap (90 px asked, about 70 shown) of the reveal rules keeps its height."""
+    with collapsed_window(browser, customtitlebar, bookmarks=True) as natural:
+        browser.js("Services.prefs.setStringPref('peekafoxy.bookmarks', 'visible');")
+        browser.js("document.getElementById('PersonalToolbar').style.height = '90px';")
+        try:
+            browser.wait(
+                f"{BOOKMARKS_HEIGHT} >= 50 && {NAV_HEIGHT} <= 8", 5, "not tall and visible"
+            )
+            hover(browser, "nav-bar")
+            browser.wait(f"{NAV_HEIGHT} === {natural['nav']}", 5, "the group did not open")
+            stays(browser, f"{BOOKMARKS_HEIGHT} >= 50", "the bookmarks bar was capped", 0.8)
+        finally:
+            browser.js("document.getElementById('PersonalToolbar').style.height = '';")
