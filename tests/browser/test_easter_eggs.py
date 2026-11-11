@@ -188,6 +188,10 @@ def clean(browser):
         browser.close_settings_tabs()
 
     reset()
+    # A Windows machine may ask for reduced motion (the CI runner does), which would skip the fade
+    # and the peeking that these tests look at; the tests about reduced motion turn it on themselves.
+    browser.js("Services.prefs.setIntPref('ui.prefersReducedMotion', 0);")
+    browser.wait("!matchMedia('(prefers-reduced-motion: reduce)').matches", 5)
     yield
     reset()
 
