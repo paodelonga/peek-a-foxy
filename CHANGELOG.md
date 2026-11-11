@@ -12,7 +12,7 @@ is and what controls it, with a *Known issues* section for what is not covered.
 ### Added
 
 - **A new setting: how long the pointer must stay on an activation strip before its bar opens** (`peekafoxy.show.delay.ms`, 0 to 5000, default 100, so a pointer that only brushes past a strip no longer opens the bar; set it to 0 for the old behaviour). It applies to the hover strips only; shortcuts, flashes and popups still open the bars at once. In the CSS it is `--autohide-show-delay`.
-- Something small is hiding in the settings page.
+- Something small is hiding in the settings page, and there is a clue to it in one of the shortcuts.
 - **Three more reasons for the tab bar to open for a moment**, all off by default: the page of the current tab finishes loading (`peekafoxy.tabs.reveal.load`), a download finishes (`peekafoxy.tabs.reveal.download`) and the title of a tab in the background changes (`peekafoxy.tabs.reveal.title`). They share the reveal time of the other three.
 - **The activation strip of each bar can have its own thickness** (`peekafoxy.tabs.strip.px` and `peekafoxy.urlbar.strip.px`, 0 to 40). The default, 0, keeps following `peekafoxy.strip.px`, so nothing changes until you set one. In the CSS they are `--autohide-tabs-strip` and `--autohide-nav-strip`.
 - **The closing animation has a duration of its own** (`peekafoxy.hide.ms`, 0 to 2000, default 200, which is what it always was). In the CSS it is `--autohide-hide-duration`.

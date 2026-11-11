@@ -1110,3 +1110,127 @@ def test_the_sequence_matcher_needs_the_keys_in_a_row(browser):
         "mixed": ["peek", "konami"],
         "digit": [],
     }
+
+
+# --- the hint on the keyboard shortcuts page (about:keyboard) -----------------------------------
+
+ASK_FRAME = """
+window.__answer = null;
+const mm = gBrowser.selectedBrowser.messageManager;
+const listener = (msg) => { window.__answer = msg.data; mm.removeMessageListener('zz:frame', listener); };
+mm.addMessageListener('zz:frame', listener);
+const code = `sendAsyncMessage('zz:frame', (function () { ${arguments[0]} })());`;
+mm.loadFrameScript('data:,' + encodeURIComponent(code), false);
+"""
+
+
+def ask_frame(browser, body: str):
+    """Run ``body`` (a function body returning JSON) in the selected tab's content process."""
+    browser.js(ASK_FRAME, body)
+    browser.wait("window.__answer !== null", 8, "the page did not answer")
+    return browser.js("return window.__answer;")
+
+
+HINT_STATE = """
+  const hint = content.document.getElementById('peekafoxy-hint');
+  const actions = content.document.querySelector('.customkeys-sidebar-actions');
+  return {
+    count: content.document.querySelectorAll('#peekafoxy-hint').length,
+    keys: hint ? [...hint.querySelectorAll('kbd')].map(k => k.textContent) : [],
+    texts: hint ? [hint.querySelector('strong').textContent] : [],
+    spans: hint ? hint.querySelectorAll('span').length : null,
+    after: hint?.previousElementSibling?.id ?? null,
+    inside: hint?.parentElement === actions,
+  };
+"""
+
+
+def open_keyboard_page(browser, url: str = "about:keyboard") -> None:
+    browser.js(
+        "gBrowser.selectedTab = gBrowser.addTab(arguments[0], {triggeringPrincipal: "
+        "Services.scriptSecurityManager.getSystemPrincipal()});",
+        url,
+    )
+    browser.wait(
+        "gBrowser.selectedBrowser.currentURI.spec.startsWith(arguments[0]) && "
+        "!gBrowser.selectedTab.hasAttribute('busy')".replace("arguments[0]", repr(url)),
+        10,
+        "the page did not load",
+    )
+    time.sleep(1.5)
+
+
+def has_keyboard_page(browser) -> bool:
+    """Firefox ESR 153 has no such page: its about:keyboard has nothing of the sidebar."""
+    return ask_frame(
+        browser, "return !!content.document.querySelector('.customkeys-sidebar-actions');"
+    )
+
+
+def test_the_keyboard_shortcuts_page_gets_the_hint_under_its_reset_button(browser, video):
+    """Default path: the keys, in order, under "Restore defaults", once."""
+    open_keyboard_page(browser)
+    if not has_keyboard_page(browser):
+        pytest.skip("this Firefox has no keyboard shortcuts page")
+    assert ask_frame(browser, HINT_STATE) == {
+        "count": 1,
+        "keys": ["S", "W", "S", "W", "S", "A", "D"],
+        "texts": ["Keyboard combos"],
+        "spans": 0,
+        "after": "resetAll",
+        "inside": True,
+    }
+
+
+def test_the_hint_is_not_added_twice_when_the_page_is_reloaded(browser, video):
+    """Adversarial: reload, and load the page again in the same tab."""
+    open_keyboard_page(browser)
+    if not has_keyboard_page(browser):
+        pytest.skip("this Firefox has no keyboard shortcuts page")
+    browser.js("gBrowser.selectedBrowser.reload();")
+    time.sleep(2.5)
+    browser.js(
+        "gBrowser.selectedBrowser.loadURI(Services.io.newURI('about:keyboard#again'), "
+        "{triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});"
+    )
+    time.sleep(2.5)
+    assert ask_frame(browser, HINT_STATE)["count"] == 1
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "about:blank",
+        "about:preferences",
+        "about:keyboardx",
+        "data:text/html,<div class='customkeys-sidebar-actions'></div>",
+    ],
+)
+def test_other_pages_never_get_the_hint(browser, video, url):
+    """Adversarial: only about:keyboard does, not a page that is named or built like it."""
+    open_keyboard_page(browser, url)
+    time.sleep(1.5)
+    assert (
+        ask_frame(browser, "return content.document.querySelectorAll('#peekafoxy-hint').length;")
+        == 0
+    )
+
+
+def test_the_hint_follows_the_language_of_firefox(browser_in_portuguese, sites):
+    browser = browser_in_portuguese
+    open_keyboard_page(browser)
+    if not has_keyboard_page(browser):
+        pytest.skip("this Firefox has no keyboard shortcuts page")
+    assert ask_frame(browser, HINT_STATE)["texts"] == ["Combos de teclado"]
+
+
+def test_the_konami_sequence_works_with_the_keyboard_page_in_front(browser, video):
+    """The point of the hint: typed on that page, the keys open the player (after the bars peek)."""
+    open_keyboard_page(browser)
+    if not has_keyboard_page(browser):
+        pytest.skip("this Firefox has no keyboard shortcuts page")
+    browser.js("window.focus(); gBrowser.selectedBrowser.focus();")
+    type_real(browser, "swswsad")
+    wait_for_player(browser)
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_closed(browser)

@@ -270,6 +270,7 @@
       onStateChange(browser, webProgress, request, flags) {
         const done = Ci.nsIWebProgressListener.STATE_STOP | Ci.nsIWebProgressListener.STATE_IS_WINDOW;
         if ((flags & done) !== done || !webProgress.isTopLevel) return;
+        Peek.hintOnKeyboardPage(browser, LOCALE); // a no-op for every page but about:keyboard
         if (browser !== gBrowser.selectedBrowser || !Peek.read(PREFS.revealLoad)) return;
         if (browser.currentURI?.spec === "about:blank") return;
         flashTabs();
