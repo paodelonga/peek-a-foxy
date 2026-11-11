@@ -121,6 +121,7 @@ class Context:
     firefox_candidates: Callable[[], list[Path]]
     profiles_root: Callable[[], Path]
     assets_dir: Callable[[], Path]
+    loader_files: Callable[[], Path]  # the checked fx-autoconfig files that come with the program
     encoding: str
     is_tty: bool
     log_target: Path | None
@@ -152,6 +153,7 @@ class Context:
             firefox_candidates=platform.firefox_dir_candidates,
             profiles_root=platform.profiles_root,
             assets_dir=assets.assets_dir,
+            loader_files=loader.verified_bundle,
             encoding=ui.console.encoding or "unknown",
             is_tty=sys.stdout is not None and sys.stdout.isatty(),
             log_target=log_target,
@@ -322,9 +324,11 @@ def _program_checks(ctx: Context) -> list[Check]:
         checks.append(_ok("program.os", "System", f"{ctx.os_description}, {ctx.machine}"))
     checks += _guarded("program.admin", "Administrator rights", lambda: _admin_check(ctx))
     checks += _guarded("program.terminal", "Terminal", lambda: _terminal_check(ctx))
-    checks += _guarded("program.git", "git", lambda: _git_check(ctx))
     checks += _guarded("program.loader_pin", "Pinned loader (fx-autoconfig)", lambda: _pin(ctx))
     checks += _guarded("program.assets", "Bundled Firefox files", lambda: _assets_check(ctx))
+    checks += _guarded(
+        "program.loader_files", "Bundled loader files", lambda: _loader_files_check(ctx)
+    )
     checks += _guarded("program.log", "Log file", lambda: _log_check(ctx))
     return checks
 
@@ -357,29 +361,6 @@ def _terminal_check(ctx: Context) -> Check:
         "may be shown incorrectly.",
         value=value,
     )
-
-
-def _git_check(ctx: Context) -> Check:
-    if ctx.which("git") is None:
-        return _bad(
-            "program.git",
-            "git",
-            WARN,
-            errors.GIT_MISSING,
-            "git is not installed on this computer; only the `install` command needs it, in order "
-            "to download the loader.",
-        )
-    try:
-        text = ctx.run_command(["git", "--version"])
-    except (OSError, subprocess.SubprocessError):
-        return _bad(
-            "program.git",
-            "git",
-            WARN,
-            errors.GIT_MISSING,
-            "git is installed but could not be run; only the `install` command needs it.",
-        )
-    return _ok("program.git", "git", text.removeprefix("git version ").strip() or "found")
 
 
 def _pin(ctx: Context) -> Check:
@@ -434,6 +415,17 @@ def _assets_check(ctx: Context) -> Check:
             f"These files are missing from this copy of Peek-a-Foxy: {', '.join(missing)}.",
         )
     return _ok("program.assets", "Bundled Firefox files", f"all {len(assets.FILES)} found")
+
+
+def _loader_files_check(ctx: Context) -> Check:
+    title = "Bundled loader files"
+    try:
+        ctx.loader_files()
+    except PeekError as error:
+        return _bad(
+            "program.loader_files", title, FAIL, error.code, f"{error.message}.", hint=error.hint
+        )
+    return _ok("program.loader_files", title, f"all checked, commit {loader.DEFAULT_COMMIT[:10]}")
 
 
 def _log_check(ctx: Context) -> Check:

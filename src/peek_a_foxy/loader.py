@@ -1,14 +1,16 @@
 """The fx-autoconfig loader, which lets Firefox run the ``*.uc.js`` script.
 
-It is fetched at a pinned commit and the checkout is verified, so a moved branch or tag cannot
-change what gets installed. ``FXAC_REPO`` / ``FXAC_COMMIT`` can override the source (used by the
-tests).
+The few files that are installed come with Peek-a-Foxy (the folder ``fx-autoconfig``, at a pinned
+commit) and are checked against the SHA-256 of a manifest before they are used, so nothing has to be
+downloaded and nothing needs git. ``FXAC_REPO`` / ``FXAC_COMMIT`` replace them with a fetch of
+another commit with git (used by the tests).
 """
 
 from __future__ import annotations
 
 import contextlib
 import hashlib
+import json
 import logging
 import os
 import re
@@ -20,6 +22,7 @@ import tempfile
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from importlib import resources
 from pathlib import Path
 
 from peek_a_foxy import elevate, errors, fileio, platform
@@ -155,19 +158,96 @@ def _fetch_commit(repo: str, commit: str, checkout: Path) -> None:
     _git("checkout", "--quiet", "--detach", commit, cwd=checkout)
 
 
-def _git_missing() -> LoaderError:
+BUNDLE_NAME = "fx-autoconfig"  # the folder with the files that come with the program
+BUNDLE_UTILS = "profile/chrome/utils"
+
+
+def bundled_dir() -> Path:
+    """The folder with the fx-autoconfig files: ``peek_a_foxy/fx-autoconfig`` in an installed
+    package or in the standalone program, ``fx-autoconfig/`` in a source checkout."""
+    packaged = Path(str(resources.files("peek_a_foxy") / BUNDLE_NAME))
+    if (packaged / "manifest.json").is_file():
+        return packaged
+    checkout = Path(__file__).resolve().parents[2] / BUNDLE_NAME
+    if (checkout / "manifest.json").is_file():
+        return checkout
+    raise LoaderError(
+        errors.CHECKOUT_MISMATCH, "the fx-autoconfig files that come with this program are missing"
+    )
+
+
+def _damaged(what: str) -> LoaderError:
+    return LoaderError(
+        errors.CHECKOUT_MISMATCH,
+        f"the fx-autoconfig files that come with this program are not the ones it expects: {what}",
+    )
+
+
+def verified_bundle() -> Path:
+    """The folder of the files that come with the program, after every one of them was checked.
+
+    The manifest names the commit and the SHA-256 of each file. The commit has to be the one this
+    program pins, and the two files that go into Firefox's folder have to be the ones whose hashes
+    are pinned in the code. A file that is missing, is not a plain file, is too large or differs by
+    a byte stops the install before anything is changed, and so does a file in
+    ``profile/chrome/utils`` that the manifest does not name (the whole folder is copied).
+    """
+    root = bundled_dir()
     try:
-        windows = platform.system() == "windows"
-    except platform.UnsupportedPlatformError:
-        windows = False
-    hint = errors.GIT_MISSING.hint
-    if windows:
-        hint = (
-            "Install Git for Windows (https://git-scm.com/download/win, or run "
-            "`winget install Git.Git` in a terminal) and run the command again. "
-            "If fx-autoconfig is already set up in your Firefox, use --skip-loader."
-        )
-    return LoaderError(errors.GIT_MISSING, "git is required to fetch fx-autoconfig", hint=hint)
+        manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        files = manifest["files"]
+        commit = manifest["commit"]
+        if not isinstance(files, dict) or not all(
+            isinstance(path, str) and isinstance(value, str) for path, value in files.items()
+        ):
+            raise TypeError("files")
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise _damaged(f"its manifest cannot be read ({type(error).__name__})") from error
+    if commit != DEFAULT_COMMIT:
+        raise _damaged("the manifest is for another commit")
+    for name, wanted in elevate.PINNED_SHA256.items():
+        if files.get(f"program/{name}") != wanted:
+            raise _damaged(f"the manifest does not hold the pinned hash of {name}")
+    for relative, wanted in files.items():
+        candidate = root / relative
+        if candidate.is_symlink():
+            raise _damaged(f"{relative} is a link")
+        if not candidate.resolve().is_relative_to(root.resolve()):
+            raise _damaged(f"{relative} points outside the folder")
+        if not candidate.is_file():
+            raise _damaged(f"{relative} is not a plain file")
+        if candidate.stat().st_size > MAX_LOADER_FILE:
+            raise _damaged(f"{relative} is too large")
+        if hashlib.sha256(candidate.read_bytes()).hexdigest() != wanted:
+            raise _damaged(f"{relative} was changed")
+    utils = root / BUNDLE_UTILS
+    named = {relative for relative in files if relative.startswith(f"{BUNDLE_UTILS}/")}
+    present = {
+        entry.relative_to(root).as_posix() for entry in utils.rglob("*") if not entry.is_dir()
+    } | {entry.relative_to(root).as_posix() for entry in utils.rglob("*") if entry.is_dir()}
+    if present != named:
+        raise _damaged("profile/chrome/utils holds something the manifest does not name")
+    return root
+
+
+@contextmanager
+def loader_files() -> Iterator[Path]:
+    """The folder with the fx-autoconfig files to install, laid out like the repository.
+
+    Normally the verified files that come with the program; with ``FXAC_REPO`` or ``FXAC_COMMIT``
+    the files of that commit, fetched with git.
+    """
+    if overridden():
+        with fetch_loader() as checkout:
+            yield checkout
+        return
+    yield verified_bundle()
+
+
+def _git_missing() -> LoaderError:
+    return LoaderError(
+        errors.GIT_MISSING, "git is required to fetch the fx-autoconfig you asked for"
+    )
 
 
 @contextmanager

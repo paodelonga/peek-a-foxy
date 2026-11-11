@@ -3,7 +3,6 @@
     "description": "Peek-a-boo for Foxys: autohide the Firefox tab bar and navigation bar per window.",
     "homepage": "https://github.com/paodelonga/peek-a-foxy",
     "license": "MIT",
-    "depends": "git",
     "url": "https://github.com/paodelonga/peek-a-foxy/releases/download/v@VERSION@/peek-a-foxy.exe",
     "hash": "@SHA256@",
     "bin": "peek-a-foxy.exe",

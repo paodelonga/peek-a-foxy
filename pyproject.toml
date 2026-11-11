@@ -51,9 +51,11 @@ packages = ["src/peek_a_foxy"]
 # The Firefox files live in chrome/ so the repository reads like a profile; ship them inside the package.
 [tool.hatch.build.targets.wheel.force-include]
 "chrome" = "peek_a_foxy/assets"
+# The few fx-autoconfig files that get installed (see fx-autoconfig/manifest.json).
+"fx-autoconfig" = "peek_a_foxy/fx-autoconfig"
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "chrome", "tests", "README.md", "README.pt-BR.md", "CONTRIBUTING.md", "LICENSE"]
+include = ["src", "chrome", "fx-autoconfig", "tests", "README.md", "README.pt-BR.md", "CONTRIBUTING.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

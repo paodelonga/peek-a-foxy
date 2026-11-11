@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -90,7 +89,7 @@ def test_the_program_section_reports_the_facts(home: Path):
     assert "Linux-6.0" in program["program.os"].value
     assert program["program.admin"].value == "yes, running as root"
     assert "encoding utf-8" in program["program.terminal"].value
-    assert program["program.git"].value == "2.40.0"
+    assert program["program.loader_files"].status == OK
     assert program["program.loader_pin"].value == f"commit {doctor.loader.DEFAULT_COMMIT}"
     assert program["program.assets"].status == OK
     assert program["program.log"].value == "turned off"
@@ -116,18 +115,15 @@ def test_an_unknown_encoding_is_a_warning_not_a_crash(home: Path):
     assert check_of(run(home, encoding="unknown"), "program.terminal").status == WARN
 
 
-def test_a_missing_git_is_a_warning_that_says_what_needs_it(home: Path):
-    check = check_of(run(home, which=lambda name: None), "program.git")
-    assert check.status == WARN and check.code == errors.GIT_MISSING.code
-    assert "only the `install` command needs it" in check.message
+def test_damaged_loader_files_are_a_failure_with_the_loader_code(home: Path):
+    def damaged():
+        raise doctor.loader.LoaderError(
+            errors.CHECKOUT_MISMATCH, "the fx-autoconfig files ... boot.sys.mjs was changed"
+        )
 
-
-def test_a_git_that_does_not_run_is_a_warning_too(home: Path):
-    def broken(command):
-        raise subprocess.CalledProcessError(1, command)
-
-    check = check_of(run(home, run_command=broken), "program.git")
-    assert check.status == WARN and "could not be run" in check.message
+    check = check_of(run(home, loader_files=damaged), "program.loader_files")
+    assert check.status == FAIL and check.code == errors.CHECKOUT_MISMATCH.code
+    assert "boot.sys.mjs was changed" in check.message and check.hint
 
 
 VALID = "a" * 40
@@ -993,11 +989,11 @@ def test_a_check_that_raises_becomes_a_warning_and_the_rest_still_runs(home: Pat
     def explode(ctx):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(doctor, "_git_check", explode)
+    monkeypatch.setattr(doctor, "_loader_files_check", explode)
     report = run(home)
-    git = check_of(report, "program.git")
-    assert git.status == WARN and git.code == errors.UNEXPECTED.code
-    assert "RuntimeError: boom" in git.detail
+    check = check_of(report, "program.loader_files")
+    assert check.status == WARN and check.code == errors.UNEXPECTED.code
+    assert "RuntimeError: boom" in check.detail
     assert check_of(report, "program.version").status == OK
 
 

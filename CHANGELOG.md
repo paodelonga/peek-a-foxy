@@ -14,6 +14,7 @@ is and what controls it, with a *Known issues* section for what is not covered.
 - **A new setting: how long the pointer must stay on an activation strip before its bar opens** (`peekafoxy.show.delay.ms`, 0 to 5000, default 100, so a pointer that only brushes past a strip no longer opens the bar; set it to 0 for the old behaviour). It applies to the hover strips only; shortcuts, flashes and popups still open the bars at once. In the CSS it is `--autohide-show-delay`.
 - Something small is hiding in the settings page, and there is a clue to it in one of the shortcuts.
 - **A fourth extra reason for the tab bar to open for a moment: tabs being reordered** (`peekafoxy.tabs.reveal.move`, off by default), with `Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` or a drag, so that with the bar hidden you can see where the tab went.
+- **Git is no longer needed.** The few fx-autoconfig files that get installed (about 85 KB, under the MPL-2.0, at the commit that was already pinned) now come inside the package and the standalone program, and every one is checked against the SHA-256 of a manifest before anything is changed, so nothing is downloaded for the loader. The Scoop and winget manifests no longer depend on Git, `doctor` checks the bundled files instead of Git (a damaged copy is `PAF-204`), and `FXAC_REPO` and `FXAC_COMMIT` still fetch another commit with `git` for tests. `python packaging/update_loader.py` refreshes the files from a new commit.
 - **Three more reasons for the tab bar to open for a moment**, all off by default: the page of the current tab finishes loading (`peekafoxy.tabs.reveal.load`), a download finishes (`peekafoxy.tabs.reveal.download`) and the title of a tab in the background changes (`peekafoxy.tabs.reveal.title`). They share the reveal time of the other three.
 - **The activation strip of each bar can have its own thickness** (`peekafoxy.tabs.strip.px` and `peekafoxy.urlbar.strip.px`, 0 to 40). The default, 0, keeps following `peekafoxy.strip.px`, so nothing changes until you set one. In the CSS they are `--autohide-tabs-strip` and `--autohide-nav-strip`.
 - **The closing animation has a duration of its own** (`peekafoxy.hide.ms`, 0 to 2000, default 200, which is what it always was). In the CSS it is `--autohide-hide-duration`.
@@ -138,8 +139,7 @@ is and what controls it, with a *Known issues* section for what is not covered.
   (set `peekafoxy.welcomed` to `false` to see it again).
 - **The loader is fetched with `core.autocrlf=false` and `core.longpaths=true`**, read as UTF-8, and the
   checkout is removed even when git's object files are read-only. Git for Windows converts line
-  endings by default, which handed Firefox a `config.js` with CRLF. A missing git on Windows points to
-  Git for Windows and `winget`.
+  endings by default, which handed Firefox a `config.js` with CRLF.
 - **`git` gets a time limit of 120 seconds and never asks for a password**, and an offline run shows one
   failure instead of two attempts. A loader copy into a writable Firefox folder is written aside and
   renamed, so it appears whole or not at all. A loader that is already in place is left alone, so a run
@@ -216,8 +216,8 @@ is and what controls it, with a *Known issues* section for what is not covered.
   hidden; turn on Firefox's own title bar to collapse it fully.
 - The runner image's Firefox already uses autoconfig (`mozilla.cfg`); the loader still worked there.
   Another `general.config.filename` set elsewhere is not detected.
-- The standalone Windows program still needs Git for Windows, and it is not published yet: the program,
-  the install script and the Scoop and winget manifests exist only as what a release will attach.
+- The standalone Windows program is not published yet: the program, the install script and the Scoop
+  and winget manifests exist only as what a release will attach.
 - A hard kill (power loss, `kill -9`) between the temporary file and the rename leaves a file named `<file>.<pid>.<random>.peek-a-foxy.tmp` next to the user's file. The user's file itself is never half written; the leftover can be deleted by hand.
 - The edit replaces the file, so a hard link to `userChrome.css` is broken (the link becomes a separate file), and extended attributes, ACLs and the SELinux label of the old file are not copied to the new one.
 - The step that checks for a change made by another program compares the content just before the rename; a change in the few microseconds between that check and the rename is still lost.

@@ -170,7 +170,6 @@ try {
     }
     Write-Host ""
     Write-Host "Open a new terminal and run:  peek-a-foxy install"
-    Write-Host "(it needs Git for Windows: winget install Git.Git)"
 } finally {
     Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
 }
