@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import shellingham
 import typer
 from support import flat
 from typer import _completion_shared
@@ -38,6 +39,17 @@ def no_process(monkeypatch) -> list[object]:
     return started
 
 
+def detected_shell(monkeypatch, name: str) -> None:
+    """Make Typer believe that the terminal runs ``name``.
+
+    Typer 0.16 calls ``shellingham.detect_shell()`` inside its ``install`` function, while newer
+    releases go through a private helper of their own that calls the same function. The one name
+    that both look up on the ``shellingham`` module at the moment they need it is the function
+    itself, so that is what is replaced; Typer's private helpers are not relied on.
+    """
+    monkeypatch.setattr(shellingham, "detect_shell", lambda *a, **k: (name, f"/bin/{name}"))
+
+
 def home() -> Path:
     return Path(os.environ["HOME"])
 
@@ -50,7 +62,7 @@ def nothing_written() -> bool:
 def test_the_detected_powershell_is_refused_without_starting_any_program(
     monkeypatch, no_process, shell
 ):
-    monkeypatch.setattr(_completion_shared, "_get_shell_name", lambda: shell)
+    detected_shell(monkeypatch, shell)
     result = runner.invoke(app, ["--install-completion"])
     shown = flat(result.output)
     assert no_process == [] and result.exit_code == 1, (result.output, result.exception)
@@ -77,10 +89,10 @@ def test_typers_own_installer_function_is_the_refusal(no_process, shell):
 
 
 @pytest.mark.parametrize("shell", ["PowerShell", "PWSH"])
-def test_the_shell_name_is_matched_the_way_typer_does_it(monkeypatch, no_process, shell):
-    # Typer lower-cases what it detects; a name that reaches it in another case is unsupported
-    # there and starts nothing, which is as safe.
-    monkeypatch.setattr(_completion_shared, "_get_shell_name", lambda: shell.lower())
+def test_a_powershell_name_in_another_case_starts_nothing_either(monkeypatch, no_process, shell):
+    # Newer Typer releases lower-case the detected name (and so reach the refusal); older ones
+    # report it as an unsupported shell. Either way no program is started and nothing is written.
+    detected_shell(monkeypatch, shell)
     result = runner.invoke(app, ["--install-completion"])
     assert no_process == [] and result.exit_code == 1 and nothing_written()
 
@@ -116,7 +128,7 @@ def test_a_real_run_with_no_programs_to_start_is_refused_not_crashed(tmp_path: P
     ],
 )
 def test_the_other_shells_still_install(monkeypatch, shell, expected):
-    monkeypatch.setattr(_completion_shared, "_get_shell_name", lambda: shell)
+    detected_shell(monkeypatch, shell)
     result = runner.invoke(app, ["--install-completion"], prog_name="peek-a-foxy")
     assert result.exit_code == 0, (result.output, result.exception)
     assert (home() / expected).is_file()
