@@ -1154,15 +1154,6 @@ const ACTIVATE = "data:,content.document.notifyUserGestureActivation();";
 
 // The key sequences, as KeyboardEvent.code, so that they do not depend on the keyboard layout
 // (WASD, not the arrows, which are Firefox's own keys).
-// What day it is, as an object so that a test can change it. On 17 November, the day the song came
-// out (in 2017), the title of the settings page wears a hat (titleFor).
-export const Clock = { now: () => new Date() };
-export const isAnniversary = () => {
-  const day = Clock.now();
-  return day.getMonth() === 10 && day.getDate() === 17;
-};
-export const titleFor = (text) => (isAnniversary() ? text.category.replace("🦊", "🎩🦊") : text.category);
-
 export const SEQUENCES = {
   konami: ["KeyS", "KeyW", "KeyS", "KeyW", "KeyS", "KeyA", "KeyD"],
   peek: ["KeyP", "KeyE", "KeyE", "KeyK"],
@@ -1417,6 +1408,115 @@ function openPlayer(run, locale) {
   }
 }
 
+// How long the window stays in pieces before it puts itself together (a test shortens it).
+export const Chaos = { holdMs: 12000 };
+// The parts of the window that fall apart (the toolbars' tabs, buttons and the address bar), at most
+// CHAOS_LIMIT of them, the ones that are on screen.
+const CHAOS_PARTS = [
+  "#TabsToolbar .tabbrowser-tab", "#TabsToolbar toolbarbutton", "#nav-bar toolbarbutton",
+  "#nav-bar #urlbar-container", "#PersonalToolbar toolbarbutton", "#sidebar-main toolbarbutton",
+];
+const CHAOS_LIMIT = 150;
+const between = (low, high) => low + Math.random() * (high - low);
+const sign = () => (Math.random() < 0.5 ? -1 : 1);
+
+function scatterParts(run) {
+  const { win } = run;
+  const doc = win.document;
+  const veil = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
+  veil.id = "peekafoxy-veil";
+  veil.style.cssText =
+    "position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 2147483647;";
+  doc.documentElement.append(veil);
+  const animations = [];
+  const fade = (to, ms) => {
+    const animation = veil.animate([{ opacity: 1 - to }, { opacity: to }], { duration: ms, fill: "forwards" });
+    return animation.finished.catch(() => {});
+  };
+  const alive = () => egg === run && !isClosed(win);
+
+  const restore = async () => {
+    if (run.restoring || !alive()) return;
+    run.restoring = true;
+    lazy.clearTimeout(run.timer);
+    await fade(1, 400);
+    if (!alive()) return;
+    for (const animation of animations.splice(0)) animation.cancel();
+    await fade(0, 500);
+    finish(run);
+  };
+  const onKey = (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    restore();
+  };
+  const onClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    restore();
+  };
+  win.addEventListener("keydown", onKey, true);
+  win.addEventListener("mousedown", onClick, true);
+  run.cleanups.push(() => {
+    lazy.clearTimeout(run.timer);
+    win.removeEventListener("keydown", onKey, true);
+    win.removeEventListener("mousedown", onClick, true);
+    for (const animation of animations.splice(0)) animation.cancel();
+    veil.remove();
+  });
+
+  const parts = () => {
+    const seen = [];
+    for (const element of doc.querySelectorAll(CHAOS_PARTS.join(","))) {
+      const box = element.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0) seen.push({ element, x: box.x + box.width / 2, y: box.y + box.height / 2 });
+      if (seen.length === CHAOS_LIMIT) break;
+    }
+    return seen;
+  };
+  const move = (element, keyframes, options) => {
+    animations.push(element.animate(keyframes, { fill: "both", ...options }));
+  };
+  const fall = (part, others) => {
+    const roll = Math.random();
+    if (roll < 0.35 && others.length > 1) {
+      const other = others[Math.floor(Math.random() * others.length)];
+      move(part.element, [{ transform: "none" }, {
+        transform: `translate(${other.x - part.x}px, ${other.y - part.y}px) rotate(${sign() * between(0, 25)}deg)`,
+      }], { duration: 1 });
+    } else if (roll < 0.6) {
+      move(part.element, [{ transform: "none" }, {
+        transform: `translate(${between(-40, 40)}px, ${between(80, 260)}px) rotate(${sign() * between(30, 120)}deg)`,
+      }], { duration: 1 });
+    } else if (roll < 0.85) {
+      const angle = between(10, 40);
+      move(part.element, [
+        { transformOrigin: "50% 0%", transform: `rotate(${-angle}deg)` },
+        { transformOrigin: "50% 0%", transform: `rotate(${angle}deg)` },
+      ], { duration: between(700, 1600), iterations: Infinity, direction: "alternate", easing: "ease-in-out" });
+    } else {
+      move(part.element, [{ transform: "none" }, {
+        transform: `translate(${between(-300, 300)}px, ${between(-200, 200)}px) rotate(${sign() * between(0, 180)}deg)`,
+      }], { duration: 1 });
+    }
+  };
+
+  (async () => {
+    try {
+      await fade(1, 700);
+      if (!alive()) return;
+      const all = parts();
+      for (const part of all) fall(part, all);
+      await fade(0, 900);
+      if (alive() && !run.restoring) run.timer = lazy.setTimeout(restore, Chaos.holdMs);
+    } catch (e) {
+      Diag.warn("easter-egg:chaos", e);
+      finish(run);
+    }
+  })();
+}
+
 export const EasterEgg = {
   // Whether one is running (the bars are peeking or the player is open): triggers wait for it to end.
   busy: () => egg !== null,
@@ -1440,21 +1540,27 @@ export const EasterEgg = {
     }
     const { keys, matched } = nextKeys(typedIn.get(win) ?? [], event.code);
     typedIn.set(win, keys);
-    if (matched === "boo") EasterEgg.startle(win);
+    if (matched === "boo") EasterEgg.chaos(win);
     else if (matched) EasterEgg.play(win, { peek: matched === "konami" });
   },
 
-  // A small startle: the page area of `win` shakes for a moment (not with reduced motion). It is not
-  // an egg of its own: nothing is created, nothing is left behind, and it can repeat.
-  startle(win) {
+  // "boo": the window fades to black and comes back with its pieces out of place, some swapped, some
+  // fallen, some hanging and swinging; it puts itself together again on Escape, a click or after
+  // Chaos.holdMs. Not with reduced motion. Every piece is moved with an animation, so cancelling the
+  // animations is all it takes to undo it, and nothing of the window's own state is touched.
+  chaos(win) {
+    if (egg || !win || isClosed(win)) return;
+    const run = { win, timer: null, dialog: null, previous: null, cleanups: [] };
+    egg = run;
     try {
-      if (!win || isClosed(win) || win.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      win.document.getElementById("browser")?.animate(
-        [0, -7, 6, -5, 4, -2, 0].map((x, i) => ({ transform: `translate(${x}px, ${i % 2 ? -2 : 1}px)` })),
-        { duration: 450, easing: "ease-out" }
-      );
+      const onUnload = () => finish(run);
+      win.addEventListener("unload", onUnload);
+      run.cleanups.push(() => win.removeEventListener("unload", onUnload));
+      if (win.matchMedia("(prefers-reduced-motion: reduce)").matches) return finish(run);
+      scatterParts(run);
     } catch (e) {
-      Diag.info("easter-egg:startle", e);
+      Diag.warn("easter-egg:chaos", e);
+      finish(run);
     }
   },
 

@@ -550,7 +550,7 @@ Known limits that you may run into today:
 
 > And when I picked the name I was listening to "Peek-A-Boo", and [AT THAT EXACT MOMENT](https://youtu.be/6uJf2IT2Zh8?t=59) my bar disappeared and came back, giving me a little scare 😅
 
-👀 And there are a few easter eggs hiding around, including in the settings page. November 17... look at the settings.
+👀 And there are a few easter eggs hiding around, including in the settings page.
 
 ## Contributing
 

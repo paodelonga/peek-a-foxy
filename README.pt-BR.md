@@ -550,7 +550,7 @@ Limites conhecidos que você pode encontrar hoje:
 
 > E também na hora que eu escolhi o nome eu tava ouvindo "Peek-A-Boo" E [NESSE EXATO MOMENTO](https://youtu.be/6uJf2IT2Zh8?t=59) a minha barra sumiu e voltou me dando um sustinho 😅
 
-👀 E tem alguns easter eggs escondidos por aí, inclusive na página de configurações. 17 de novembro... olhe as configurações.
+👀 E tem alguns easter eggs escondidos por aí, inclusive na página de configurações.
 
 ## Contribuindo
 

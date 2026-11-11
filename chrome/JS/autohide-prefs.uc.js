@@ -359,8 +359,8 @@
 
   const buildPage = () => {
     const header = customElements.get("moz-page-header")
-      ? el("moz-page-header", { heading: Peek.titleFor(TEXT), description: TEXT.description })
-      : el("div", {}, el("h1", { text: Peek.titleFor(TEXT) }), el("p", { text: TEXT.description }));
+      ? el("moz-page-header", { heading: TEXT.category, description: TEXT.description })
+      : el("div", {}, el("h1", { text: TEXT.category }), el("p", { text: TEXT.description }));
     findFox(header);
     return el("section", {},
       header,
