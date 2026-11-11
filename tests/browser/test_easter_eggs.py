@@ -1137,7 +1137,8 @@ HINT_STATE = """
   return {
     count: content.document.querySelectorAll('#peekafoxy-hint').length,
     keys: hint ? [...hint.querySelectorAll('kbd')].map(k => k.textContent) : [],
-    texts: hint ? [hint.querySelector('strong').textContent, hint.querySelector('span').textContent] : [],
+    texts: hint ? [hint.querySelector('strong').textContent] : [],
+    spans: hint ? hint.querySelectorAll('span').length : null,
     after: hint?.previousElementSibling?.id ?? null,
     inside: hint?.parentElement === actions,
   };
@@ -1174,10 +1175,8 @@ def test_the_keyboard_shortcuts_page_gets_the_hint_under_its_reset_button(browse
     assert ask_frame(browser, HINT_STATE) == {
         "count": 1,
         "keys": ["S", "W", "S", "W", "S", "A", "D"],
-        "texts": [
-            "Keyboard combos",
-            "Master this one to be the greatest Peek-a-Foxy player",
-        ],
+        "texts": ["Keyboard combos"],
+        "spans": 0,
         "after": "resetAll",
         "inside": True,
     }
@@ -1222,10 +1221,7 @@ def test_the_hint_follows_the_language_of_firefox(browser_in_portuguese, sites):
     open_keyboard_page(browser)
     if not has_keyboard_page(browser):
         pytest.skip("this Firefox has no keyboard shortcuts page")
-    assert ask_frame(browser, HINT_STATE)["texts"] == [
-        "Combos de teclado",
-        "Domine este para ser o melhor jogador de Peek-a-Foxy",
-    ]
+    assert ask_frame(browser, HINT_STATE)["texts"] == ["Combos de teclado"]
 
 
 def test_the_konami_sequence_works_with_the_keyboard_page_in_front(browser, video):

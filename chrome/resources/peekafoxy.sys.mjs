@@ -281,10 +281,7 @@ export const STRINGS = {
     greeting: "Instaalleeeeed PEEK A BOO!!! >.<",
     greetingButton: "Peek-a-boo!",
     playerLabel: "Peek-A-Boo",
-    keyboardHint: {
-      title: "Keyboard combos",
-      description: "Master this one to be the greatest Peek-a-Foxy player",
-    },
+    keyboardHint: { title: "Keyboard combos" },
     tabs: { label: "Auto-hide the tab bar", tooltip: "Hide or show the tab bar in this window ({key})" },
     urlbar: { label: "Auto-hide the navigation bar", tooltip: "Hide or show the navigation bar in this window ({key})" },
     settings: {
@@ -376,10 +373,7 @@ export const STRINGS = {
     greeting: "Instaalaadoooo PEEK A BOO!!! >.<",
     greetingButton: "Peek-a-boo!",
     playerLabel: "Peek-A-Boo",
-    keyboardHint: {
-      title: "Combos de teclado",
-      description: "Domine este para ser o melhor jogador de Peek-a-Foxy",
-    },
+    keyboardHint: { title: "Combos de teclado" },
     tabs: { label: "Ocultar a barra de abas automaticamente",
             tooltip: "Oculta ou mostra a barra de abas nesta janela ({key})" },
     urlbar: { label: "Ocultar a barra de navegação automaticamente",
@@ -1441,10 +1435,7 @@ function keyboardHintInPage(text) {
       };
       const box = html("div", "display: flex; flex-direction: column; gap: 6px; margin-block-start: 16px;");
       box.id = "peekafoxy-hint";
-      box.append(
-        html("strong", "", text.title),
-        html("span", "font-size: 0.9em; color: var(--text-color-deemphasized, GrayText);", text.description)
-      );
+      box.append(html("strong", "", text.title));
       const keys = html("div", "display: flex; flex-wrap: wrap; gap: 3px;");
       for (const key of ["S", "W", "S", "W", "S", "A", "D"]) {
         keys.append(html("kbd",
