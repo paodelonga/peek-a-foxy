@@ -226,8 +226,11 @@ Cada configuração é uma pref de verdade, listada no `about:config` com o seu 
 | `peekafoxy.tabs.autohide` | `false` | Abre janelas novas com a barra de abas oculta. |
 | `peekafoxy.urlbar.autohide` | `false` | Abre janelas novas com a barra de navegação oculta. |
 | `peekafoxy.strip.px` | `8` | Largura da faixa de ativação, em pixels (1 a 40). |
+| `peekafoxy.tabs.strip.px` | `0` | Largura da faixa de ativação só da barra de abas, em pixels (0 a 40); 0 usa `peekafoxy.strip.px`. |
+| `peekafoxy.urlbar.strip.px` | `0` | O mesmo para a barra de navegação. |
 | `peekafoxy.show.ms` | `120` | Animação de abertura, em milissegundos (0 a 2000). |
 | `peekafoxy.show.delay.ms` | `100` | Quanto tempo o cursor precisa ficar na faixa de ativação antes de a barra abrir, em milissegundos (0 a 5000). |
+| `peekafoxy.hide.ms` | `200` | Animação de fechamento, em milissegundos (0 a 2000). |
 | `peekafoxy.hide.delay.ms` | `300` | Espera antes de uma barra se fechar, em milissegundos (0 a 5000). |
 | `peekafoxy.tabs.reveal.switch` | `true` | Abre a barra de abas por um instante ao trocar para outra aba. |
 | `peekafoxy.tabs.reveal.new` | `true` | Idem, ao abrir uma aba nova (a página de nova aba ou a sua página inicial). |
@@ -250,7 +253,9 @@ Estes são os padrões da folha de estilo. A largura da faixa de ativação e os
 ```css
 /* <perfil>/chrome/autohide.css */
 :root {
-  --autohide-strip: 8px;                  /* altura da faixa de hover */
+  --autohide-strip: 8px;                  /* altura da faixa de ativação */
+  --autohide-tabs-strip: var(--autohide-strip);   /* faixa própria da barra de abas */
+  --autohide-nav-strip: var(--autohide-strip);    /* faixa própria da barra de navegação */
   --autohide-tabs-height: 64px;           /* teto: a barra de abas abre até a altura natural, no máximo isto */
   --autohide-nav-height: 52px;            /* altura aberta da barra de navegação (perto da natural) */
   --autohide-bookmarks-height: 40px;      /* altura aberta da barra de favoritos */
@@ -258,7 +263,8 @@ Estes são os padrões da folha de estilo. A largura da faixa de ativação e os
   --autohide-show-delay: 0.1s;            /* abrindo: quanto tempo o cursor fica antes na faixa */
   --autohide-hide-delay: 0.3s;            /* fechando: quanto esperar antes de recolher */
   --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* abrindo: duração, curva, atraso */
-  --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);       /* fechando: duração, curva, atraso */
+  --autohide-hide-duration: 0.2s;         /* fechando: quanto tempo leva */
+  --autohide-hide: var(--autohide-hide-duration) ease-in var(--autohide-hide-delay);       /* fechando: duração, curva, atraso */
 }
 ```
 

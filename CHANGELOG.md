@@ -13,6 +13,9 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 - **A new setting: how long the pointer must stay on an activation strip before its bar opens** (`peekafoxy.show.delay.ms`, 0 to 5000, default 100, so a pointer that only brushes past a strip no longer opens the bar; set it to 0 for the old behaviour). It applies to the hover strips only; shortcuts, flashes and popups still open the bars at once. In the CSS it is `--autohide-show-delay`.
 - Something small is hiding in the settings page.
+- **The activation strip of each bar can have its own thickness** (`peekafoxy.tabs.strip.px` and `peekafoxy.urlbar.strip.px`, 0 to 40). The default, 0, keeps following `peekafoxy.strip.px`, so nothing changes until you set one. In the CSS they are `--autohide-tabs-strip` and `--autohide-nav-strip`.
+- **The closing animation has a duration of its own** (`peekafoxy.hide.ms`, 0 to 2000, default 200, which is what it always was). In the CSS it is `--autohide-hide-duration`.
+- The setting for the strip thickness is now called *Activation strip thickness* in the settings page.
 - **Windows support** (Windows 10/11, tested in CI on a real Windows runner and not yet by hand on a
   desktop; see the README's *Windows notes*):
   - **Profiles and Firefox are found.** Profiles in `%APPDATA%\Mozilla\Firefox` (falling back to the

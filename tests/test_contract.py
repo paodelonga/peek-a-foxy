@@ -60,7 +60,7 @@ def test_the_readmes_css_example_shows_the_real_defaults():
     root = ROOT
     css = (assets_dir() / "autohide.css").read_text(encoding="utf-8")
     real = _variables(css.split(":root {")[1].split("}")[0])  # the defaults, not the overrides
-    assert len(real) == 9
+    assert len(real) == 12
     for name in ("README.md", "README.pt-BR.md"):
         text = (root / name).read_text(encoding="utf-8")
         blocks = [b for b in text.split("```css")[1:] if "--autohide-strip:" in b.split("```")[0]]

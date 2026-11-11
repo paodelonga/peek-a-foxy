@@ -225,9 +225,12 @@ Every setting is a real pref, listed in `about:config` with its type, and nothin
 | --- | --- | --- |
 | `peekafoxy.tabs.autohide` | `false` | Start new windows with the tab bar hidden. |
 | `peekafoxy.urlbar.autohide` | `false` | Start new windows with the navigation bar hidden. |
-| `peekafoxy.strip.px` | `8` | Hover strip thickness, in pixels (1 to 40). |
+| `peekafoxy.strip.px` | `8` | Activation strip thickness, in pixels (1 to 40). |
+| `peekafoxy.tabs.strip.px` | `0` | Activation strip thickness of the tab bar only, in pixels (0 to 40); 0 uses `peekafoxy.strip.px`. |
+| `peekafoxy.urlbar.strip.px` | `0` | Same for the navigation bar. |
 | `peekafoxy.show.ms` | `120` | Opening animation, in milliseconds (0 to 2000). |
 | `peekafoxy.show.delay.ms` | `100` | How long the pointer has to stay on the activation strip before its bar opens, in milliseconds (0 to 5000). |
+| `peekafoxy.hide.ms` | `200` | Closing animation, in milliseconds (0 to 2000). |
 | `peekafoxy.hide.delay.ms` | `300` | Wait before a bar closes, in milliseconds (0 to 5000). |
 | `peekafoxy.tabs.reveal.switch` | `true` | Open the tab bar for a moment when you switch to another tab. |
 | `peekafoxy.tabs.reveal.new` | `true` | Same, when you open a new tab (the new-tab page or your home page). |
@@ -250,7 +253,9 @@ These are the defaults in the stylesheet. The strip thickness and the two timing
 ```css
 /* <profile>/chrome/autohide.css */
 :root {
-  --autohide-strip: 8px;                  /* hover strip height */
+  --autohide-strip: 8px;                  /* activation strip height */
+  --autohide-tabs-strip: var(--autohide-strip);   /* the tab bar's own strip */
+  --autohide-nav-strip: var(--autohide-strip);    /* the navigation bar's own strip */
   --autohide-tabs-height: 64px;           /* ceiling: the tab bar opens to its natural height, up to this */
   --autohide-nav-height: 52px;            /* the navigation bar's open height (close to its natural one) */
   --autohide-bookmarks-height: 40px;      /* the bookmarks bar's open height */
@@ -258,7 +263,8 @@ These are the defaults in the stylesheet. The strip thickness and the two timing
   --autohide-show-delay: 0.1s;            /* opening: how long the pointer stays on the strip first */
   --autohide-hide-delay: 0.3s;            /* closing: how long to wait before collapsing */
   --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* opening: duration, easing, delay */
-  --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);       /* closing: duration, easing, delay */
+  --autohide-hide-duration: 0.2s;         /* closing: how long it takes */
+  --autohide-hide: var(--autohide-hide-duration) ease-in var(--autohide-hide-delay);       /* closing: duration, easing, delay */
 }
 ```
 
