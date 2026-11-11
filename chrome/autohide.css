@@ -22,14 +22,14 @@
 
 /* Timing: reveal fast, hide slowly. The hide delay keeps the bar from flickering when the cursor
    briefly leaves it (e.g. drifting off the strip) and gives a moment to reach it again.
-   --autohide-show-delay is how long the pointer has to rest on a hidden bar (its strip) before the
+   --autohide-show-delay is how long the pointer has to stay on the activation strip of a hidden bar before the
    bar opens; it only counts when the pointer alone opens the bar, never for a shortcut, a focus or
    a tab switch. The strip, --autohide-show-duration, --autohide-show-delay and --autohide-hide-delay
    can also be set in Firefox's settings (Peek-a-Foxy); a value set there wins over the one here. */
 :root {
   --autohide-show-duration: 0.12s;
   --autohide-hide-delay: 0.3s;
-  --autohide-show-delay: 0s;
+  --autohide-show-delay: 0.1s;
   --autohide-show: var(--autohide-show-duration) ease-out 0s;
   --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);
   /* Collapsed hover strip and expanded bar heights. */

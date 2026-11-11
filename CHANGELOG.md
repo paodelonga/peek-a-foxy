@@ -11,7 +11,7 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ### Added
 
-- **A new setting: how long the pointer rests before a bar opens** (`peekafoxy.show.delay.ms`, 0 to 5000, default 0, so nothing changes until you set it). It applies to the hover strips only; shortcuts, flashes and popups still open the bars at once. In the CSS it is `--autohide-show-delay`.
+- **A new setting: how long the pointer must stay on an activation strip before its bar opens** (`peekafoxy.show.delay.ms`, 0 to 5000, default 100, so a pointer that only brushes past a strip no longer opens the bar; set it to 0 for the old behaviour). It applies to the hover strips only; shortcuts, flashes and popups still open the bars at once. In the CSS it is `--autohide-show-delay`.
 - Something small is hiding in the settings page.
 - **Windows support** (Windows 10/11, tested in CI on a real Windows runner and not yet by hand on a
   desktop; see the README's *Windows notes*):

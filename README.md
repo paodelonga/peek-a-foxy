@@ -227,7 +227,7 @@ Every setting is a real pref, listed in `about:config` with its type, and nothin
 | `peekafoxy.urlbar.autohide` | `false` | Start new windows with the navigation bar hidden. |
 | `peekafoxy.strip.px` | `8` | Hover strip thickness, in pixels (1 to 40). |
 | `peekafoxy.show.ms` | `120` | Opening animation, in milliseconds (0 to 2000). |
-| `peekafoxy.show.delay.ms` | `0` | How long the pointer has to rest on a hidden bar before it opens, in milliseconds (0 to 5000). |
+| `peekafoxy.show.delay.ms` | `100` | How long the pointer has to stay on the activation strip before its bar opens, in milliseconds (0 to 5000). |
 | `peekafoxy.hide.delay.ms` | `300` | Wait before a bar closes, in milliseconds (0 to 5000). |
 | `peekafoxy.tabs.reveal.switch` | `true` | Open the tab bar for a moment when you switch to another tab. |
 | `peekafoxy.tabs.reveal.new` | `true` | Same, when you open a new tab (the new-tab page or your home page). |
@@ -255,7 +255,7 @@ These are the defaults in the stylesheet. The strip thickness and the two timing
   --autohide-nav-height: 52px;            /* the navigation bar's open height (close to its natural one) */
   --autohide-bookmarks-height: 40px;      /* the bookmarks bar's open height */
   --autohide-show-duration: 0.12s;        /* opening: how long it takes */
-  --autohide-show-delay: 0s;              /* opening: how long the pointer rests on a hidden bar first */
+  --autohide-show-delay: 0.1s;            /* opening: how long the pointer stays on the strip first */
   --autohide-hide-delay: 0.3s;            /* closing: how long to wait before collapsing */
   --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* opening: duration, easing, delay */
   --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);       /* closing: duration, easing, delay */
@@ -537,7 +537,7 @@ Known limits that you may run into today:
 
 > And when I picked the name I was listening to "Peek-A-Boo", and [AT THAT EXACT MOMENT](https://youtu.be/6uJf2IT2Zh8?t=59) my bar disappeared and came back, giving me a little scare 😅
 
-There is a little more hiding in the settings page. Nothing is loaded until you find it, and then it is one video from youtube-nocookie.com, which receives this repository's address as the referrer.
+👀 And there are a few easter eggs hiding around, including in the settings page.
 
 ## Contributing
 

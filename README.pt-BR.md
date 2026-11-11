@@ -227,7 +227,7 @@ Cada configuração é uma pref de verdade, listada no `about:config` com o seu 
 | `peekafoxy.urlbar.autohide` | `false` | Abre janelas novas com a barra de navegação oculta. |
 | `peekafoxy.strip.px` | `8` | Largura da faixa de ativação, em pixels (1 a 40). |
 | `peekafoxy.show.ms` | `120` | Animação de abertura, em milissegundos (0 a 2000). |
-| `peekafoxy.show.delay.ms` | `0` | Quanto tempo o cursor precisa ficar sobre uma barra oculta antes de ela se abrir, em milissegundos (0 a 5000). |
+| `peekafoxy.show.delay.ms` | `100` | Quanto tempo o cursor precisa ficar na faixa de ativação antes de a barra abrir, em milissegundos (0 a 5000). |
 | `peekafoxy.hide.delay.ms` | `300` | Espera antes de uma barra se fechar, em milissegundos (0 a 5000). |
 | `peekafoxy.tabs.reveal.switch` | `true` | Abre a barra de abas por um instante ao trocar para outra aba. |
 | `peekafoxy.tabs.reveal.new` | `true` | Idem, ao abrir uma aba nova (a página de nova aba ou a sua página inicial). |
@@ -255,7 +255,7 @@ Estes são os padrões da folha de estilo. A largura da faixa de ativação e os
   --autohide-nav-height: 52px;            /* altura aberta da barra de navegação (perto da natural) */
   --autohide-bookmarks-height: 40px;      /* altura aberta da barra de favoritos */
   --autohide-show-duration: 0.12s;        /* abrindo: quanto tempo leva */
-  --autohide-show-delay: 0s;              /* abrindo: quanto tempo o cursor fica antes sobre a barra oculta */
+  --autohide-show-delay: 0.1s;            /* abrindo: quanto tempo o cursor fica antes na faixa */
   --autohide-hide-delay: 0.3s;            /* fechando: quanto esperar antes de recolher */
   --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* abrindo: duração, curva, atraso */
   --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);       /* fechando: duração, curva, atraso */
@@ -537,7 +537,7 @@ Limites conhecidos que você pode encontrar hoje:
 
 > E também na hora que eu escolhi o nome eu tava ouvindo "Peek-A-Boo" E [NESSE EXATO MOMENTO](https://youtu.be/6uJf2IT2Zh8?t=59) a minha barra sumiu e voltou me dando um sustinho 😅
 
-Tem mais um pouco escondido na página de configurações. Nada é carregado até você encontrar, e então é um vídeo de youtube-nocookie.com, que recebe o endereço deste repositório como referrer.
+👀 E tem alguns easter eggs escondidos por aí, inclusive na página de configurações.
 
 ## Contribuindo
 
