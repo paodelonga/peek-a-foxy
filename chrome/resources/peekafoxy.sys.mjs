@@ -4,7 +4,8 @@
 //   ChromeUtils.importESModule("chrome://userchrome/content/peekafoxy.sys.mjs")
 // (fx-autoconfig maps chrome://userchrome/content/ to the profile's chrome/resources/).
 // It also holds Diag, the diagnostics both scripts use: a ring buffer of recent events, the health
-// check and the status file that `peek-a-foxy doctor` reads (see the section at the end of the file).
+// check and the status file that `peek-a-foxy doctor` reads (see the diagnostics section), and the
+// easter eggs of the settings page (the last section).
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -263,6 +264,8 @@ export const STRINGS = {
   en: {
     greeting: "Instaalleeeeed PEEK A BOO!!! >.<",
     greetingButton: "Peek-a-boo!",
+    closeLabel: "Close",
+    playerLabel: "Peek-A-Boo",
     tabs: { label: "Auto-hide the tab bar", tooltip: "Hide or show the tab bar in this window ({key})" },
     urlbar: { label: "Auto-hide the navigation bar", tooltip: "Hide or show the navigation bar in this window ({key})" },
     settings: {
@@ -342,6 +345,8 @@ export const STRINGS = {
   pt: {
     greeting: "Instaalaadoooo PEEK A BOO!!! >.<",
     greetingButton: "Peek-a-boo!",
+    closeLabel: "Fechar",
+    playerLabel: "Peek-A-Boo",
     tabs: { label: "Ocultar a barra de abas automaticamente",
             tooltip: "Oculta ou mostra a barra de abas nesta janela ({key})" },
     urlbar: { label: "Ocultar a barra de navegação automaticamente",
@@ -1085,5 +1090,292 @@ export const Diag = {
     writes = 0;
     writesFailed = 0;
     skippedClosed = 0;
+  },
+};
+
+// --- the easter eggs -----------------------------------------------------------------------------
+//
+// Three ways to the same ending, all from the settings page (JS/autohide-prefs.uc.js): three quick
+// clicks on the 🦊 of its title, S W S W S A D (which first makes the bars of the window peek in
+// rhythm) or typing "peek". The ending darkens the browser window and opens a video player in it.
+// The settings page cannot show the player itself (its CSP, default-src chrome:, blocks frames), so
+// the player is a remote <browser> made in the browser window when a trigger fires: nothing is
+// loaded before that, and everything is removed again when the player closes. Only one runs at a
+// time, in all windows together.
+
+const HTML_NS = "http://www.w3.org/1999/xhtml";
+
+// The video, and the page it says it is embedded in: YouTube does not play an embed that comes
+// without a Referer (Error 153). An object so that a test can point it at a page of its own.
+export const Player = {
+  url: "https://www.youtube-nocookie.com/embed/6uJf2IT2Zh8?start=59",
+  referrer: "https://github.com/paodelonga/peek-a-foxy",
+};
+const ReferrerInfo = Components.Constructor("@mozilla.org/referrer-info;1", "nsIReferrerInfo", "init");
+
+// The key sequences, as KeyboardEvent.code, so that they do not depend on the keyboard layout
+// (WASD, not the arrows, which are Firefox's own keys).
+export const SEQUENCES = {
+  konami: ["KeyS", "KeyW", "KeyS", "KeyW", "KeyS", "KeyA", "KeyD"],
+  peek: ["KeyP", "KeyE", "KeyE", "KeyK"],
+};
+const LONGEST_SEQUENCE = Math.max(...Object.values(SEQUENCES).map((keys) => keys.length));
+
+// The keys typed so far with `code` added: {keys, matched}, where `matched` names the sequence the
+// keys now end with (and the keys start over), or is null. A sequence counts only when its keys come
+// one right after the other, so any other key in between starts it over.
+export function nextKeys(keys, code) {
+  const typed = [...keys, code].slice(-LONGEST_SEQUENCE);
+  for (const [name, sequence] of Object.entries(SEQUENCES)) {
+    const tail = typed.slice(-sequence.length);
+    if (tail.length === sequence.length && tail.every((key, i) => key === sequence[i])) return { keys: [], matched: name };
+  }
+  return { keys: typed, matched: null };
+}
+
+// [the bars that peek, for how many milliseconds]: tabs, navigation bar, both, with a pause between.
+// No bar opens more than about twice a second (flashes faster than three a second can harm).
+const PEEK_STEPS = [["tabs", 350], ["", 250], ["navbar", 350], ["", 250], ["tabs navbar", 600]];
+
+// What the page loaded in the player may not do: open windows or tabs, make a frame navigate the top,
+// show alert() and the like, download, or launch other applications through their protocols
+// (nsSandboxFlags.h: AUXILIARY_NAVIGATION, TOPLEVEL_NAVIGATION, MODALS, DOWNLOADS and
+// TOPLEVEL_NAVIGATION_CUSTOM_PROTOCOLS). Navigating itself away is not covered by a flag; see guard().
+const PLAYER_SANDBOX = 0x2 | 0x4 | 0x800 | 0x10000 | 0x40000;
+
+const PLAYER_STYLE = `
+  #peekafoxy-player { box-sizing: border-box; inset: 0; margin: 0; width: 100%; height: 100%; max-width: none;
+    max-height: none; border: none; padding: 16px; background: rgb(0 0 0 / 0.85); color: #fff;
+    animation: peekafoxy-player-fade 0.4s ease-out; }
+  #peekafoxy-player[open] { display: flex; align-items: center; justify-content: center; }
+  #peekafoxy-player::backdrop { background: transparent; }
+  #peekafoxy-player .pf-frame { display: flex; flex-direction: column; gap: 8px;
+    width: min(100%, calc((100vh - 96px) * 16 / 9)); }
+  #peekafoxy-player .pf-close { align-self: flex-end; font: message-box; padding: 6px 14px; border-radius: 4px;
+    border: 1px solid ButtonText; background: ButtonFace; color: ButtonText; }
+  #peekafoxy-player .pf-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  #peekafoxy-player browser { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+  @keyframes peekafoxy-player-fade { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { #peekafoxy-player { animation: none; } }
+  @media (forced-colors: active), (prefers-contrast: more) {
+    #peekafoxy-player { background: Canvas; color: CanvasText; }
+    #peekafoxy-player .pf-close { border-width: 2px; }
+    #peekafoxy-player .pf-close:focus-visible { outline-color: CanvasText; }
+    #peekafoxy-player browser { outline: 2px solid CanvasText; }
+  }
+`;
+
+let egg = null; // the one running: {win, timer, dialog, previous, cleanups}
+
+// The address the player may show: anything in the folder of the video's address (".../embed/"),
+// so that the video page can change its own query, and nothing else.
+const allowedPrefix = () => new URL(".", Player.url).href;
+const placeOf = (uri) => {
+  try {
+    return uri.prePath;
+  } catch (e) {
+    return `${uri?.scheme}:`; // a URI without a host (data:, about:...)
+  }
+};
+
+// Undoes everything, last thing first. It runs once, whatever asks first (Escape, a click, the
+// window closing, an error). Closing the dialog gives the focus back to what had it before (the
+// settings tab, and in it the element that had it); a tab switched to meanwhile is switched back.
+function finish(run) {
+  if (egg !== run) return;
+  egg = null;
+  for (const undo of run.cleanups.reverse()) {
+    try {
+      undo();
+    } catch (e) {
+      Diag.warn("easter-egg:close", e);
+    }
+  }
+  if (!run.dialog || isClosed(run.win)) return;
+  try {
+    const tab = run.previous?.isConnected && run.win.gBrowser?.getTabForBrowser?.(run.previous);
+    if (tab && run.win.gBrowser.selectedTab !== tab) run.win.gBrowser.selectedTab = tab;
+  } catch (e) {
+    Diag.info("easter-egg:focus", e);
+  }
+}
+
+// The bars of `run.win` peek in rhythm: the root gets peekafoxy-peek with the bars that are open in
+// each step (chrome/autohide.css treats it as one more way to reveal a hidden bar), and loses it at
+// the end or when anything stops the egg. The bars' own state is never touched, so it is exactly
+// what it was afterwards.
+function peekBars(run, then) {
+  const root = run.win.document.documentElement;
+  run.cleanups.push(() => {
+    lazy.clearTimeout(run.timer);
+    root.removeAttribute("peekafoxy-peek");
+  });
+  let step = 0;
+  const next = () => {
+    run.timer = null;
+    if (egg !== run || isClosed(run.win)) return;
+    if (step === PEEK_STEPS.length) {
+      root.removeAttribute("peekafoxy-peek");
+      then();
+      return;
+    }
+    const [bars, ms] = PEEK_STEPS[step++];
+    root.setAttribute("peekafoxy-peek", bars);
+    run.timer = lazy.setTimeout(next, ms);
+  };
+  next();
+}
+
+// The player may only show the video. A load of another page in it is cancelled before anything is
+// sent (http-on-modify-request), and if the player ends up anywhere else all the same (an address
+// that is not http, such as about:blank), it is closed. Both are recorded.
+function guard(run, browser) {
+  const prefix = allowedPrefix();
+  const observer = {
+    observe(subject) {
+      try {
+        const channel = subject.QueryInterface(Ci.nsIHttpChannel);
+        const info = channel.loadInfo;
+        if (info.externalContentPolicyType !== Ci.nsIContentPolicy.TYPE_DOCUMENT) return;
+        if (BrowsingContext.get(info.browsingContextID)?.browserId !== browser.browserId) return;
+        if (channel.URI.spec.startsWith(prefix)) return;
+        channel.cancel(Cr.NS_BINDING_ABORTED);
+        Diag.warn("easter-egg:blocked", `the video player tried to load ${placeOf(channel.URI)}, which was stopped`);
+      } catch (e) {
+        Diag.warn("easter-egg:guard", e);
+      }
+    },
+  };
+  Services.obs.addObserver(observer, "http-on-modify-request");
+  run.cleanups.push(() => Services.obs.removeObserver(observer, "http-on-modify-request"));
+
+  let arrived = false;
+  const listener = {
+    QueryInterface: ChromeUtils.generateQI(["nsIWebProgressListener", "nsISupportsWeakReference"]),
+    onLocationChange(webProgress, request, location) {
+      if (!webProgress?.isTopLevel || egg !== run) return;
+      const spec = location?.spec ?? "";
+      if (spec.startsWith(prefix)) arrived = true;
+      else if (arrived || spec !== "about:blank") {
+        Diag.warn("easter-egg:blocked", `the video player went to ${placeOf(location)}, so it was closed`);
+        lazy.setTimeout(() => finish(run), 0); // not while the browser is still telling its listeners
+      }
+    },
+    onStateChange() {},
+    onProgressChange() {},
+    onStatusChange() {},
+    onSecurityChange() {},
+    onContentBlockingEvent() {},
+  };
+  browser.addProgressListener(listener, Ci.nsIWebProgress.NOTIFY_LOCATION);
+  run.cleanups.push(() => browser.removeProgressListener(listener));
+}
+
+function openPlayer(run, locale) {
+  const { win } = run;
+  const doc = win.document;
+  try {
+    const text = textFor(locale);
+    const element = (tag, props = {}) => {
+      const node = doc.createElementNS(HTML_NS, tag);
+      for (const [key, value] of Object.entries(props)) node.setAttribute(key, value);
+      return node;
+    };
+    // A modal <dialog> keeps the rest of the window inert (no focus, no clicks) while it is open, and
+    // the browser window already shows its own prompts that way.
+    const dialog = element("dialog", { id: "peekafoxy-player", role: "dialog", "aria-modal": "true", "aria-label": text.playerLabel });
+    const style = element("style");
+    style.textContent = PLAYER_STYLE;
+    const frame = element("div", { class: "pf-frame" });
+    const close = element("button", { type: "button", class: "pf-close" });
+    close.textContent = text.closeLabel;
+    dialog.append(style, frame);
+    frame.append(close);
+    run.previous = doc.activeElement;
+    run.dialog = dialog;
+    doc.body.append(dialog);
+    run.cleanups.push(() => {
+      if (dialog.open) dialog.close();
+      dialog.remove();
+    });
+
+    const browser = doc.createXULElement("browser");
+    for (const [key, value] of Object.entries({
+      type: "content", remote: "true", maychangeremoteness: "true", disableglobalhistory: "true", nodefaultsrc: "true",
+    })) browser.setAttribute(key, value);
+    frame.append(browser);
+    run.cleanups.push(() => {
+      browser.destroy?.();
+      browser.remove();
+    });
+    browser.browsingContext.sandboxFlags = PLAYER_SANDBOX;
+    guard(run, browser);
+
+    // Escape (also while the video has the keyboard, so in the capture phase of the window, unless
+    // a page is full screen, where Escape only leaves full screen), the button, and a click on the
+    // dark area around the video close it.
+    const onKey = (event) => {
+      if (event.key !== "Escape" || doc.fullscreenElement) return;
+      event.preventDefault();
+      finish(run);
+    };
+    const onCancel = (event) => {
+      event.preventDefault();
+      finish(run);
+    };
+    const onClick = (event) => {
+      if (event.target === dialog || event.target === close) finish(run);
+    };
+    win.addEventListener("keydown", onKey, true);
+    dialog.addEventListener("cancel", onCancel);
+    dialog.addEventListener("click", onClick);
+    run.cleanups.push(() => {
+      win.removeEventListener("keydown", onKey, true);
+      dialog.removeEventListener("cancel", onCancel);
+      dialog.removeEventListener("click", onClick);
+    });
+
+    dialog.showModal();
+    close.focus();
+    browser.loadURI(Services.io.newURI(Player.url), {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      referrerInfo: new ReferrerInfo(Ci.nsIReferrerInfo.UNSAFE_URL, true, Services.io.newURI(Player.referrer)),
+    });
+  } catch (e) {
+    Diag.warn("easter-egg:open", `the video player could not be opened: ${describe(e)}`, e);
+    finish(run);
+  }
+}
+
+export const EasterEgg = {
+  // Whether one is running (the bars are peeking or the player is open): triggers wait for it to end.
+  busy: () => egg !== null,
+
+  // The ending in browser window `win`, after the bars peek when `peek` is true (not with reduced
+  // motion). Returns a function that stops the peeking (the settings page calls it when it goes
+  // away); a player that is already open stays until it is closed.
+  play(win, { peek = false, locale = Services.locale.appLocaleAsBCP47 } = {}) {
+    if (egg || !win || isClosed(win)) return () => {};
+    const run = { win, timer: null, dialog: null, previous: null, cleanups: [] };
+    egg = run;
+    try {
+      const onUnload = () => finish(run);
+      win.addEventListener("unload", onUnload);
+      run.cleanups.push(() => win.removeEventListener("unload", onUnload));
+      const reduced = win.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (peek && !reduced) peekBars(run, () => openPlayer(run, locale));
+      else openPlayer(run, locale);
+    } catch (e) {
+      Diag.warn("easter-egg:play", e);
+      finish(run);
+    }
+    return () => {
+      if (!run.dialog) finish(run);
+    };
+  },
+
+  // Closes whatever is running, as Escape does.
+  close() {
+    if (egg) finish(egg);
   },
 };

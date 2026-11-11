@@ -268,10 +268,117 @@
     return el("div", {}, el("div", { class: "pf-row" }, button, done), failure, fallback);
   };
 
+  // --- the easter eggs (see EasterEgg in peekafoxy.sys.mjs) ---
+  //
+  // Three quick clicks on the 🦊 of the title, S W S W S A D or typing "peek" open the video player in
+  // the browser window. The fox gets a span of its own so that only it counts for the clicks; the span
+  // has no role, name or tab stop, so the title reads and is announced exactly as before (keyboard
+  // users have the two other ways). The keys count only while this page shows the Peek-a-Foxy
+  // category and nothing that takes typing (a text field, the search box, a shortcut field) has the
+  // focus, and never with Ctrl, Alt or Meta held.
+
+  const FOX = "🦊";
+  const CLICKS = 3, CLICKS_MS = 1200;
+  let fox = null;
+
+  // Wraps the first fox in the text of `heading` in a span and returns it, or null if there is none.
+  const wrapFox = (heading) => {
+    const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const at = node.data.indexOf(FOX);
+      if (at < 0) continue;
+      const found = node.splitText(at);
+      found.splitText(FOX.length);
+      const span = el("span", { class: "pf-fox" });
+      found.replaceWith(span);
+      span.append(found);
+      return span;
+    }
+    return null;
+  };
+  // Firefox's moz-page-header draws its heading in its shadow root, once it is defined and rendered.
+  const findFox = (header) => {
+    const wrap = (heading) => {
+      fox = heading ? wrapFox(heading) : null;
+      if (!fox) Diag.info("settings:fox", "the title has no fox to click; the keys still work");
+    };
+    try {
+      if (header.localName !== "moz-page-header") wrap(header.querySelector("h1"));
+      else {
+        customElements.whenDefined("moz-page-header")
+          .then(() => header.updateComplete)
+          .then(() => wrap(header.shadowRoot?.getElementById("heading")))
+          .catch((e) => Diag.info("settings:fox", e));
+      }
+    } catch (e) {
+      Diag.info("settings:fox", e); // only the clicks are lost
+    }
+  };
+
+  const NOT_TYPING = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"]);
+  // `node` is the event's originalTarget: the element that really has the focus, also inside the
+  // shadow root of a custom element (the search box is an <input> inside moz-input-search).
+  const takesTyping = (node) => {
+    const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+    if (!element) return false;
+    if (element.isContentEditable) return true;
+    const field = element.closest("input, textarea, select");
+    return Boolean(field) && !(field.localName === "input" && NOT_TYPING.has(field.type));
+  };
+
+  const armEggs = (pane) => {
+    let stop = null;
+    const play = (peek) => {
+      try {
+        stop = Peek.EasterEgg.play(ownerWindow(), { peek, locale: LOCALE });
+      } catch (e) {
+        Diag.warn("easter-egg:play", e);
+      }
+    };
+
+    let typed = [];
+    const onKey = (event) => {
+      if (event.repeat || MODIFIER_KEYS.includes(event.key) || event.key === "CapsLock") return; // a held key counts once
+      if (pane.hidden || !document.hasFocus() || Peek.EasterEgg.busy() || event.ctrlKey || event.altKey || event.metaKey ||
+          event.getModifierState?.("AltGraph") || Peek.Recorder.isRecording() ||
+          takesTyping(event.originalTarget ?? event.target)) {
+        typed = [];
+        return;
+      }
+      const { keys, matched } = Peek.nextKeys(typed, event.code);
+      typed = keys;
+      if (matched) play(matched === "konami");
+    };
+
+    let clicks = 0, firstClick = 0;
+    const onClick = (event) => {
+      if (!fox || !event.composedPath().includes(fox)) {
+        clicks = 0; // a click anywhere else starts the count over
+        return;
+      }
+      if (!clicks || event.timeStamp - firstClick > CLICKS_MS) {
+        clicks = 0;
+        firstClick = event.timeStamp;
+      }
+      clicks += 1;
+      if (clicks === CLICKS && !Peek.EasterEgg.busy()) play(false);
+      if (clicks >= CLICKS) clicks = 0;
+    };
+
+    window.addEventListener("keydown", onKey, true);
+    document.addEventListener("click", onClick, true);
+    window.addEventListener("pagehide", () => {
+      window.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("click", onClick, true);
+      stop?.(); // the bars stop peeking, and no player opens for a page that has gone
+    }, { once: true });
+  };
+
   const buildPage = () => {
     const header = customElements.get("moz-page-header")
       ? el("moz-page-header", { heading: TEXT.category, description: TEXT.description })
       : el("div", {}, el("h1", { text: TEXT.category }), el("p", { text: TEXT.description }));
+    findFox(header);
     return el("section", {},
       header,
       verticalTabsNote(),
@@ -337,6 +444,11 @@
       throw e;
     }
     window.addEventListener("unload", () => Services.prefs.removeObserver(Peek.PREF_BRANCH, observer), { once: true });
+    try {
+      armEggs(pane);
+    } catch (e) {
+      Diag.warn("easter-egg:arm", e); // the page works without them
+    }
 
     // The page was opened straight at #peekafoxy and Firefox has already fallen back to its default.
     if (startedOnOurPage && gLastCategory?.category && gLastCategory.category !== CATEGORY) {

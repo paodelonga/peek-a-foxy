@@ -14,7 +14,8 @@
    peekafoxy-dragging on :root (set by the script) names the bar something is being dragged out of:
    hover does not update during a drag, so that bar has to stay open by other means. The same goes for
    peekafoxy-popup-open (a list of bar names): the bars that have a popup open, whose anchor would
-   otherwise move away from under the popup as soon as the pointer enters it.
+   otherwise move away from under the popup as soon as the pointer enters it. peekafoxy-peek (a list
+   of bar names, set only while an easter egg of the settings page plays) opens those bars for a beat.
 
    Every rule is guarded with :not([inFullscreen], [customizing]): full screen has Firefox's own way of
    showing the toolbars, and in Customize Toolbar the bars must be fully visible to be rearranged. */
@@ -76,7 +77,7 @@
 }
 
 /* 2. collapsed: none of the reveal conditions below holds */
-:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]):not([tabs-flash], [peekafoxy-dragging="tabs"], [peekafoxy-popup-open~="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]):not([tabs-flash], [peekafoxy-dragging="tabs"], [peekafoxy-popup-open~="tabs"], [peekafoxy-peek~="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
   #TabsToolbar:not(:hover, :focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])) {
   max-height: var(--autohide-strip) !important;
   padding: 0 !important;
@@ -84,7 +85,7 @@
   border-width: 0 !important;
   opacity: 0;
 }
-:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]):not([tabs-flash], [peekafoxy-dragging="tabs"], [peekafoxy-popup-open~="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]):not([tabs-flash], [peekafoxy-dragging="tabs"], [peekafoxy-popup-open~="tabs"], [peekafoxy-peek~="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
   #TabsToolbar:not(:hover, :focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])) .toolbar-items {
   max-height: 0 !important;
   padding: 0 !important;
@@ -99,6 +100,7 @@
 :root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing])[tabs-flash] #TabsToolbar,
 :root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing])[peekafoxy-dragging="tabs"] #TabsToolbar,
 :root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing])[peekafoxy-popup-open~="tabs"] #TabsToolbar,
+:root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing])[peekafoxy-peek~="tabs"] #TabsToolbar,
 :root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]):has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar,
 /* Hover is not updated during a drag session, so keep the bar open while a tab is being dragged. */
 :root[autohide-tabs]:not([customtitlebar], [inFullscreen], [customizing]) #TabsToolbar:has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget]),
@@ -107,6 +109,7 @@
 :root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing])[tabs-flash] #TabsToolbar .toolbar-items,
 :root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing])[peekafoxy-dragging="tabs"] #TabsToolbar .toolbar-items,
 :root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing])[peekafoxy-popup-open~="tabs"] #TabsToolbar .toolbar-items,
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing])[peekafoxy-peek~="tabs"] #TabsToolbar .toolbar-items,
 :root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]):has(#tabContextMenu:is([state="open"], [state="showing"])) #TabsToolbar .toolbar-items,
 :root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing]) #TabsToolbar:has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget]) .toolbar-items {
   max-height: var(--autohide-tabs-height) !important;
@@ -142,7 +145,7 @@
 }
 
 /* 2. collapsed */
-:root[autohide-urlbar]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"]):not(:has(#urlbar[open]))
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
   #navigator-toolbox:not(:has(#PersonalToolbar:is(:hover, :focus-within)))
   #nav-bar:not(:hover, :focus-within, :has(toolbarbutton[open])) {
   max-height: var(--autohide-strip) !important;
@@ -157,7 +160,7 @@
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #nav-bar:focus-within,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #nav-bar:has(toolbarbutton[open]),
 :root[autohide-urlbar]:not([inFullscreen], [customizing]):has(#urlbar[open]) #nav-bar,
-:root[autohide-urlbar]:not([inFullscreen], [customizing]):is([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"]) #nav-bar,
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):is([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]) #nav-bar,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#PersonalToolbar:is(:hover, :focus-within)) #nav-bar {
   max-height: var(--autohide-nav-height) !important;
   opacity: 1;
@@ -181,7 +184,7 @@
 }
 
 /* 2. collapsed */
-:root[autohide-urlbar]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"]):not(:has(#urlbar[open]))
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
   #navigator-toolbox:not(:has(#nav-bar:is(:hover, :focus-within), #nav-bar toolbarbutton[open]))
   #PersonalToolbar:not(:hover, :focus-within) {
   max-height: 0 !important;
@@ -195,13 +198,18 @@
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#nav-bar:is(:hover, :focus-within)) #PersonalToolbar,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#nav-bar toolbarbutton[open]) #PersonalToolbar,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]):has(#urlbar[open]) #PersonalToolbar,
-:root[autohide-urlbar]:not([inFullscreen], [customizing]):is([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"]) #PersonalToolbar,
+:root[autohide-urlbar]:not([inFullscreen], [customizing]):is([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]) #PersonalToolbar,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #PersonalToolbar:is(:hover, :focus-within) {
   max-height: var(--autohide-bookmarks-height) !important;
   opacity: 1;
   transition:
     max-height var(--autohide-show), opacity var(--autohide-show), padding var(--autohide-show),
     margin var(--autohide-show), border-width var(--autohide-show);
+}
+
+/* While the bars peek, a bar closes again without the hide delay, which is there for the pointer. */
+:root[peekafoxy-peek] {
+  --autohide-hide: 0.2s ease-in 0s;
 }
 
 @media (prefers-reduced-motion: reduce) {
