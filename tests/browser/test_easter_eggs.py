@@ -1248,3 +1248,160 @@ def test_boo_can_be_repeated_after_it_ends(browser, video):
     browser.real_keys(Keys.ESCAPE)
     wait_until_at_rest(browser)
     assert browser.js(STATIC)
+
+
+# --- the page falls apart too ---------------------------------------------------------------------
+
+ASK_PAGE = """
+window.__answer = null;
+const mm = arguments[0] === 'selected' ? gBrowser.selectedBrowser.messageManager
+  : gBrowser.tabs[arguments[0]].linkedBrowser.messageManager;
+const listener = (msg) => { window.__answer = msg.data; mm.removeMessageListener('zz:ask', listener); };
+mm.addMessageListener('zz:ask', listener);
+mm.loadFrameScript(`data:,sendAsyncMessage("zz:ask", {
+  animations: content.document.getAnimations().length,
+  html: content.document.documentElement.outerHTML.length,
+  style: content.document.documentElement.getAttribute('style'),
+})`, false);
+"""
+
+
+def ask_page(browser, which="selected") -> dict:
+    """What the frame of a tab says about its page: the animations running and the size of its markup."""
+    browser.js(ASK_PAGE, which)
+    browser.wait("window.__answer !== null", 5, "the page did not answer")
+    return browser.js("return window.__answer;")
+
+
+def open_content_page(browser, html: str) -> None:
+    """A tab with a ``data:`` page, selected and focused, ready for the keys."""
+    browser.js(
+        "gBrowser.selectedTab = gBrowser.addTab(arguments[0], {triggeringPrincipal: "
+        "Services.scriptSecurityManager.getSystemPrincipal()});",
+        "data:text/html," + html,
+    )
+    browser.wait(
+        "gBrowser.selectedBrowser.currentURI.spec.startsWith('data:') && "
+        "!gBrowser.selectedTab.hasAttribute('busy')",
+        10,
+        "the page did not load",
+    )
+    time.sleep(0.5)
+    browser.js("window.focus(); gBrowser.selectedBrowser.focus();")
+
+
+WORDS = "<body style='font:20px sans-serif'>" + "".join(
+    f"<h2>Title {i}</h2><p>Paragraph {i}: <b>some</b> text <i>here</i></p>" for i in range(8)
+)
+
+
+def test_the_page_falls_apart_too_and_is_put_back_exactly(browser, video):
+    """Default path: units of the page move by animations, and afterwards the page is as it was:
+    no animation, the same markup, no style added."""
+    open_content_page(browser, WORDS + "<button>Go</button><input value=x></body>")
+    before = ask_page(browser)
+    assert before["animations"] == 0
+    type_real(browser, "boo")
+    wait_for_chaos(browser)
+    time.sleep(1.5)
+    during = ask_page(browser)
+    assert during["animations"] > 0
+    assert during["html"] == before["html"]  # nothing was added to the page
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_at_rest(browser)
+    time.sleep(0.5)
+    assert ask_page(browser) == before
+
+
+def test_the_page_is_put_back_after_the_tab_was_switched(browser, video):
+    """Adversarial: the person switches to another tab while it is in pieces; the page that fell
+    apart is still the one that is put together again."""
+    open_content_page(browser, WORDS + "</body>")
+    type_real(browser, "boo")
+    wait_for_chaos(browser)
+    time.sleep(1.5)
+    assert ask_page(browser, "selected")["animations"] > 0
+    fell = browser.js("return [...gBrowser.tabs].indexOf(gBrowser.selectedTab);")
+    browser.js("gBrowser.selectedTab = gBrowser.tabs[0];")
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_at_rest(browser)
+    time.sleep(0.5)
+    assert ask_page(browser, fell)["animations"] == 0
+
+
+def test_a_page_with_thousands_of_paragraphs_moves_only_a_few_of_them(browser, video):
+    """Adversarial: the number of moved pieces is bounded, and it does not stall the window."""
+    many = "<body>" + "<p>line</p>" * 5000 + "</body>"
+    open_content_page(browser, many)
+    started = time.monotonic()
+    type_real(browser, "boo")
+    wait_for_chaos(browser)
+    time.sleep(1.5)
+    during = ask_page(browser)
+    assert 0 < during["animations"] <= 200
+    assert time.monotonic() - started < 15
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_at_rest(browser)
+    time.sleep(0.5)
+    assert ask_page(browser)["animations"] == 0
+
+
+HOSTILE = (
+    "<body><h1>hostile</h1><p>text</p><script>"
+    "Element.prototype.animate = () => { throw new Error('no animate'); };"
+    "window.getComputedStyle = () => { throw new Error('no style'); };"
+    "Object.defineProperty(Element.prototype, 'localName', {get() { throw new Error('no name'); }});"
+    "Element.prototype.getBoundingClientRect = () => { throw new Error('no box'); };"
+    "</script></body>"
+)
+
+
+def test_a_page_that_breaks_the_dom_methods_does_not_break_the_effect(browser, video):
+    """Adversarial: the page replaces animate, getComputedStyle, localName and getBoundingClientRect
+    with ones that throw. The effect runs on the page's real DOM and still ends."""
+    open_content_page(browser, HOSTILE)
+    type_real(browser, "boo")
+    wait_for_chaos(browser)
+    time.sleep(1.5)
+    assert ask_page(browser)["animations"] > 0
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_at_rest(browser)
+    time.sleep(0.5)
+    assert ask_page(browser)["animations"] == 0
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "",
+        "<body style='display:none'><p>hidden</p></body>",
+        "<body><p style='width:0;height:0'>zero</p></body>",
+        "<frameset><frame src='about:blank'></frameset>",
+        "<body><iframe src='about:blank'></iframe><svg width=50 height=50><rect width=50 height=50 /></svg></body>",
+    ],
+    ids=["empty", "hidden-body", "zero-size", "frameset", "iframe-and-svg"],
+)
+def test_pages_with_nothing_to_move_still_end_cleanly(browser, video, html):
+    """Adversarial: no body, nothing visible, frames; the chrome still falls apart and comes back."""
+    open_content_page(browser, html)
+    type_real(browser, "boo")
+    wait_for_chaos(browser)
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_at_rest(browser)
+    assert browser.js(f"return {VEIL} === null;")
+    assert ask_page(browser)["animations"] == 0
+
+
+def test_a_page_that_navigates_in_the_middle_is_not_left_stuck(browser, video):
+    """Adversarial: the page changes under the effect; Escape still ends everything."""
+    open_content_page(browser, WORDS + "</body>")
+    type_real(browser, "boo")
+    wait_for_chaos(browser)
+    browser.js(
+        "gBrowser.selectedBrowser.loadURI(Services.io.newURI('data:text/html,<p>new</p>'),"
+        "{triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});"
+    )
+    time.sleep(1)
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_at_rest(browser)
+    assert ask_page(browser)["animations"] == 0

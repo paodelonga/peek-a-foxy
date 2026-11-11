@@ -1417,6 +1417,74 @@ const CHAOS_PARTS = [
   "#nav-bar #urlbar-container", "#PersonalToolbar toolbarbutton", "#sidebar-main toolbarbutton",
 ];
 const CHAOS_LIMIT = 150;
+// The page itself: a frame script, run in the page's own process, moves up to 200 of the page's
+// visible units (paragraphs, headings, pictures, fields...) the same way,
+// and undoes it all when it is told to ("peekafoxy:restore"), or with the document. The animations
+// are the only change to the page: no style, attribute or script is added to it.
+function chaosInPage() {
+  const win = content;
+  const doc = win.document;
+  const clone = (value) => Components.utils.cloneInto(value, win);
+  const between = (low, high) => low + Math.random() * (high - low);
+  const sign = () => (Math.random() < 0.5 ? -1 : 1);
+  const SKIP = ["script", "style", "link", "meta", "head", "title", "noscript", "template", "iframe"];
+  const MEDIA = ["img", "video", "canvas", "svg", "input", "button", "textarea", "select"];
+  // A unit is a box that is not inline and holds only inline things (a paragraph with its bold words,
+  // a heading, a list item) or a picture, a field or a button: units never sit inside one another,
+  // so what they do never adds up.
+  const inline = (element) => win.getComputedStyle(element).display.startsWith("inline");
+  const isUnit = (element) => {
+    if (MEDIA.includes(element.localName)) return true;
+    if (inline(element)) return false;
+    for (const inner of element.querySelectorAll("*")) {
+      if (!inline(inner) || MEDIA.includes(inner.localName)) return false;
+    }
+    return element.textContent.trim() !== "";
+  };
+  const seen = [];
+  for (const element of doc.body ? doc.body.querySelectorAll("*") : []) {
+    if (seen.length >= 200) break;
+    const tag = element.localName;
+    if (SKIP.includes(tag) || !isUnit(element)) continue;
+    const box = element.getBoundingClientRect();
+    if (box.width < 4 || box.height < 4 || box.bottom < 0 || box.top > win.innerHeight) continue;
+    if (box.right < 0 || box.left > win.innerWidth) continue;
+    seen.push({ element, x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  }
+  const animations = [];
+  const move = (element, keyframes, options) => {
+    animations.push(element.animate(clone(keyframes), clone({ fill: "both", ...options })));
+  };
+  for (const part of seen) {
+    const roll = Math.random();
+    if (roll < 0.35 && seen.length > 1) {
+      const other = seen[Math.floor(Math.random() * seen.length)];
+      move(part.element, [{ transform: "none" }, {
+        transform: `translate(${other.x - part.x}px, ${other.y - part.y}px) rotate(${sign() * between(0, 25)}deg)`,
+      }], { duration: 1 });
+    } else if (roll < 0.6) {
+      move(part.element, [{ transform: "none" }, {
+        transform: `translate(${between(-40, 40)}px, ${between(80, 260)}px) rotate(${sign() * between(30, 120)}deg)`,
+      }], { duration: 1 });
+    } else if (roll < 0.85) {
+      const angle = between(10, 40);
+      move(part.element, [
+        { transformOrigin: "50% 0%", transform: `rotate(${-angle}deg)` },
+        { transformOrigin: "50% 0%", transform: `rotate(${angle}deg)` },
+      ], { duration: between(700, 1600), iterations: Infinity, direction: "alternate", easing: "ease-in-out" });
+    } else {
+      move(part.element, [{ transform: "none" }, {
+        transform: `translate(${between(-300, 300)}px, ${between(-200, 200)}px) rotate(${sign() * between(0, 180)}deg)`,
+      }], { duration: 1 });
+    }
+  }
+  const restore = () => {
+    removeMessageListener("peekafoxy:restore", restore);
+    for (const animation of animations.splice(0)) animation.cancel();
+  };
+  addMessageListener("peekafoxy:restore", restore);
+}
+const CHAOS_PAGE = `data:,${encodeURIComponent(`(${chaosInPage.toString()})();`)}`;
 const between = (low, high) => low + Math.random() * (high - low);
 const sign = () => (Math.random() < 0.5 ? -1 : 1);
 
@@ -1435,6 +1503,15 @@ function scatterParts(run) {
   };
   const alive = () => egg === run && !isClosed(win);
 
+  // The page that was in front when it began is the one that falls apart too, and is put back.
+  const page = win.gBrowser?.selectedBrowser;
+  const putPageBack = () => {
+    try {
+      page?.messageManager.sendAsyncMessage("peekafoxy:restore");
+    } catch (e) {
+      Diag.info("easter-egg:chaos-page", e);
+    }
+  };
   const restore = async () => {
     if (run.restoring || !alive()) return;
     run.restoring = true;
@@ -1442,6 +1519,7 @@ function scatterParts(run) {
     await fade(1, 400);
     if (!alive()) return;
     for (const animation of animations.splice(0)) animation.cancel();
+    putPageBack();
     await fade(0, 500);
     finish(run);
   };
@@ -1463,6 +1541,7 @@ function scatterParts(run) {
     win.removeEventListener("keydown", onKey, true);
     win.removeEventListener("mousedown", onClick, true);
     for (const animation of animations.splice(0)) animation.cancel();
+    putPageBack();
     veil.remove();
   });
 
@@ -1504,10 +1583,15 @@ function scatterParts(run) {
 
   (async () => {
     try {
-      await fade(1, 700);
+      await fade(1, 1000);
       if (!alive()) return;
       const all = parts();
       for (const part of all) fall(part, all);
+      try {
+        page?.messageManager.loadFrameScript(CHAOS_PAGE, false);
+      } catch (e) {
+        Diag.info("easter-egg:chaos-page", e); // only the page stays as it is
+      }
       await fade(0, 900);
       if (alive() && !run.restoring) run.timer = lazy.setTimeout(restore, Chaos.holdMs);
     } catch (e) {
