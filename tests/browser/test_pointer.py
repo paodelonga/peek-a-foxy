@@ -323,6 +323,16 @@ def test_each_bar_can_have_a_strip_of_its_own_and_zero_follows_the_shared_one(br
 
 
 def test_the_closing_animation_duration_follows_its_pref(browser):
+    """With reduced motion (which the Windows runner has on) the stylesheet drops the animation, so
+    this test turns it off first."""
+    browser.js("Services.prefs.setIntPref('ui.prefersReducedMotion', 0);")
+    try:
+        _closing_duration(browser)
+    finally:
+        browser.js("Services.prefs.clearUserPref('ui.prefersReducedMotion');")
+
+
+def _closing_duration(browser):
     with collapsed_window(browser, False):
         browser.js("Services.prefs.setIntPref('peekafoxy.hide.ms', 750);")
         browser.wait(
