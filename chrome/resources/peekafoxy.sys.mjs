@@ -1621,6 +1621,37 @@ function shout(run, still) {
   run.cleanups.push(() => lazy.clearTimeout(run.leaveTimer));
 }
 
+// --- the peek counter ---------------------------------------------------------------------------
+//
+// Every time the pointer enters a bar that is down to its strip, the window counts one peek, in
+// memory only (nothing is saved, and a new window starts at zero). Reaching 50, 100 and 200 calls the
+// functions in `handlers`, of which there are none for now: nothing is shown or done with the count.
+export const Peeks = {
+  milestones: [50, 100, 200],
+  handlers: [],
+  counts: new WeakMap(),
+  of(win) {
+    return this.counts.get(win) ?? 0;
+  },
+  set(win, count) {
+    this.counts.set(win, count);
+  },
+  count(win) {
+    const count = this.of(win) + 1;
+    this.counts.set(win, count);
+    if (this.milestones.includes(count)) {
+      for (const handler of [...this.handlers]) {
+        try {
+          handler({ win, count });
+        } catch (e) {
+          Diag.warn("peeks:handler", e); // one handler failing does not stop the others or the count
+        }
+      }
+    }
+    return count;
+  },
+};
+
 export const EasterEgg = {
   // Whether one is running (the bars are peeking or the player is open): triggers wait for it to end.
   busy: () => egg !== null,
