@@ -308,6 +308,27 @@
       }
     })();
 
+    // --- count the peeks (see Peeks in the module; only the count is kept, and nothing uses it yet) ---
+    //
+    // A peek is the pointer entering a bar that is down to its strip: the autohide is on for it, and its
+    // part that collapses (the whole tab bar, or only the tabs holder when Firefox draws the title bar)
+    // is not taller than the strip. A bar that is already open does not count.
+    const countPeek = (target, holder) => {
+      try {
+        if (!root.hasAttribute(target.attr) || !holder?.isConnected) return;
+        const own = Peek.read(target.name === "tabs" ? PREFS.tabsStripPx : PREFS.urlbarStripPx);
+        const strip = own > 0 ? own : Peek.read(PREFS.stripPx);
+        if (holder.getBoundingClientRect().height <= strip + 2) Peek.Peeks.count(window);
+      } catch (e) {
+        Diag.info("autohide:peeks", e);
+      }
+    };
+    const tabsBar = document.getElementById("TabsToolbar");
+    const navBar = document.getElementById("nav-bar");
+    const tabsHolder = () => (root.hasAttribute("customtitlebar") ? tabsBar?.querySelector(".toolbar-items") : tabsBar);
+    tabsBar?.addEventListener("mouseenter", () => countPeek(TARGETS[0], tabsHolder()));
+    navBar?.addEventListener("mouseenter", () => countPeek(TARGETS[1], navBar));
+
     // --- keep a bar open while something is dragged out of it ---
     //
     // Hover is not updated during a drag, so a bar would collapse under the item being dragged (a tab, a
