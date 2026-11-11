@@ -227,6 +227,7 @@ Cada configuração é uma pref de verdade, listada no `about:config` com o seu 
 | `peekafoxy.urlbar.autohide` | `false` | Abre janelas novas com a barra de navegação oculta. |
 | `peekafoxy.strip.px` | `8` | Largura da faixa de ativação, em pixels (1 a 40). |
 | `peekafoxy.show.ms` | `120` | Animação de abertura, em milissegundos (0 a 2000). |
+| `peekafoxy.show.delay.ms` | `0` | Quanto tempo o cursor precisa ficar sobre uma barra oculta antes de ela se abrir, em milissegundos (0 a 5000). |
 | `peekafoxy.hide.delay.ms` | `300` | Espera antes de uma barra se fechar, em milissegundos (0 a 5000). |
 | `peekafoxy.tabs.reveal.switch` | `true` | Abre a barra de abas por um instante ao trocar para outra aba. |
 | `peekafoxy.tabs.reveal.new` | `true` | Idem, ao abrir uma aba nova (a página de nova aba ou a sua página inicial). |
@@ -254,6 +255,7 @@ Estes são os padrões da folha de estilo. A largura da faixa de ativação e os
   --autohide-nav-height: 52px;            /* altura aberta da barra de navegação (perto da natural) */
   --autohide-bookmarks-height: 40px;      /* altura aberta da barra de favoritos */
   --autohide-show-duration: 0.12s;        /* abrindo: quanto tempo leva */
+  --autohide-show-delay: 0s;              /* abrindo: quanto tempo o cursor fica antes sobre a barra oculta */
   --autohide-hide-delay: 0.3s;            /* fechando: quanto esperar antes de recolher */
   --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* abrindo: duração, curva, atraso */
   --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);       /* fechando: duração, curva, atraso */
@@ -366,8 +368,6 @@ Se o Peek-a-Foxy não funcionar como você espera, abra as configurações do Fi
 O botão **Copiar informações de diagnóstico** coloca um relatório curto na sua área de transferência, sem precisar de terminal. Você pode colá-lo numa issue em <https://github.com/paodelonga/peek-a-foxy/issues/new/choose>. O relatório é escrito em inglês para que qualquer pessoa que ajude você consiga lê-lo, seja qual for o idioma do seu Firefox. Ele contém a versão do Peek-a-Foxy, a versão, o canal e o sistema operacional do Firefox, o idioma do Firefox, o número de janelas abertas, o resultado de cada verificação (por exemplo, se a barra de navegação e os botões da barra de ferramentas foram encontrados) e os últimos eventos que o script registrou.
 
 O script não coleta os endereços das páginas que você visita, os seus favoritos, as suas senhas nem o conteúdo das suas abas. O texto de uma mensagem de erro que o Firefox gerou é copiado como está, com a sua pasta pessoal, o seu nome de usuário e a pasta do perfil ocultos, o que é mais um motivo para ler o relatório antes de colá-lo. Nada é enviado a lugar nenhum: o relatório só vai para a sua área de transferência. Se o Firefox não conseguir acessá-la, o texto aparece numa caixa abaixo do botão, para que você o selecione e o copie por conta própria.
-
-A página de configurações também esconde alguns easter eggs ligados à música do nome do projeto. Nada é carregado até você acionar um deles. Quando isso acontece, a janela do navegador escurece e um player de vídeo carrega a música de youtube-nocookie.com, então o YouTube recebe essa requisição com o endereço deste repositório como referrer. Este é o único ponto em que o script carrega algo da Internet, e o player é removido de novo quando você o fecha com Esc, com o botão **Fechar** ou com um clique na área escura.
 
 ### O log
 
@@ -536,6 +536,8 @@ Limites conhecidos que você pode encontrar hoje:
 **Peek-a-Foxy** é um trocadilho com *peek-a-boo* (o "achou!"), a brincadeira em que algo se esconde e reaparece de repente. É o que as barras fazem: se escondem e espiam de volta 👀 quando você passa o mouse na faixa delas.
 
 > E também na hora que eu escolhi o nome eu tava ouvindo "Peek-A-Boo" E [NESSE EXATO MOMENTO](https://youtu.be/6uJf2IT2Zh8?t=59) a minha barra sumiu e voltou me dando um sustinho 😅
+
+Tem mais um pouco escondido na página de configurações. Nada é carregado até você encontrar, e então é um vídeo de youtube-nocookie.com, que recebe o endereço deste repositório como referrer.
 
 ## Contribuindo
 

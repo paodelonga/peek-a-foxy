@@ -35,6 +35,7 @@ OWN_PREFS = (
     URLBAR_PREF,
     "peekafoxy.strip.px",
     "peekafoxy.show.ms",
+    "peekafoxy.show.delay.ms",
     "peekafoxy.hide.delay.ms",
     "peekafoxy.tabs.flash.ms",
     "peekafoxy.tabs.reveal.switch",

@@ -11,7 +11,8 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ### Added
 
-- **Easter eggs in the settings page.** Three quick clicks on the 🦊 of the *Peek a Foxy 🦊* title, typing `peek`, or typing S W S W S A D on the page darken the browser window and open a video player in a modal dialog. S W S W S A D first makes the hidden bars peek in rhythm, unless reduced motion is asked for. The keys are matched by their position, so any keyboard layout works, and they are ignored while a text field, the search box or a shortcut field has the focus, or while Ctrl, Alt, Meta or AltGr is held. The player is created only when a trigger fires and removed when it closes (Escape, the **Close** button, a click on the dark area, or closing the window). It may only show `youtube-nocookie.com/embed/`, cannot open windows or tabs, and is private in a private window.
+- **A new setting: how long the pointer rests before a bar opens** (`peekafoxy.show.delay.ms`, 0 to 5000, default 0, so nothing changes until you set it). It applies to the hover strips only; shortcuts, flashes and popups still open the bars at once. In the CSS it is `--autohide-show-delay`.
+- Something small is hiding in the settings page.
 - **Windows support** (Windows 10/11, tested in CI on a real Windows runner and not yet by hand on a
   desktop; see the README's *Windows notes*):
   - **Profiles and Firefox are found.** Profiles in `%APPDATA%\Mozilla\Firefox` (falling back to the
@@ -201,7 +202,6 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ### Known issues
 
-- The video of the easter eggs does not start by itself: YouTube shows its play button, which has to be clicked. Firefox gives the search box of the settings page the focus when the page opens, so the typed easter eggs only work after a click on the page, and the bars only peek while they are hidden.
 - The administrator prompt, a Firefox update replacing its folder, Microsoft Store builds, per-user
   installs, the real title bar and window dragging, hover and menus, native drag, AltGr layouts, the
   consoles (cmd, PowerShell, Windows Terminal, Git Bash), antivirus and long paths have only been

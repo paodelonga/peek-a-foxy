@@ -22,11 +22,14 @@
 
 /* Timing: reveal fast, hide slowly. The hide delay keeps the bar from flickering when the cursor
    briefly leaves it (e.g. drifting off the strip) and gives a moment to reach it again.
-   The strip, --autohide-show-duration and --autohide-hide-delay can also be set in Firefox's settings
-   (Peek-a-Foxy); a value set there wins over the one here. */
+   --autohide-show-delay is how long the pointer has to rest on a hidden bar (its strip) before the
+   bar opens; it only counts when the pointer alone opens the bar, never for a shortcut, a focus or
+   a tab switch. The strip, --autohide-show-duration, --autohide-show-delay and --autohide-hide-delay
+   can also be set in Firefox's settings (Peek-a-Foxy); a value set there wins over the one here. */
 :root {
   --autohide-show-duration: 0.12s;
   --autohide-hide-delay: 0.3s;
+  --autohide-show-delay: 0s;
   --autohide-show: var(--autohide-show-duration) ease-out 0s;
   --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);
   /* Collapsed hover strip and expanded bar heights. */
@@ -205,6 +208,17 @@
   transition:
     max-height var(--autohide-show), opacity var(--autohide-show), padding var(--autohide-show),
     margin var(--autohide-show), border-width var(--autohide-show);
+}
+
+/* The pointer alone opens the bar: it has to rest there for --autohide-show-delay first. */
+:root[autohide-tabs]:not([inFullscreen], [customizing], [tabs-flash], [peekafoxy-dragging], [peekafoxy-popup-open], [peekafoxy-peek]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
+  #TabsToolbar:hover:not(:focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])),
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing], [tabs-flash], [peekafoxy-dragging], [peekafoxy-popup-open], [peekafoxy-peek]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
+  #TabsToolbar:hover:not(:focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])) .toolbar-items,
+:root[autohide-urlbar]:not([inFullscreen], [customizing], [peekafoxy-dragging], [peekafoxy-popup-open], [peekafoxy-peek]):not(:has(#urlbar[open]))
+  #navigator-toolbox:has(#nav-bar:hover, #PersonalToolbar:hover):not(:has(#nav-bar:focus-within, #PersonalToolbar:focus-within, #nav-bar toolbarbutton[open]))
+  :is(#nav-bar, #PersonalToolbar) {
+  transition-delay: var(--autohide-show-delay) !important;
 }
 
 /* While the bars peek, a bar closes again without the hide delay, which is there for the pointer. */

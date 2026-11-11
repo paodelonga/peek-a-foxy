@@ -227,6 +227,7 @@ Every setting is a real pref, listed in `about:config` with its type, and nothin
 | `peekafoxy.urlbar.autohide` | `false` | Start new windows with the navigation bar hidden. |
 | `peekafoxy.strip.px` | `8` | Hover strip thickness, in pixels (1 to 40). |
 | `peekafoxy.show.ms` | `120` | Opening animation, in milliseconds (0 to 2000). |
+| `peekafoxy.show.delay.ms` | `0` | How long the pointer has to rest on a hidden bar before it opens, in milliseconds (0 to 5000). |
 | `peekafoxy.hide.delay.ms` | `300` | Wait before a bar closes, in milliseconds (0 to 5000). |
 | `peekafoxy.tabs.reveal.switch` | `true` | Open the tab bar for a moment when you switch to another tab. |
 | `peekafoxy.tabs.reveal.new` | `true` | Same, when you open a new tab (the new-tab page or your home page). |
@@ -254,6 +255,7 @@ These are the defaults in the stylesheet. The strip thickness and the two timing
   --autohide-nav-height: 52px;            /* the navigation bar's open height (close to its natural one) */
   --autohide-bookmarks-height: 40px;      /* the bookmarks bar's open height */
   --autohide-show-duration: 0.12s;        /* opening: how long it takes */
+  --autohide-show-delay: 0s;              /* opening: how long the pointer rests on a hidden bar first */
   --autohide-hide-delay: 0.3s;            /* closing: how long to wait before collapsing */
   --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* opening: duration, easing, delay */
   --autohide-hide: 0.2s ease-in var(--autohide-hide-delay);       /* closing: duration, easing, delay */
@@ -366,8 +368,6 @@ If Peek-a-Foxy does not work as you expect, open Firefox's settings, choose the 
 The **Copy diagnostic info** button puts a short report on your clipboard, and no terminal is needed. You can paste it into an issue at <https://github.com/paodelonga/peek-a-foxy/issues/new/choose>. The report is written in English so that anyone who helps you can read it, whatever language Firefox uses for you. It contains the version of Peek-a-Foxy, the version, channel and operating system of Firefox, the language of Firefox, the number of open windows, the result of each health check (for example whether the navigation bar and the toolbar buttons were found), and the last events that the script recorded.
 
 The script does not collect the addresses of the pages you visit, your bookmarks, your passwords or the contents of your tabs. The text of an error message that Firefox raised is copied as it is, with your home folder, user name and profile folder hidden, which is one more reason to read the report before you paste it. Nothing is sent anywhere: the report only goes to your clipboard. If Firefox cannot reach the clipboard, the text is shown in a box under the button so that you can select it and copy it yourself.
-
-The settings page also hides a few easter eggs tied to the song in the project's name. Nothing is loaded until you trigger one. When you do, the browser window darkens and a video player loads the song from youtube-nocookie.com, so YouTube receives that request with the address of this repository as its referrer. This is the only place where the script loads anything from the Internet, and the player is removed again when you close it with Escape, the **Close** button or a click on the dark area.
 
 ### The log
 
@@ -536,6 +536,8 @@ Known limits that you may run into today:
 **Peek-a-Foxy** is a pun on *peek-a-boo*, the game where something hides and then pops back out with a cheerful "found you!". That is what the bars do: they hide, and peek back out 👀 when you hover over their strip.
 
 > And when I picked the name I was listening to "Peek-A-Boo", and [AT THAT EXACT MOMENT](https://youtu.be/6uJf2IT2Zh8?t=59) my bar disappeared and came back, giving me a little scare 😅
+
+There is a little more hiding in the settings page. Nothing is loaded until you find it, and then it is one video from youtube-nocookie.com, which receives this repository's address as the referrer.
 
 ## Contributing
 

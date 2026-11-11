@@ -104,6 +104,7 @@
     const CSS_SETTINGS = [
       [PREFS.stripPx, "--autohide-strip", (v) => `${v}px`],
       [PREFS.showMs, "--autohide-show-duration", (v) => `${v}ms`],
+      [PREFS.showDelayMs, "--autohide-show-delay", (v) => `${v}ms`],
       [PREFS.hideDelayMs, "--autohide-hide-delay", (v) => `${v}ms`],
     ];
 
@@ -320,9 +321,11 @@
 
     window.addEventListener("keydown", (event) => {
       if (Peek.Recorder.isRecording()) return;
+      Peek.EasterEgg.typed(window, event);
       const target = TARGETS.find((t) => Peek.matches(t.binding, event));
       if (!target) return;
       event.preventDefault();
+      Peek.EasterEgg.settle(window);
       setEnabled(target, !root.hasAttribute(target.attr));
     }, true);
 
@@ -337,6 +340,7 @@
     // the same node, not a new one, and keeps its state.)
 
     const syncButtons = () => {
+      if (root.hasAttribute("peekafoxy-peek")) return; // the bars only peek (the easter egg): no state changed
       for (const target of TARGETS) {
         try {
           const node = CustomizableUI.getWidget(target.button.id).forWindow(window).node;
@@ -350,7 +354,7 @@
       }
     };
     const stateObserver = new window.MutationObserver(syncButtons);
-    stateObserver.observe(root, { attributes: true, attributeFilter: TARGETS.map((t) => t.attr) });
+    stateObserver.observe(root, { attributes: true, attributeFilter: [...TARGETS.map((t) => t.attr), "peekafoxy-peek"] });
     window.addEventListener("unload", () => stateObserver.disconnect(), { once: true });
 
     // --- one-time greeting ---
@@ -406,6 +410,12 @@
             const win = event.target.ownerDocument.defaultView;
             const attrName = event.target.getAttribute("autohide-attr");
             const sessionKey = event.target.getAttribute("autohide-session");
+            try {
+              // Bars that are only peeking (the easter egg) stop first: the click is about their real state.
+              win.ChromeUtils.importESModule("chrome://userchrome/content/peekafoxy.sys.mjs").EasterEgg.settle(win);
+            } catch (e) {
+              console.error(e);
+            }
             const on = !win.document.documentElement.hasAttribute(attrName);
             win.document.documentElement.toggleAttribute(attrName, on);
             try {

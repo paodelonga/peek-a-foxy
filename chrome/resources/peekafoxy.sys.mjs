@@ -36,6 +36,7 @@ export const PREFS = {
   urlbarAutohide: { name: "peekafoxy.urlbar.autohide", type: "bool", default: false },
   stripPx: { name: "peekafoxy.strip.px", type: "int", default: 8, min: 1, max: 40 },
   showMs: { name: "peekafoxy.show.ms", type: "int", default: 120, min: 0, max: 2000 },
+  showDelayMs: { name: "peekafoxy.show.delay.ms", type: "int", default: 0, min: 0, max: 5000 },
   hideDelayMs: { name: "peekafoxy.hide.delay.ms", type: "int", default: 300, min: 0, max: 5000 },
   flashMs: { name: "peekafoxy.tabs.flash.ms", type: "int", default: 1500, min: 0, max: 10000 },
   revealSwitch: { name: "peekafoxy.tabs.reveal.switch", type: "bool", default: true },
@@ -264,7 +265,6 @@ export const STRINGS = {
   en: {
     greeting: "Instaalleeeeed PEEK A BOO!!! >.<",
     greetingButton: "Peek-a-boo!",
-    closeLabel: "Close",
     playerLabel: "Peek-A-Boo",
     tabs: { label: "Auto-hide the tab bar", tooltip: "Hide or show the tab bar in this window ({key})" },
     urlbar: { label: "Auto-hide the navigation bar", tooltip: "Hide or show the navigation bar in this window ({key})" },
@@ -278,6 +278,7 @@ export const STRINGS = {
       timingGroup: "Size and timing",
       stripPx: "Hover strip thickness (px)",
       showMs: "Opening animation duration (ms)",
+      showDelayMs: "How long the pointer rests on a hidden bar before it opens (ms)",
       hideDelayMs: "Delay before the bars collapse (ms)",
       flashMs: "How long the tab bar stays open after these (ms)",
       revealGroup: "Show the tab bar when",
@@ -345,7 +346,6 @@ export const STRINGS = {
   pt: {
     greeting: "Instaalaadoooo PEEK A BOO!!! >.<",
     greetingButton: "Peek-a-boo!",
-    closeLabel: "Fechar",
     playerLabel: "Peek-A-Boo",
     tabs: { label: "Ocultar a barra de abas automaticamente",
             tooltip: "Oculta ou mostra a barra de abas nesta janela ({key})" },
@@ -361,6 +361,7 @@ export const STRINGS = {
       timingGroup: "Tamanho e tempos",
       stripPx: "Largura da faixa de ativação (px)",
       showMs: "Duração da animação de abertura (ms)",
+      showDelayMs: "Quanto tempo o cursor fica sobre uma barra oculta antes de ela se abrir (ms)",
       hideDelayMs: "Atraso antes do recolhimento das barras (ms)",
       flashMs: "Por quanto tempo a barra de abas fica aberta depois desses eventos (ms)",
       revealGroup: "Mostrar a barra de abas ao:",
@@ -1095,9 +1096,10 @@ export const Diag = {
 
 // --- the easter eggs -----------------------------------------------------------------------------
 //
-// Three ways to the same ending, all from the settings page (JS/autohide-prefs.uc.js): three quick
-// clicks on the 🦊 of its title, S W S W S A D (which first makes the bars of the window peek in
-// rhythm) or typing "peek". The ending darkens the browser window and opens a video player in it.
+// Three ways to the same ending: three quick clicks on the 🦊 of the title of the settings page
+// (JS/autohide-prefs.uc.js), or, anywhere in a browser window while nothing that takes typing has
+// the focus (JS/autohide.uc.js), S W S W S A D (which first makes the bars of the window peek in
+// rhythm) or typing "peek". The ending darkens the browser window and plays a video in it.
 // The settings page cannot show the player itself (its CSP, default-src chrome:, blocks frames), so
 // the player is a remote <browser> made in the browser window when a trigger fires: nothing is
 // loaded before that, and everything is removed again when the player closes. Only one runs at a
@@ -1108,10 +1110,13 @@ const HTML_NS = "http://www.w3.org/1999/xhtml";
 // The video, and the page it says it is embedded in: YouTube does not play an embed that comes
 // without a Referer (Error 153). An object so that a test can point it at a page of its own.
 export const Player = {
-  url: "https://www.youtube-nocookie.com/embed/6uJf2IT2Zh8?start=59",
+  url: "https://www.youtube-nocookie.com/embed/6uJf2IT2Zh8?start=59&autoplay=1",
   referrer: "https://github.com/paodelonga/peek-a-foxy",
 };
 const ReferrerInfo = Components.Constructor("@mozilla.org/referrer-info;1", "nsIReferrerInfo", "init");
+// The person asked for the video with their own keys or clicks, but in another document, so
+// Firefox's autoplay rule would still make them press play: this tells the video page about it.
+const ACTIVATE = "data:,content.document.notifyUserGestureActivation();";
 
 // The key sequences, as KeyboardEvent.code, so that they do not depend on the keyboard layout
 // (WASD, not the arrows, which are Firefox's own keys).
@@ -1133,9 +1138,24 @@ export function nextKeys(keys, code) {
   return { keys: typed, matched: null };
 }
 
-// [the bars that peek, for how many milliseconds]: tabs, navigation bar, both, with a pause between.
-// No bar opens more than about twice a second (flashes faster than three a second can harm).
-const PEEK_STEPS = [["tabs", 350], ["", 250], ["navbar", 350], ["", 250], ["tabs navbar", 600]];
+// [the bars that peek, for how many milliseconds]: none (so that bars that were showing hide first),
+// tabs, navigation bar, both, with a pause between. No bar opens more than about twice a second
+// (flashes faster than three a second can harm).
+const PEEK_STEPS = [["", 350], ["tabs", 350], ["", 250], ["navbar", 350], ["", 250], ["tabs navbar", 600]];
+const BAR_ATTRIBUTES = ["autohide-tabs", "autohide-urlbar"];
+
+const MODIFIER_KEYS = ["Control", "Alt", "Shift", "Meta", "AltGraph", "OS", "CapsLock"];
+const NOT_TYPING = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"]);
+// `node` is the event's originalTarget: the element that really has the focus, also inside the
+// shadow root of a custom element (the search box is an <input> inside moz-input-search).
+function takesTyping(node) {
+  const element = node?.nodeType === 1 ? node : node?.parentElement;
+  if (!element?.closest) return false;
+  if (element.isContentEditable) return true;
+  const field = element.closest("input, textarea, select");
+  return Boolean(field) && !(field.localName === "input" && NOT_TYPING.has(field.type));
+}
+const typedIn = new WeakMap(); // browser window -> the keys typed so far
 
 // What the page loaded in the player may not do: open windows or tabs, make a frame navigate the top,
 // show alert() and the like, download, or launch other applications through their protocols
@@ -1151,16 +1171,11 @@ const PLAYER_STYLE = `
   #peekafoxy-player::backdrop { background: transparent; }
   #peekafoxy-player .pf-frame { display: flex; flex-direction: column; gap: 8px;
     width: min(100%, calc((100vh - 96px) * 16 / 9)); }
-  #peekafoxy-player .pf-close { align-self: flex-end; font: message-box; padding: 6px 14px; border-radius: 4px;
-    border: 1px solid ButtonText; background: ButtonFace; color: ButtonText; }
-  #peekafoxy-player .pf-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   #peekafoxy-player browser { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
   @keyframes peekafoxy-player-fade { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { #peekafoxy-player { animation: none; } }
   @media (forced-colors: active), (prefers-contrast: more) {
     #peekafoxy-player { background: Canvas; color: CanvasText; }
-    #peekafoxy-player .pf-close { border-width: 2px; }
-    #peekafoxy-player .pf-close:focus-visible { outline-color: CanvasText; }
     #peekafoxy-player browser { outline: 2px solid CanvasText; }
   }
 `;
@@ -1202,20 +1217,28 @@ function finish(run) {
 
 // The bars of `run.win` peek in rhythm: the root gets peekafoxy-peek with the bars that are open in
 // each step (chrome/autohide.css treats it as one more way to reveal a hidden bar), and loses it at
-// the end or when anything stops the egg. The bars' own state is never touched, so it is exactly
-// what it was afterwards.
+// the end or when anything stops the egg. A bar that was showing is hidden for the pattern (its
+// attribute is added here and taken away again, and nothing is saved with the window), so that it
+// peeks too and is exactly what it was afterwards.
 function peekBars(run, then) {
   const root = run.win.document.documentElement;
+  const added = BAR_ATTRIBUTES.filter((attr) => !root.hasAttribute(attr));
+  const restore = () => {
+    for (const attr of added.splice(0)) root.removeAttribute(attr);
+    root.removeAttribute("peekafoxy-peek");
+  };
+  root.setAttribute("peekafoxy-peek", ""); // first, so that the bar buttons know this is not a change of state
+  for (const attr of added) root.setAttribute(attr, "");
   run.cleanups.push(() => {
     lazy.clearTimeout(run.timer);
-    root.removeAttribute("peekafoxy-peek");
+    restore();
   });
   let step = 0;
   const next = () => {
     run.timer = null;
     if (egg !== run || isClosed(run.win)) return;
     if (step === PEEK_STEPS.length) {
-      root.removeAttribute("peekafoxy-peek");
+      restore();
       then();
       return;
     }
@@ -1255,8 +1278,14 @@ function guard(run, browser) {
     onLocationChange(webProgress, request, location) {
       if (!webProgress?.isTopLevel || egg !== run) return;
       const spec = location?.spec ?? "";
-      if (spec.startsWith(prefix)) arrived = true;
-      else if (arrived || spec !== "about:blank") {
+      if (spec.startsWith(prefix)) {
+        arrived = true;
+        try {
+          browser.messageManager.loadFrameScript(ACTIVATE, false);
+        } catch (e) {
+          Diag.info("easter-egg:autoplay", e); // the video then waits for a click on its play button
+        }
+      } else if (arrived || spec !== "about:blank") {
         Diag.warn("easter-egg:blocked", `the video player went to ${placeOf(location)}, so it was closed`);
         lazy.setTimeout(() => finish(run), 0); // not while the browser is still telling its listeners
       }
@@ -1287,10 +1316,7 @@ function openPlayer(run, locale) {
     const style = element("style");
     style.textContent = PLAYER_STYLE;
     const frame = element("div", { class: "pf-frame" });
-    const close = element("button", { type: "button", class: "pf-close" });
-    close.textContent = text.closeLabel;
     dialog.append(style, frame);
-    frame.append(close);
     run.previous = doc.activeElement;
     run.dialog = dialog;
     doc.body.append(dialog);
@@ -1312,8 +1338,8 @@ function openPlayer(run, locale) {
     guard(run, browser);
 
     // Escape (also while the video has the keyboard, so in the capture phase of the window, unless
-    // a page is full screen, where Escape only leaves full screen), the button, and a click on the
-    // dark area around the video close it.
+    // a page is full screen, where Escape only leaves full screen) and a click on the dark area
+    // around the video close it.
     const onKey = (event) => {
       if (event.key !== "Escape" || doc.fullscreenElement) return;
       event.preventDefault();
@@ -1324,7 +1350,7 @@ function openPlayer(run, locale) {
       finish(run);
     };
     const onClick = (event) => {
-      if (event.target === dialog || event.target === close) finish(run);
+      if (event.target === dialog) finish(run);
     };
     win.addEventListener("keydown", onKey, true);
     dialog.addEventListener("cancel", onCancel);
@@ -1336,7 +1362,7 @@ function openPlayer(run, locale) {
     });
 
     dialog.showModal();
-    close.focus();
+    browser.focus();
     browser.loadURI(Services.io.newURI(Player.url), {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
       referrerInfo: new ReferrerInfo(Ci.nsIReferrerInfo.UNSAFE_URL, true, Services.io.newURI(Player.referrer)),
@@ -1351,11 +1377,32 @@ export const EasterEgg = {
   // Whether one is running (the bars are peeking or the player is open): triggers wait for it to end.
   busy: () => egg !== null,
 
+  // A keydown of browser window `win` (JS/autohide.uc.js): the keys count while nothing that takes
+  // typing has the focus, in the window itself or in the page it shows (the IME is off then), and
+  // no Ctrl, Alt or Meta is held. Only the last few keys are kept, and only in memory.
+  typed(win, event) {
+    if (event.repeat || MODIFIER_KEYS.includes(event.key)) return; // a held key counts once
+    let counts = false;
+    try {
+      counts = !egg && !event.ctrlKey && !event.altKey && !event.metaKey && !event.getModifierState?.("AltGraph") &&
+        win.windowUtils.IMEStatus === Ci.nsIDOMWindowUtils.IME_STATUS_DISABLED &&
+        !takesTyping(event.originalTarget ?? event.target);
+    } catch (e) {
+      Diag.info("easter-egg:typed", e);
+    }
+    if (!counts) {
+      typedIn.delete(win);
+      return;
+    }
+    const { keys, matched } = nextKeys(typedIn.get(win) ?? [], event.code);
+    typedIn.set(win, keys);
+    if (matched) EasterEgg.play(win, { peek: matched === "konami" });
+  },
+
   // The ending in browser window `win`, after the bars peek when `peek` is true (not with reduced
-  // motion). Returns a function that stops the peeking (the settings page calls it when it goes
-  // away); a player that is already open stays until it is closed.
+  // motion).
   play(win, { peek = false, locale = Services.locale.appLocaleAsBCP47 } = {}) {
-    if (egg || !win || isClosed(win)) return () => {};
+    if (egg || !win || isClosed(win)) return;
     const run = { win, timer: null, dialog: null, previous: null, cleanups: [] };
     egg = run;
     try {
@@ -1369,13 +1416,16 @@ export const EasterEgg = {
       Diag.warn("easter-egg:play", e);
       finish(run);
     }
-    return () => {
-      if (!run.dialog) finish(run);
-    };
   },
 
   // Closes whatever is running, as Escape does.
   close() {
     if (egg) finish(egg);
+  },
+
+  // Before the state of a bar of `win` changes: bars that are peeking there stop, so that the
+  // change starts from the state the bars really have.
+  settle(win) {
+    if (egg && egg.win === win && !egg.dialog) finish(egg);
   },
 };

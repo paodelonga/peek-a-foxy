@@ -30,7 +30,7 @@ from marionette_driver.keys import Keys
 pytestmark = pytest.mark.browser
 
 PEEK = "const Peek = ChromeUtils.importESModule('chrome://userchrome/content/peekafoxy.sys.mjs');"
-REAL_URL = "https://www.youtube-nocookie.com/embed/6uJf2IT2Zh8?start=59"
+REAL_URL = "https://www.youtube-nocookie.com/embed/6uJf2IT2Zh8?start=59&autoplay=1"
 REPO = "https://github.com/paodelonga/peek-a-foxy"
 TITLE = "Peek a Foxy 🦊"
 DIALOG = "document.getElementById('peekafoxy-player')"
@@ -341,7 +341,7 @@ def test_three_quick_clicks_on_the_fox_open_the_player_in_this_window(browser, v
             return {{role: d.getAttribute('role'), modal: d.getAttribute('aria-modal'),
                     name: d.getAttribute('aria-label'), isModal: d.matches(':modal'),
                     remote: b.isRemoteBrowser, type: b.getAttribute('type'),
-                    close: d.querySelector('button').textContent}};"""
+                    buttons: d.querySelectorAll('button').length}};"""
     )
     assert dialog == {
         "role": "dialog",
@@ -350,17 +350,17 @@ def test_three_quick_clicks_on_the_fox_open_the_player_in_this_window(browser, v
         "isModal": True,
         "remote": True,
         "type": "content",
-        "close": "Close",
+        "buttons": 0,  # it closes with Escape or a click outside, not with a button
     }
     browser.wait(f"{PLAYER}.contentTitle === 'video'", 10, "the video page did not load")
 
 
 def test_clicks_that_are_too_slow_do_not_count(browser, video):
-    """Adversarial: three clicks spread over more than 1.2 s; three quick ones right after do."""
+    """Adversarial: three clicks spread over more than 2.8 s; three quick ones right after do."""
     open_page(browser)
     for _ in range(3):
         click_fox(browser, 1)
-        time.sleep(0.7)
+        time.sleep(1.6)
     assert stays_closed(browser)
     click_fox(browser)
     wait_for_player(browser)
@@ -417,7 +417,7 @@ def test_the_fox_is_not_a_tab_stop_and_the_title_reads_as_before(browser):
         "focused": False,
         "text": TITLE,
         "name": TITLE,
-        "nav": TITLE,
+        "nav": "Peek a Foxy",
     }
 
 
@@ -436,10 +436,10 @@ def test_swswsad_makes_the_bars_peek_and_then_opens_the_player(browser, video):
     browser.wait(f"{browser.TABS_HEIGHT} > 8", 3, "the tab bar did not open for its beat")
     assert not player_open(browser)  # not before the bars have peeked
     wait_for_player(browser)
-    assert peeks(browser) == ["tabs", "", "navbar", "", "tabs navbar", None]
+    assert peeks(browser) == ["", "tabs", "", "navbar", "", "tabs navbar", None]
     # The pause after the tab bar's beat closes it again before the next beat, which the hide delay
     # of the pointer (300 ms by default) would not.
-    assert browser.js("return window.__peekHeights;")[2] <= 8
+    assert browser.js("return window.__peekHeights;")[3] <= 8
 
 
 def test_typing_peek_opens_the_player_without_the_bars_peeking(browser, video):
@@ -535,13 +535,65 @@ def test_typing_in_a_shortcut_field_does_not_count(browser, video):
     assert stays_closed(browser)
 
 
-def test_typing_while_another_category_is_shown_does_not_count(browser, video):
-    """Adversarial: the keys belong to the Peek-a-Foxy category, not to all of about:preferences."""
+def test_typing_works_in_another_category_and_in_a_normal_page(browser, video):
+    """The keys count anywhere in the window, not only on the settings page: another category, and
+    the empty area of the tab strip (which leaves the focus in the page's browser)."""
     open_page(browser)
     browser.settings("win.gotoPref('paneGeneral');")
     browser.settings("doc.activeElement?.blur?.();")
     type_real(browser, "peek")
+    wait_for_player(browser)
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_closed(browser)
+    browser.js("gBrowser.selectedBrowser.focus();")
+    type_real(browser, "peek")
+    wait_for_player(browser)
+
+
+def test_typing_in_a_text_field_of_a_web_page_does_not_count(browser, video):
+    """Adversarial: the focus is in an <input> of a remote page; the IME state says so."""
+    browser.js(
+        "gBrowser.selectedTab = gBrowser.addTab(arguments[0], {triggeringPrincipal: "
+        "Services.scriptSecurityManager.getSystemPrincipal()});",
+        "data:text/html,<input id=i autofocus><textarea id=t></textarea>",
+    )
+    browser.wait("gBrowser.selectedBrowser.currentURI.spec.startsWith('data:')", 10)
+    time.sleep(1)
+    browser.js("gBrowser.selectedBrowser.focus();")
+    time.sleep(0.5)
+    type_real(browser, "peek")
     assert stays_closed(browser)
+
+
+def test_the_bars_peek_even_when_they_are_showing(browser, video):
+    """Both bars are visible (autohide off): the pattern hides, shows and restores them, and what
+    it leaves behind is exactly what was there, with no saved state touched."""
+    open_page(browser)
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 5)
+    assert browser.js("return !document.documentElement.hasAttribute('autohide-tabs');")
+    before = browser.js(ROOT_STATE)
+    record_peeks(browser)
+    browser.js("gBrowser.selectedBrowser.focus();")
+    type_synthetic(browser, codes("swswsad"))
+    wait_for_player(browser)
+    assert peeks(browser) == ["", "tabs", "", "navbar", "", "tabs navbar", None]
+    heights = browser.js("return window.__peekHeights;")
+    assert heights[1] <= 8 and heights[2] > 8  # hidden for the pattern, then open for its beat
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_closed(browser)
+    assert browser.js(ROOT_STATE) == before
+
+
+def test_clicking_a_bar_button_in_the_middle_of_a_peek_stops_it(browser, video):
+    """Adversarial: the toolbar button changes the real state, so the pattern first gives way."""
+    open_page(browser)
+    browser.js(
+        PEEK + "Peek.EasterEgg.play(window, {peek: true});"
+        "document.getElementById('tabs-autohide-button')?.click();"
+    )
+    time.sleep(0.3)
+    assert not busy(browser)
+    assert browser.js("return document.documentElement.hasAttribute('peekafoxy-peek');") is False
 
 
 def test_triggers_are_ignored_while_the_player_is_open(browser, video):
@@ -672,13 +724,13 @@ def test_the_player_cannot_open_windows_or_tabs(browser, video):
 
 
 def test_focus_goes_into_the_dialog_and_back_to_the_page(browser, video):
-    """The close button gets the focus; afterwards the settings tab and its field have it again.
+    """The video gets the focus; afterwards the settings tab and its field have it again.
     While it is open the rest of the window takes no focus (the dialog is modal)."""
     open_page(browser)
     browser.settings("doc.getElementById('peekafoxy-peekafoxy.tabs.reveal.switch').focus();")
     type_real(browser, "peek")
     wait_for_player(browser)
-    assert browser.js("return document.activeElement?.classList.contains('pf-close');")
+    assert browser.js(f"return document.activeElement === {PLAYER};")
     browser.js("gURLBar.focus();")
     assert browser.js(f"return {DIALOG}.contains(document.activeElement);")
     browser.real_keys(Keys.ESCAPE)
@@ -706,10 +758,9 @@ def test_focus_goes_back_to_the_settings_tab_after_a_tab_switch(browser, video):
     assert browser.js("return document.activeElement === gBrowser.selectedBrowser;")
 
 
-@pytest.mark.parametrize("way", ["escape", "escape-in-video", "button", "backdrop"])
+@pytest.mark.parametrize("way", ["escape", "escape-in-video", "backdrop"])
 def test_every_way_of_closing_removes_everything(browser, video, way):
-    """Escape (also inside a video page that stops every key), the close button and the dark area
-    each remove the dialog, the browser, the request observer and the video's process."""
+    """Escape (also inside a video page that stops every key) and the dark area each remove the dialog, the browser, the request observer and the video's process."""
     observers = browser.js(OBSERVERS)
     processes = browser.js(PROCESSES)
     if way == "escape-in-video":
@@ -729,15 +780,7 @@ def test_every_way_of_closing_removes_everything(browser, video, way):
         )
         browser.real_keys(Keys.ESCAPE)
     else:
-        target = (
-            f"{DIALOG}.querySelector('.pf-close').getBoundingClientRect()"
-            if way == "button"
-            else "({left: 2, top: 2, width: 2, height: 2})"
-        )
-        browser.js(
-            CLICK
-            + f"const r = {target}; click(window, r.left + r.width / 2, r.top + r.height / 2);"
-        )
+        browser.js(CLICK + "click(window, 3, 3);")
     wait_until_closed(browser)
     assert browser.js(OBSERVERS) == observers
     assert not busy(browser)
@@ -830,19 +873,18 @@ def test_closing_the_window_while_the_bars_peek(browser, video):
 
 
 def test_closing_the_settings_tab_while_the_bars_peek(browser, video):
-    """Adversarial: the page goes away mid-pattern: the bars stop peeking at once, no player opens."""
+    """Adversarial: the typed trigger belongs to the window, so the pattern runs on when the page it
+    was typed after goes away, and the bars end up as they were."""
     browser.js("document.documentElement.setAttribute('autohide-tabs', '');")
     open_page(browser)
     type_synthetic(browser, codes("swswsad"))
     browser.wait("document.documentElement.hasAttribute('peekafoxy-peek')", 3)
     browser.close_settings_tabs()
-    browser.wait(
-        "!document.documentElement.hasAttribute('peekafoxy-peek')", 1, "a bar was left peeking"
-    )
-    time.sleep(2)
-    assert not player_open(browser)
-    assert not busy(browser)
-    assert video.seen == []
+    wait_for_player(browser)
+    browser.real_keys(Keys.ESCAPE)
+    wait_until_closed(browser)
+    assert browser.js("return document.documentElement.hasAttribute('peekafoxy-peek');") is False
+    assert browser.js("return document.documentElement.hasAttribute('autohide-urlbar');") is False
 
 
 ROOT_STATE = """
@@ -908,32 +950,24 @@ def test_reduced_motion_means_no_fade_and_no_peeking(browser, video):
     assert browser.js(f"return getComputedStyle({DIALOG}).animationName;") == "none"
 
 
-def test_high_contrast_keeps_the_overlay_and_the_button_visible(browser, video):
+def test_high_contrast_keeps_the_overlay_opaque_in_system_colours(browser, video):
     """Adversarial: with an accessibility theme (prefers-contrast: more; forced colors cannot be
-    turned on in the browser window on Linux) the overlay is opaque in system colours and the close
-    button has its own colours and a thick border, and still closes the player."""
+    turned on in the browser window on Linux) the overlay is opaque in system colours, and the
+    player still closes with Escape."""
     browser.js("Services.prefs.setIntPref('ui.useAccessibilityTheme', 1);")
     browser.wait("matchMedia('(prefers-contrast: more)').matches", 5)
     open_page(browser)
     type_real(browser, "peek")
     wait_for_player(browser)
     look = browser.js(
-        f"""const d = {DIALOG}, b = d.querySelector('.pf-close');
+        f"""const d = {DIALOG};
             const probe = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
             probe.style.background = 'Canvas'; d.append(probe);
             const canvas = getComputedStyle(probe).backgroundColor; probe.remove();
-            const s = getComputedStyle(b), r = b.getBoundingClientRect();
-            return {{overlay: getComputedStyle(d).backgroundColor, canvas, color: s.color, background: s.backgroundColor,
-                    border: s.borderTopWidth, hit: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b}};"""
+            return {{overlay: getComputedStyle(d).backgroundColor, canvas}};"""
     )
     assert look["overlay"] == look["canvas"]
-    assert look["color"] != look["background"]
-    assert look["border"] == "2px"
-    assert look["hit"]
-    browser.js(
-        CLICK
-        + f"const r = {DIALOG}.querySelector('.pf-close').getBoundingClientRect(); click(window, r.left + 5, r.top + 5);"
-    )
+    browser.real_keys(Keys.ESCAPE)
     wait_until_closed(browser)
 
 
@@ -1005,19 +1039,14 @@ def test_a_player_that_cannot_be_made_leaves_the_window_as_it_was(browser, video
 
 
 def test_the_labels_are_in_portuguese_for_a_portuguese_firefox(browser_in_portuguese, sites):
-    """The close button and the dialog's name follow the language of the settings page."""
+    """The dialog's name and the settings sidebar entry follow the language of the settings page."""
     browser = browser_in_portuguese
     point_player(browser, sites[0].origin + "/embed/video.html")
     try:
         open_page(browser)
         type_real(browser, "peek")
         wait_for_player(browser)
-        assert browser.js(
-            f"const d = {DIALOG}; return [d.querySelector('.pf-close').textContent, d.getAttribute('aria-label')];"
-        ) == [
-            "Fechar",
-            "Peek-A-Boo",
-        ]
+        assert browser.js(f"return {DIALOG}.getAttribute('aria-label');") == "Peek-A-Boo"
     finally:
         browser.js(PEEK + "Peek.EasterEgg.close(); Peek.Player.url = arguments[0];", REAL_URL)
         browser.close_settings_tabs()

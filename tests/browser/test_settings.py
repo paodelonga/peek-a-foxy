@@ -87,7 +87,7 @@ def test_the_category_is_listed_and_opens_its_pane_from_the_address(browser):
     )
     assert shown == {
         "current": "panePeekafoxy",
-        "label": "Peek a Foxy 🦊",
+        "label": "Peek a Foxy",
         "hash": "#peekafoxy",
         "visible": ["panePeekafoxy"],
     }
@@ -487,6 +487,7 @@ def test_prefs_are_real_and_listed_with_their_types(browser):
         "peekafoxy.urlbar.autohide": "bool",
         "peekafoxy.strip.px": "int",
         "peekafoxy.show.ms": "int",
+        "peekafoxy.show.delay.ms": "int",
         "peekafoxy.hide.delay.ms": "int",
         "peekafoxy.tabs.flash.ms": "int",
         "peekafoxy.tabs.reveal.switch": "bool",

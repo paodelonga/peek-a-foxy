@@ -49,8 +49,10 @@
     #peekafoxy-pane .pf-row > label { flex: 1 1 10em; }
     #peekafoxy-pane .pf-row input[type="number"] { width: 7em; }
     #peekafoxy-pane .pf-row input[type="text"] { width: 12em; }
-    #peekafoxy-pane .pf-reset { flex: none; background: url("chrome://global/skin/icons/reset.svg") no-repeat 8px center / 16px;
+    #peekafoxy-pane .pf-reset { flex: none; background-image: url("chrome://global/skin/icons/arrow-counterclockwise-16.svg");
+      background-repeat: no-repeat; background-position: 8px center; background-size: 16px;
       padding-inline-start: 32px; -moz-context-properties: fill; fill: currentColor; }
+    #peekafoxy-pane .pf-reset:dir(rtl) { background-position: right 8px center; }
     #peekafoxy-pane .pf-note { color: var(--text-color-deemphasized); margin-block: 4px; }
     #peekafoxy-pane .pf-problem { color: var(--text-color-error, #c50042); margin-block: 0; }
     #peekafoxy-pane .pf-problem:not(:empty) { margin-block: 0 8px; }
@@ -270,15 +272,13 @@
 
   // --- the easter eggs (see EasterEgg in peekafoxy.sys.mjs) ---
   //
-  // Three quick clicks on the 🦊 of the title, S W S W S A D or typing "peek" open the video player in
-  // the browser window. The fox gets a span of its own so that only it counts for the clicks; the span
-  // has no role, name or tab stop, so the title reads and is announced exactly as before (keyboard
-  // users have the two other ways). The keys count only while this page shows the Peek-a-Foxy
-  // category and nothing that takes typing (a text field, the search box, a shortcut field) has the
-  // focus, and never with Ctrl, Alt or Meta held.
+  // Three quick clicks on the 🦊 of the title open the video player in the browser window. The fox
+  // gets a span of its own so that only it counts for the clicks; the span has no role, name or tab
+  // stop, so the title reads and is announced exactly as before (keyboard users have the two typed
+  // ways, which the browser window's own script listens for).
 
   const FOX = "🦊";
-  const CLICKS = 3, CLICKS_MS = 1200;
+  const CLICKS = 3, CLICKS_MS = 2800;
   let fox = null;
 
   // Wraps the first fox in the text of `heading` in a span and returns it, or null if there is none.
@@ -315,39 +315,13 @@
     }
   };
 
-  const NOT_TYPING = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"]);
-  // `node` is the event's originalTarget: the element that really has the focus, also inside the
-  // shadow root of a custom element (the search box is an <input> inside moz-input-search).
-  const takesTyping = (node) => {
-    const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
-    if (!element) return false;
-    if (element.isContentEditable) return true;
-    const field = element.closest("input, textarea, select");
-    return Boolean(field) && !(field.localName === "input" && NOT_TYPING.has(field.type));
-  };
-
-  const armEggs = (pane) => {
-    let stop = null;
-    const play = (peek) => {
+  const armEggs = () => {
+    const play = () => {
       try {
-        stop = Peek.EasterEgg.play(ownerWindow(), { peek, locale: LOCALE });
+        Peek.EasterEgg.play(ownerWindow(), { locale: LOCALE });
       } catch (e) {
         Diag.warn("easter-egg:play", e);
       }
-    };
-
-    let typed = [];
-    const onKey = (event) => {
-      if (event.repeat || MODIFIER_KEYS.includes(event.key) || event.key === "CapsLock") return; // a held key counts once
-      if (pane.hidden || !document.hasFocus() || Peek.EasterEgg.busy() || event.ctrlKey || event.altKey || event.metaKey ||
-          event.getModifierState?.("AltGraph") || Peek.Recorder.isRecording() ||
-          takesTyping(event.originalTarget ?? event.target)) {
-        typed = [];
-        return;
-      }
-      const { keys, matched } = Peek.nextKeys(typed, event.code);
-      typed = keys;
-      if (matched) play(matched === "konami");
     };
 
     let clicks = 0, firstClick = 0;
@@ -361,17 +335,12 @@
         firstClick = event.timeStamp;
       }
       clicks += 1;
-      if (clicks === CLICKS && !Peek.EasterEgg.busy()) play(false);
+      if (clicks === CLICKS && !Peek.EasterEgg.busy()) play();
       if (clicks >= CLICKS) clicks = 0;
     };
 
-    window.addEventListener("keydown", onKey, true);
     document.addEventListener("click", onClick, true);
-    window.addEventListener("pagehide", () => {
-      window.removeEventListener("keydown", onKey, true);
-      document.removeEventListener("click", onClick, true);
-      stop?.(); // the bars stop peeking, and no player opens for a page that has gone
-    }, { once: true });
+    window.addEventListener("pagehide", () => document.removeEventListener("click", onClick, true), { once: true });
   };
 
   const buildPage = () => {
@@ -394,6 +363,7 @@
         el("p", { class: "pf-note", text: TEXT.revealNote })),
       group(TEXT.timingGroup,
         numberField(PREFS.stripPx, TEXT.stripPx),
+        numberField(PREFS.showDelayMs, TEXT.showDelayMs),
         numberField(PREFS.showMs, TEXT.showMs),
         numberField(PREFS.hideDelayMs, TEXT.hideDelayMs)),
       group(TEXT.shortcutsGroup,
@@ -415,7 +385,7 @@
     const mainPane = document.getElementById("mainPrefPane");
 
     const button = el("moz-page-nav-button", {
-      id: "category-peekafoxy", view: CATEGORY, iconsrc: "chrome://browser/skin/tabs.svg", text: TEXT.category,
+      id: "category-peekafoxy", view: CATEGORY, iconsrc: "chrome://browser/skin/tabs.svg", text: TEXT.category.replace(FOX, "").trim(),
     });
     // The texts are in the language Peek.textFor chose, which is English for a Firefox in a language
     // that has no texts: the pane says so, so a right-to-left Firefox does not lay them out as such.
@@ -445,7 +415,7 @@
     }
     window.addEventListener("unload", () => Services.prefs.removeObserver(Peek.PREF_BRANCH, observer), { once: true });
     try {
-      armEggs(pane);
+      armEggs();
     } catch (e) {
       Diag.warn("easter-egg:arm", e); // the page works without them
     }
