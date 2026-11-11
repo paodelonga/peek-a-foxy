@@ -17,6 +17,8 @@ is and what controls it, with a *Known issues* section for what is not covered.
 - **The activation strip of each bar can have its own thickness** (`peekafoxy.tabs.strip.px` and `peekafoxy.urlbar.strip.px`, 0 to 40). The default, 0, keeps following `peekafoxy.strip.px`, so nothing changes until you set one. In the CSS they are `--autohide-tabs-strip` and `--autohide-nav-strip`.
 - **The closing animation has a duration of its own** (`peekafoxy.hide.ms`, 0 to 2000, default 200, which is what it always was). In the CSS it is `--autohide-hide-duration`.
 - The setting for the strip thickness is now called *Activation strip thickness* in the settings page.
+- **The animation curve can be chosen** (`peekafoxy.easing`: `smooth`, the default and what it always was, `linear` or `snappy`). In the CSS they are `--autohide-show-easing` and `--autohide-hide-easing`. The settings page gets its first list of choices for it.
+- **The bookmarks bar can stay visible** while the navigation bar hides (`peekafoxy.bookmarks`: `follow`, the default, opens and closes it with the navigation bar; `visible` keeps it showing, and hovering it then no longer opens the navigation bar).
 - **Windows support** (Windows 10/11, tested in CI on a real Windows runner and not yet by hand on a
   desktop; see the README's *Windows notes*):
   - **Profiles and Firefox are found.** Profiles in `%APPDATA%\Mozilla\Firefox` (falling back to the

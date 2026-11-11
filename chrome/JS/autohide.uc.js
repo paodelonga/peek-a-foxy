@@ -129,6 +129,16 @@
         if (value !== null) root.style.setProperty(variable, value);
         else root.style.removeProperty(variable);
       }
+      if (Peek.hasUserValue(PREFS.easing)) {
+        const [opening, closing] = Peek.EASINGS[Peek.read(PREFS.easing)];
+        root.style.setProperty("--autohide-show-easing", opening);
+        root.style.setProperty("--autohide-hide-easing", closing);
+      } else {
+        root.style.removeProperty("--autohide-show-easing");
+        root.style.removeProperty("--autohide-hide-easing");
+      }
+      root.toggleAttribute("peekafoxy-bookmarks", false);
+      if (Peek.read(PREFS.bookmarks) === "visible") root.setAttribute("peekafoxy-bookmarks", "visible");
       for (const target of TARGETS) target.binding = Peek.bindingFor(target.shortcut);
       updateTooltips();
     };

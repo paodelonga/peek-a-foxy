@@ -40,6 +40,8 @@ OWN_PREFS = (
     "peekafoxy.show.delay.ms",
     "peekafoxy.hide.ms",
     "peekafoxy.hide.delay.ms",
+    "peekafoxy.easing",
+    "peekafoxy.bookmarks",
     "peekafoxy.tabs.flash.ms",
     "peekafoxy.tabs.reveal.switch",
     "peekafoxy.tabs.reveal.new",

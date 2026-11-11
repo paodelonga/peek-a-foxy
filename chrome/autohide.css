@@ -30,9 +30,11 @@
   --autohide-show-duration: 0.12s;
   --autohide-hide-delay: 0.3s;
   --autohide-show-delay: 0.1s;
-  --autohide-show: var(--autohide-show-duration) ease-out 0s;
+  --autohide-show-easing: ease-out;
+  --autohide-hide-easing: ease-in;
+  --autohide-show: var(--autohide-show-duration) var(--autohide-show-easing) 0s;
   --autohide-hide-duration: 0.2s;
-  --autohide-hide: var(--autohide-hide-duration) ease-in var(--autohide-hide-delay);
+  --autohide-hide: var(--autohide-hide-duration) var(--autohide-hide-easing) var(--autohide-hide-delay);
   /* Collapsed hover strip and expanded bar heights. */
   --autohide-strip: 8px;
   --autohide-tabs-strip: var(--autohide-strip);  /* each bar's own strip: follows --autohide-strip unless set */
@@ -151,9 +153,11 @@
 }
 
 /* 2. collapsed */
-:root[autohide-urlbar]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
+:root[autohide-urlbar]:not([peekafoxy-bookmarks="visible"], [inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
   #navigator-toolbox:not(:has(#PersonalToolbar:is(:hover, :focus-within)))
-  #nav-bar:not(:hover, :focus-within, :has(toolbarbutton[open])) {
+  #nav-bar:not(:hover, :focus-within, :has(toolbarbutton[open])),
+:root[autohide-urlbar][peekafoxy-bookmarks="visible"]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
+  #navigator-toolbox #nav-bar:not(:hover, :focus-within, :has(toolbarbutton[open])) {
   max-height: var(--autohide-nav-strip) !important;
   padding: 0 !important;
   margin: 0 !important;
@@ -167,7 +171,7 @@
 :root[autohide-urlbar]:not([inFullscreen], [customizing]) #nav-bar:has(toolbarbutton[open]),
 :root[autohide-urlbar]:not([inFullscreen], [customizing]):has(#urlbar[open]) #nav-bar,
 :root[autohide-urlbar]:not([inFullscreen], [customizing]):is([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]) #nav-bar,
-:root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#PersonalToolbar:is(:hover, :focus-within)) #nav-bar {
+:root[autohide-urlbar]:not([peekafoxy-bookmarks="visible"], [inFullscreen], [customizing]) #navigator-toolbox:has(#PersonalToolbar:is(:hover, :focus-within)) #nav-bar {
   max-height: var(--autohide-nav-height) !important;
   opacity: 1;
   transition:
@@ -181,7 +185,7 @@
    keeps the whole group open. A bookmarks bar the user has turned off stays off. */
 
 /* 1. base */
-:root[autohide-urlbar]:not([inFullscreen], [customizing]) #PersonalToolbar {
+:root[autohide-urlbar]:not([peekafoxy-bookmarks="visible"], [inFullscreen], [customizing]) #PersonalToolbar {
   min-height: 0 !important;
   overflow: hidden !important;
   transition:
@@ -190,7 +194,7 @@
 }
 
 /* 2. collapsed */
-:root[autohide-urlbar]:not([inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
+:root[autohide-urlbar]:not([peekafoxy-bookmarks="visible"], [inFullscreen], [customizing]):not([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
   #navigator-toolbox:not(:has(#nav-bar:is(:hover, :focus-within), #nav-bar toolbarbutton[open]))
   #PersonalToolbar:not(:hover, :focus-within) {
   max-height: 0 !important;
@@ -226,7 +230,7 @@
 
 /* While the bars peek, a bar closes again without the hide delay, which is there for the pointer. */
 :root[peekafoxy-peek] {
-  --autohide-hide: 0.2s ease-in 0s;
+  --autohide-hide: var(--autohide-hide-duration) var(--autohide-hide-easing) 0s;
 }
 
 @media (prefers-reduced-motion: reduce) {

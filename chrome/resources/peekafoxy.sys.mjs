@@ -45,9 +45,18 @@ export const PREFS = {
   revealTitle: { name: "peekafoxy.tabs.reveal.title", type: "bool", default: false },
   tabsShortcut: { name: "peekafoxy.tabs.shortcut", type: "string", default: DEFAULT_TABS_SHORTCUT },
   urlbarShortcut: { name: "peekafoxy.urlbar.shortcut", type: "string", default: DEFAULT_URLBAR_SHORTCUT },
+  easing: { name: "peekafoxy.easing", type: "string", default: "smooth", values: ["smooth", "linear", "snappy"] },
+  bookmarks: { name: "peekafoxy.bookmarks", type: "string", default: "follow", values: ["follow", "visible"] },
   welcomed: { name: "peekafoxy.welcomed", type: "bool", default: false },
 };
 export const PREF_BRANCH = "peekafoxy.";
+
+// The animation curves: [opening, closing]. The first is Firefox's own pair (ease-out, ease-in).
+export const EASINGS = {
+  smooth: ["ease-out", "ease-in"],
+  linear: ["linear", "linear"],
+  snappy: ["cubic-bezier(0.2, 0.9, 0.3, 1)", "cubic-bezier(0.4, 0, 1, 1)"],
+};
 
 // --- prefs -------------------------------------------------------------------------------------
 
@@ -71,7 +80,12 @@ export function read(pref) {
   try {
     if (pref.type === "bool") return Services.prefs.getBoolPref(pref.name, pref.default);
     if (pref.type === "int") return clamp(pref, Services.prefs.getIntPref(pref.name, pref.default));
-    return Services.prefs.getStringPref(pref.name, pref.default);
+    const value = Services.prefs.getStringPref(pref.name, pref.default);
+    if (pref.values && !pref.values.includes(value)) {
+      Diag.warn("module:read", `${pref.name} is "${value}", which is not one of ${pref.values.join(", ")}; using ${pref.default}`);
+      return pref.default;
+    }
+    return value;
   } catch (e) {
     Diag.warn("module:read", `${pref.name} has the wrong type, using ${pref.default}: ${describe(e)}`, e);
     return pref.default;
@@ -283,6 +297,11 @@ export const STRINGS = {
       showMs: "Opening animation duration (ms)",
       showDelayMs: "Time the pointer must stay on the activation strip before the bar opens (ms)",
       hideMs: "Closing animation duration (ms)",
+      easing: "Animation curve",
+      easingOptions: { smooth: "Smooth", linear: "Linear", snappy: "Snappy" },
+      bookmarksGroup: "Bookmarks bar",
+      bookmarks: "When the navigation bar is hidden, the bookmarks bar",
+      bookmarksOptions: { follow: "Opens and closes with it", visible: "Always visible" },
       hideDelayMs: "Time the bar waits after the pointer leaves it before it closes (ms)",
       flashMs: "How long the tab bar stays open after these (ms)",
       revealGroup: "Show the tab bar when",
@@ -371,6 +390,11 @@ export const STRINGS = {
       showMs: "Duração da animação de abertura (ms)",
       showDelayMs: "Tempo que o cursor deve permanecer na faixa de ativação antes de abrir a barra (ms)",
       hideMs: "Duração da animação de fechamento (ms)",
+      easing: "Curva da animação",
+      easingOptions: { smooth: "Suave", linear: "Linear", snappy: "Ágil" },
+      bookmarksGroup: "Barra de favoritos",
+      bookmarks: "Quando a barra de navegação está oculta, a barra de favoritos",
+      bookmarksOptions: { follow: "Abre e fecha junto com ela", visible: "Sempre visível" },
       hideDelayMs: "Tempo que a barra espera depois de o cursor sair dela antes de fechar (ms)",
       flashMs: "Por quanto tempo a barra de abas fica aberta depois desses eventos (ms)",
       revealGroup: "Mostrar a barra de abas ao:",

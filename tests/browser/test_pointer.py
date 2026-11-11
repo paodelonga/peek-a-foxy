@@ -51,7 +51,7 @@ CLEAN_UP = """
   }
   document.getElementById('peekafoxy-test-buttons')?.remove();
   Services.prefs.clearUserPref(arguments[0]);
-  for (const pref of ['show.delay.ms', 'tabs.strip.px', 'urlbar.strip.px', 'hide.ms', 'strip.px']) Services.prefs.clearUserPref('peekafoxy.' + pref);
+  for (const pref of ['easing', 'bookmarks', 'show.delay.ms', 'tabs.strip.px', 'urlbar.strip.px', 'hide.ms', 'strip.px']) Services.prefs.clearUserPref('peekafoxy.' + pref);
   for (const v of ['show-delay', 'tabs-strip', 'nav-strip', 'hide-duration', 'strip']) document.documentElement.style.removeProperty('--autohide-' + v);
   CustomizableUI.setToolbarVisibility('PersonalToolbar', false);
 """
@@ -339,4 +339,62 @@ def _closing_duration(browser):
             "getComputedStyle(document.getElementById('nav-bar')).transitionDuration.includes('0.75s')",
             5,
             "the closing duration did not follow the pref",
+        )
+
+
+# --- the animation curve and the bookmarks bar ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "opening", "closing"),
+    [
+        ("linear", "linear", "linear"),
+        ("snappy", "cubic-bezier(0.2, 0.9, 0.3, 1)", "cubic-bezier(0.4, 0, 1, 1)"),
+        ("smooth", "ease-out", "ease-in"),
+        ("nonsense", "ease-out", "ease-in"),  # not one of the choices: the default
+        ("", "ease-out", "ease-in"),
+        ("LINEAR", "ease-out", "ease-in"),  # exact keys only
+    ],
+)
+def test_the_animation_curve_follows_its_pref_and_a_bad_value_gives_the_default(
+    browser, value, opening, closing
+):
+    browser.js("Services.prefs.setStringPref('peekafoxy.easing', arguments[0]);", value)
+    browser.wait(
+        f"getComputedStyle({ROOT}).getPropertyValue('--autohide-show-easing').trim() === '{opening}'",
+        5,
+        "the opening curve did not follow the pref",
+    )
+    assert (
+        browser.js(
+            f"return getComputedStyle({ROOT}).getPropertyValue('--autohide-hide-easing').trim();"
+        )
+        == closing
+    )
+
+
+def test_the_bookmarks_bar_can_stay_visible_while_the_navigation_bar_hides(browser):
+    """Adversarial: with `visible` the bookmarks bar keeps its height while the navigation bar is
+    down to its strip, hovering it does not open the navigation bar, and `follow` (the default) puts
+    it back to closing with the bar."""
+    with collapsed_window(browser, False, bookmarks=True) as natural:
+        browser.js("Services.prefs.setStringPref('peekafoxy.bookmarks', 'visible');")
+        browser.wait(
+            f"{ROOT}.getAttribute('peekafoxy-bookmarks') === 'visible'", 5, "the pref did not apply"
+        )
+        browser.wait(
+            f"{BOOKMARKS_HEIGHT} === {natural['bookmarks']} && {NAV_HEIGHT} <= 8",
+            5,
+            "the bookmarks bar did not stay while the navigation bar hid",
+        )
+        hover(browser, "PersonalToolbar")
+        stays(
+            browser,
+            f"{NAV_HEIGHT} <= 8",
+            "hovering the visible bookmarks bar opened the navigation bar",
+        )
+        browser.move_pointer(*OUTSIDE)
+        browser.js("Services.prefs.clearUserPref('peekafoxy.bookmarks');")
+        browser.wait(
+            f"{BOOKMARKS_HEIGHT} === 0", 8, "the bookmarks bar did not go back to following the bar"
         )
