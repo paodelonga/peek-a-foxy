@@ -1464,6 +1464,163 @@ export function hintOnKeyboardPage(browser, locale = Services.locale.appLocaleAs
   }
 }
 
+
+// --- the "peek" show: tinted bars, a red BOO! and fireworks ---------------------------------------
+//
+// The colours come from the feel of the song's video (a strong red, dark autumn browns and wine, a
+// few bright sparks), not from any of its pictures.
+const BOO_RED = "#e0102e";
+const VELVET = "#4a0d1f";
+const FIREWORK_COLOURS = [
+  "#e0102e", "#ff3b3b", "#a3162b", "#ff8c1a", "#c25b1f", "#7a4a2b", "#ffd166", "#f4a6b8", "#4cc9f0", "#b5179e",
+];
+const SHOW_MS = 3200; // how long the BOO! stays, fireworks included
+const SHOW_REDUCED_MS = 1500;
+const MAX_SPARKS = 700;
+const XHTML = "http://www.w3.org/1999/xhtml";
+
+const SHOW_STYLE = `
+  :root[peekafoxy-peek~="tabs"] #TabsToolbar { background: ${BOO_RED} !important; }
+  :root[peekafoxy-peek~="navbar"] :is(#nav-bar, #PersonalToolbar) { background: ${VELVET} !important; }
+  :root[peekafoxy-peek="tabs navbar"] #TabsToolbar { background: ${VELVET} !important; }
+  :root[peekafoxy-peek="tabs navbar"] :is(#nav-bar, #PersonalToolbar) { background: ${BOO_RED} !important; }
+`;
+
+// While the bars peek, each one is painted red or burgundy (the colours swap when both are open).
+// The style only matches while peekafoxy-peek is on the root, and is removed with the show.
+function tintBars(run) {
+  const doc = run.win.document;
+  const style = doc.createElementNS(XHTML, "style");
+  style.id = "peekafoxy-show-style";
+  style.textContent = SHOW_STYLE;
+  doc.documentElement.append(style);
+  run.cleanups.push(() => style.remove());
+}
+
+// Escape or a click (which is not used for anything else) ends the show at once.
+function endOnEscapeOrClick(run) {
+  const { win } = run;
+  const onKey = (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    finish(run);
+  };
+  const onClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    finish(run);
+  };
+  win.addEventListener("keydown", onKey, true);
+  win.addEventListener("mousedown", onClick, true);
+  run.cleanups.push(() => {
+    win.removeEventListener("keydown", onKey, true);
+    win.removeEventListener("mousedown", onClick, true);
+  });
+}
+
+const between = (low, high) => low + Math.random() * (high - low);
+
+// The BOO! itself: a layer over the window with the word popping in and, unless `still`, a canvas
+// with bursts of sparks. Everything is removed when the show ends, whatever ends it.
+function shout(run, still) {
+  const { win } = run;
+  const doc = win.document;
+  if (egg !== run || isClosed(win)) return;
+  const layer = doc.createElementNS(XHTML, "div");
+  layer.id = "peekafoxy-boo";
+  layer.style.cssText = "position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; overflow: hidden;";
+  const word = doc.createElementNS(XHTML, "div");
+  word.textContent = "BOO!";
+  word.style.cssText =
+    "position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; " +
+    `font: 900 24vmin/1 Impact, "Arial Black", sans-serif; letter-spacing: 0.04em; color: ${BOO_RED}; ` +
+    `-webkit-text-stroke: 0.7vmin ${VELVET}; text-shadow: 0 1.2vmin 3vmin rgb(0 0 0 / 0.55);`;
+  layer.append(word);
+  let canvas = null;
+  if (!still) {
+    canvas = doc.createElementNS(XHTML, "canvas");
+    canvas.style.cssText = "position: absolute; inset: 0; width: 100%; height: 100%;";
+    layer.prepend(canvas);
+  }
+  doc.documentElement.append(layer);
+  run.cleanups.push(() => {
+    lazy.clearTimeout(run.timer);
+    if (run.frame) win.cancelAnimationFrame(run.frame);
+    layer.remove();
+  });
+  const leave = () => {
+    layer.animate([{ opacity: 1 }, { opacity: 0 }], { duration: still ? 1 : 400, fill: "forwards" }).finished
+      .catch(() => {})
+      .then(() => finish(run));
+  };
+  if (still) {
+    run.timer = lazy.setTimeout(leave, SHOW_REDUCED_MS);
+    return;
+  }
+  word.animate(
+    [
+      { transform: "scale(0.2) rotate(-10deg)", opacity: 0 },
+      { transform: "scale(1.18) rotate(3deg)", opacity: 1, offset: 0.55 },
+      { transform: "scale(1) rotate(0deg)", opacity: 1 },
+    ],
+    { duration: 520, easing: "cubic-bezier(0.2, 1.3, 0.4, 1)", fill: "both" }
+  );
+  const ratio = Math.min(win.devicePixelRatio || 1, 2);
+  const width = (canvas.width = Math.max(1, Math.round(win.innerWidth * ratio)));
+  const height = (canvas.height = Math.max(1, Math.round(win.innerHeight * ratio)));
+  const context = canvas.getContext("2d");
+  const sparks = [];
+  const burst = () => {
+    const x = between(0.12, 0.88) * width;
+    const y = between(0.12, 0.6) * height;
+    const colour = FIREWORK_COLOURS[Math.floor(Math.random() * FIREWORK_COLOURS.length)];
+    for (let i = 0; i < 70 && sparks.length < MAX_SPARKS; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = between(1.5, 6.5) * ratio;
+      sparks.push({
+        x, y, colour, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 1, decay: between(0.008, 0.017), size: between(1.5, 3.6) * ratio,
+      });
+    }
+  };
+  const started = win.performance.now();
+  const frame = () => {
+    run.frame = 0;
+    if (egg !== run || isClosed(win)) return;
+    context.clearRect(0, 0, width, height);
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const spark = sparks[i];
+      spark.vy += 0.05 * ratio;
+      spark.vx *= 0.992;
+      spark.x += spark.vx;
+      spark.y += spark.vy;
+      spark.life -= spark.decay;
+      if (spark.life <= 0) {
+        sparks.splice(i, 1);
+        continue;
+      }
+      context.globalAlpha = spark.life;
+      context.fillStyle = spark.colour;
+      context.beginPath();
+      context.arc(spark.x, spark.y, spark.size, 0, Math.PI * 2);
+      context.fill();
+    }
+    run.frame = win.requestAnimationFrame(frame);
+  };
+  run.frame = win.requestAnimationFrame(frame);
+  const schedule = () => {
+    if (egg !== run || isClosed(win)) return;
+    if (win.performance.now() - started > SHOW_MS - 700) return; // the last sparks fade out
+    burst();
+    run.timer = lazy.setTimeout(schedule, between(180, 330));
+  };
+  burst();
+  run.timer = lazy.setTimeout(schedule, 250);
+  run.leaveTimer = lazy.setTimeout(leave, SHOW_MS);
+  run.cleanups.push(() => lazy.clearTimeout(run.leaveTimer));
+}
+
 export const EasterEgg = {
   // Whether one is running (the bars are peeking or the player is open): triggers wait for it to end.
   busy: () => egg !== null,
@@ -1487,7 +1644,32 @@ export const EasterEgg = {
     }
     const { keys, matched } = nextKeys(typedIn.get(win) ?? [], event.code);
     typedIn.set(win, keys);
-    if (matched) EasterEgg.play(win, { peek: matched === "konami" });
+    if (matched === "peek") EasterEgg.show(win);
+    else if (matched) EasterEgg.play(win, { peek: matched === "konami" });
+  },
+
+  // "peek": the bars peek in rhythm, tinted red and burgundy, and then a big red BOO! bursts with
+  // fireworks over the window. No video. Escape or a click ends it at any moment; with reduced
+  // motion there are no bars peeking, no tint and no fireworks, only the word for a moment.
+  show(win) {
+    if (egg || !win || isClosed(win)) return;
+    const run = { win, timer: null, dialog: null, previous: null, cleanups: [] };
+    egg = run;
+    try {
+      const onUnload = () => finish(run);
+      win.addEventListener("unload", onUnload);
+      run.cleanups.push(() => win.removeEventListener("unload", onUnload));
+      endOnEscapeOrClick(run);
+      if (win.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        shout(run, true);
+      } else {
+        tintBars(run);
+        peekBars(run, () => shout(run, false));
+      }
+    } catch (e) {
+      Diag.warn("easter-egg:show", e);
+      finish(run);
+    }
   },
 
   // The ending in browser window `win`, after the bars peek when `peek` is true (not with reduced
