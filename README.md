@@ -238,6 +238,8 @@ Every setting is a real pref, listed in `about:config` with its type, and nothin
 | `peekafoxy.tabs.reveal.download` | `false` | Same, when a download finishes. |
 | `peekafoxy.tabs.reveal.title` | `false` | Same, when the title of a tab in the background changes. |
 | `peekafoxy.tabs.reveal.link` | `true` | Same, when a tab opens straight to any other address (a link, a bookmark, `window.open`...). |
+| `peekafoxy.easing` | `smooth` | Animation curve: `smooth`, `linear` or `snappy`. |
+| `peekafoxy.bookmarks` | `follow` | `follow`: the bookmarks bar opens and closes with the navigation bar; `visible`: it always stays visible. |
 | `peekafoxy.tabs.flash.ms` | `1500` | How long the tab bar stays open after one of those (0 to 10000). |
 | `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Shortcut that toggles the tab bar in the current window. |
 | `peekafoxy.urlbar.shortcut` | `Ctrl+Alt+Shift+U` | Shortcut that toggles the navigation bar. |
@@ -265,9 +267,11 @@ These are the defaults in the stylesheet. The strip thickness and the two timing
   --autohide-show-duration: 0.12s;        /* opening: how long it takes */
   --autohide-show-delay: 0.1s;            /* opening: how long the pointer stays on the strip first */
   --autohide-hide-delay: 0.3s;            /* closing: how long to wait before collapsing */
-  --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* opening: duration, easing, delay */
+  --autohide-show-easing: ease-out;       /* opening: the curve */
+  --autohide-hide-easing: ease-in;        /* closing: the curve */
+  --autohide-show: var(--autohide-show-duration) var(--autohide-show-easing) 0s;     /* opening: duration, easing, delay */
   --autohide-hide-duration: 0.2s;         /* closing: how long it takes */
-  --autohide-hide: var(--autohide-hide-duration) ease-in var(--autohide-hide-delay);       /* closing: duration, easing, delay */
+  --autohide-hide: var(--autohide-hide-duration) var(--autohide-hide-easing) var(--autohide-hide-delay);       /* closing: duration, easing, delay */
 }
 ```
 

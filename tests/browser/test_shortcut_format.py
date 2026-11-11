@@ -146,7 +146,13 @@ def test_every_pref_has_a_default_inside_its_limits_and_texts_in_both_languages(
         for (const [key, pref] of Object.entries(P.PREFS)) {
           if (pref.type === "int" && !(pref.default >= pref.min && pref.default <= pref.max))
             out.push(`${key}: default outside its limits`);
-          if (pref.type === "string" && !P.parseShortcut(pref.default).ok)
+          if (pref.type === "string" && pref.values) {
+            if (!pref.values.includes(pref.default)) out.push(`${key}: default is not a choice`);
+            for (const lang of ["en", "pt"])
+              for (const value of pref.values)
+                if (!P.STRINGS[lang].settings[`${key}Options`]?.[value])
+                  out.push(`${lang}: no label for ${key}=${value}`);
+          } else if (pref.type === "string" && !P.parseShortcut(pref.default).ok)
             out.push(`${key}: default shortcut is invalid`);
           if (!pref.name.startsWith(P.PREF_BRANCH)) out.push(`${key}: outside the branch`);
         }

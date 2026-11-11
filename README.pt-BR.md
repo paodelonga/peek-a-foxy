@@ -238,6 +238,8 @@ Cada configuração é uma pref de verdade, listada no `about:config` com o seu 
 | `peekafoxy.tabs.reveal.download` | `false` | Idem, quando um download termina. |
 | `peekafoxy.tabs.reveal.title` | `false` | Idem, quando o título de uma aba em segundo plano muda. |
 | `peekafoxy.tabs.reveal.link` | `true` | Idem, quando uma aba abre direto em qualquer outro endereço (um link, um favorito, `window.open`...). |
+| `peekafoxy.easing` | `smooth` | Curva da animação: `smooth`, `linear` ou `snappy`. |
+| `peekafoxy.bookmarks` | `follow` | `follow`: a barra de favoritos abre e fecha junto com a barra de navegação; `visible`: ela fica sempre visível. |
 | `peekafoxy.tabs.flash.ms` | `1500` | Quanto tempo a barra de abas fica aberta depois de um desses eventos (0 a 10000). |
 | `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Atalho que alterna a barra de abas na janela atual. |
 | `peekafoxy.urlbar.shortcut` | `Ctrl+Alt+Shift+U` | Atalho que alterna a barra de navegação. |
@@ -265,9 +267,11 @@ Estes são os padrões da folha de estilo. A largura da faixa de ativação e os
   --autohide-show-duration: 0.12s;        /* abrindo: quanto tempo leva */
   --autohide-show-delay: 0.1s;            /* abrindo: quanto tempo o cursor fica antes na faixa */
   --autohide-hide-delay: 0.3s;            /* fechando: quanto esperar antes de recolher */
-  --autohide-show: var(--autohide-show-duration) ease-out 0s;     /* abrindo: duração, curva, atraso */
+  --autohide-show-easing: ease-out;       /* abrindo: a curva */
+  --autohide-hide-easing: ease-in;        /* fechando: a curva */
+  --autohide-show: var(--autohide-show-duration) var(--autohide-show-easing) 0s;     /* abrindo: duração, curva, atraso */
   --autohide-hide-duration: 0.2s;         /* fechando: quanto tempo leva */
-  --autohide-hide: var(--autohide-hide-duration) ease-in var(--autohide-hide-delay);       /* fechando: duração, curva, atraso */
+  --autohide-hide: var(--autohide-hide-duration) var(--autohide-hide-easing) var(--autohide-hide-delay);       /* fechando: duração, curva, atraso */
 }
 ```
 

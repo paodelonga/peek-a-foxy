@@ -49,6 +49,7 @@
     #peekafoxy-pane .pf-row > label { flex: 1 1 10em; }
     #peekafoxy-pane .pf-row input[type="number"] { width: 7em; }
     #peekafoxy-pane .pf-row input[type="text"] { width: 12em; }
+    #peekafoxy-pane .pf-row select { flex: 0 1 auto; min-width: 0; max-width: min(100%, 14em); }
     #peekafoxy-pane .pf-reset { flex: none; background-image: url("chrome://global/skin/icons/arrow-counterclockwise-16.svg");
       background-repeat: no-repeat; background-position: 8px center; background-size: 16px;
       padding-inline-start: 32px; -moz-context-properties: fill; fill: currentColor; }
@@ -108,6 +109,19 @@
   const problemLine = () => el("p", { class: "pf-problem", role: "alert" });
   const showProblem = (line, reason, values = {}) => {
     announce(line, reason ? fill(TEXT.problems[reason], values) : "");
+  };
+
+  // A list of choices; the pref holds the key of the one picked (Peek.read gives the default for a
+  // value that is not one of them).
+  const choiceField = (pref, label, labels) => {
+    const id = `peekafoxy-${pref.name}`;
+    const select = el("select", { id },
+      ...pref.values.map((key) => el("option", { value: key, text: labels[key] ?? key })));
+    const refresh = () => { select.value = Peek.read(pref); };
+    select.addEventListener("change", () => Peek.write(pref, select.value));
+    controls.push({ refresh });
+    return el("div", { class: "pf-row" },
+      el("label", { for: id, text: label }), select, resetButton(pref, select, label));
   };
 
   const numberField = (pref, label) => {
@@ -371,7 +385,10 @@
         numberField(PREFS.showDelayMs, TEXT.showDelayMs),
         numberField(PREFS.showMs, TEXT.showMs),
         numberField(PREFS.hideMs, TEXT.hideMs),
-        numberField(PREFS.hideDelayMs, TEXT.hideDelayMs)),
+        numberField(PREFS.hideDelayMs, TEXT.hideDelayMs),
+        choiceField(PREFS.easing, TEXT.easing, TEXT.easingOptions)),
+      group(TEXT.bookmarksGroup,
+        choiceField(PREFS.bookmarks, TEXT.bookmarks, TEXT.bookmarksOptions)),
       group(TEXT.shortcutsGroup,
         shortcutField(PREFS.tabsShortcut, PREFS.urlbarShortcut, TEXT.tabsShortcut),
         shortcutField(PREFS.urlbarShortcut, PREFS.tabsShortcut, TEXT.urlbarShortcut),

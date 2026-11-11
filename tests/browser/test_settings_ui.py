@@ -529,7 +529,7 @@ def test_each_reset_button_is_named_after_its_field(browser):
     names = browser.settings(
         """return [...doc.querySelectorAll('#peekafoxy-pane .pf-reset')].map(b => b.getAttribute('aria-label'));"""
     )
-    assert len(names) == 10 and len(set(names)) == 10, names
+    assert len(names) == 12 and len(set(names)) == 12, names
     assert all(name.startswith("Restore default: ") for name in names), names
     assert "Restore default: Activation strip thickness (px)" in names
     assert "Restore default: Toggle tab bar visibility" in names
@@ -542,7 +542,7 @@ def test_the_reset_buttons_are_named_in_portuguese_for_a_portuguese_firefox(brow
         "return [...doc.querySelectorAll('#peekafoxy-pane .pf-reset')].map(b => b.getAttribute('aria-label'));"
     )
     browser.close_settings_tabs()
-    assert len(set(names)) == 10 and all(n.startswith("Restaurar padrão: ") for n in names), names
+    assert len(set(names)) == 12 and all(n.startswith("Restaurar padrão: ") for n in names), names
     assert "Restaurar padrão: Alternar a exibição da barra de abas" in names
 
 
@@ -781,9 +781,10 @@ def test_a_shortcut_mistake_is_announced_through_the_same_mechanism(browser):
 ROWS = """
   const rows = [...doc.querySelectorAll('#peekafoxy-pane .pf-row')].filter(r => r.querySelector('.pf-reset'));
   return rows.map((row) => {
-    const input = row.querySelector('input').getBoundingClientRect();
+    const field = row.querySelector('input, select');
+    const input = field.getBoundingClientRect();
     const button = row.querySelector('.pf-reset').getBoundingClientRect();
-    return {field: row.querySelector('input').id, inputTop: input.top, buttonTop: button.top,
+    return {field: field.id, inputTop: input.top, buttonTop: button.top,
             rowHeight: row.getBoundingClientRect().height, pane: doc.getElementById('peekafoxy-pane').clientWidth};
   });
 """
@@ -792,7 +793,7 @@ ROWS = """
 def test_the_reset_button_is_on_the_same_row_as_its_field(browser):
     browser.open_settings("#peekafoxy")
     rows = browser.settings(ROWS)
-    assert len(rows) == 10
+    assert len(rows) == 12
     if rows[0]["pane"] < 520:
         pytest.skip(f"the window is too narrow for one row ({rows[0]['pane']}px)")
     for row in rows:
