@@ -179,12 +179,12 @@ Uma atualização do Firefox pode remover o loader da pasta de instalação; rod
 
 | | Barra de abas | Barra de navegação |
 | --- | --- | --- |
-| Alternar na janela atual | `Ctrl+Alt+Shift+T` (`Ctrl+Alt+T` no Windows e no macOS) ou botão da barra de ferramentas | `Ctrl+Alt+Shift+U` ou botão da barra de ferramentas |
+| Alternar na janela atual | `Ctrl+Alt+T` ou botão da barra de ferramentas | `Ctrl+Alt+Shift+U` ou botão da barra de ferramentas |
 | Revelar temporariamente | passar o mouse na faixa do topo, trocar ou abrir uma aba | passar o mouse na faixa dela, focar a barra de endereço |
 
 Os botões estão em *Personalizar barra de ferramentas* como **Auto-hide the tab bar** e **Auto-hide the navigation bar** (num Firefox em português: **Ocultar a barra de abas automaticamente** e **Ocultar a barra de navegação automaticamente**). Enquanto o autohide de uma barra está ligado numa janela, o botão aparece pressionado nessa janela. O botão da urlbar fica dentro da barra que ele oculta, então revele a barra pela faixa de hover para clicar nele; o atalho funciona a qualquer momento.
 
-Os atalhos padrão evitam combinações que outra coisa já usa. No Linux, o `Ctrl+Alt+T` abre um terminal no GNOME, no Ubuntu e no Linux Mint, e o ambiente de desktop pega o atalho antes de o Firefox vê-lo; por isso a barra de abas usa `Ctrl+Alt+Shift+T` lá (e em qualquer sistema que o Peek-a-Foxy não reconheça), enquanto o Windows e o macOS mantêm `Ctrl+Alt+T`. O `Ctrl+Alt+U` é o atalho do próprio Firefox para a barra lateral de Abas abertas, então a barra de navegação usa `Ctrl+Alt+Shift+U` em todos os sistemas. As versões até a 0.2.0 usavam `Ctrl+Alt+T` e `Ctrl+Alt+U` em todo lugar: se você nunca mudou os atalhos, eles mudaram com a atualização. Um atalho que você mesmo escolheu é mantido, e você pode mudar qualquer um deles nas configurações do Firefox (veja [Configurações](#configurações)); a página avisa quando o atalho que você grava é um que o Firefox já usa.
+O `Ctrl+Alt+U` é o atalho do próprio Firefox para a barra lateral de Abas abertas, então a barra de navegação usa `Ctrl+Alt+Shift+U` no lugar dele. As versões até a 0.2.0 usavam `Ctrl+Alt+U` na barra de navegação: se você nunca mudou esse atalho, ele mudou com a atualização. Se um atalho conflitar com algo no seu sistema, mude-o nas configurações do Firefox (veja [Configurações](#configurações)); um atalho que você mesmo escolheu é mantido, e a página avisa quando o que você grava já é usado pelo Firefox.
 
 Uma barra também fica aberta enquanto um popup que pertence a ela está aberto (o menu de um dos botões dela, a lista de todas as abas, uma pasta de favoritos). Uma janela que uma página abre como popup nunca oculta a barra de navegação, então o endereço dela continua visível. Com as abas verticais do Firefox ligadas não há barra de abas para ocultar, então as opções da barra de abas não fazem nada, e a página de configurações avisa isso.
 
@@ -233,7 +233,7 @@ Cada configuração é uma pref de verdade, listada no `about:config` com o seu 
 | `peekafoxy.tabs.reveal.new` | `true` | Idem, ao abrir uma aba nova (a página de nova aba ou a sua página inicial). |
 | `peekafoxy.tabs.reveal.link` | `true` | Idem, quando uma aba abre direto em qualquer outro endereço (um link, um favorito, `window.open`...). |
 | `peekafoxy.tabs.flash.ms` | `1500` | Quanto tempo a barra de abas fica aberta depois de um desses eventos (0 a 10000). |
-| `peekafoxy.tabs.shortcut` | `Ctrl+Alt+Shift+T` (`Ctrl+Alt+T` no Windows e no macOS) | Atalho que alterna a barra de abas na janela atual. |
+| `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Atalho que alterna a barra de abas na janela atual. |
 | `peekafoxy.urlbar.shortcut` | `Ctrl+Alt+Shift+U` | Atalho que alterna a barra de navegação. |
 | `peekafoxy.welcomed` | `false` | Vira `true` depois da saudação única. Volte para `false` para vê-la de novo. |
 
@@ -522,7 +522,7 @@ O `uninstall` também remove o `chrome/peekafoxy-status.json` (o arquivo que o s
 
 ## Roadmap
 
-O trabalho planejado é acompanhado no GitHub Project [Peek-a-Foxy](https://github.com/users/paodelonga/projects/22), e contribuições são bem-vindas. Entre outras coisas, nele estão a assinatura de código do programa para Windows pelo SignPath (uma meta de longo prazo) e a ideia de dividir o Peek-a-Foxy em ferramentas modulares.
+O trabalho planejado é acompanhado no GitHub Project [Peek-a-Foxy](https://github.com/users/paodelonga/projects/22), e contribuições são bem-vindas.
 
 Limites conhecidos que você pode encontrar hoje:
 

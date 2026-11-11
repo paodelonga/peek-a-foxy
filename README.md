@@ -179,12 +179,12 @@ A Firefox update can remove the loader from its install directory; run `peek-a-f
 
 | | Tab bar | Navigation bar |
 | --- | --- | --- |
-| Toggle for the current window | `Ctrl+Alt+Shift+T` (`Ctrl+Alt+T` on Windows and macOS) or toolbar button | `Ctrl+Alt+Shift+U` or toolbar button |
+| Toggle for the current window | `Ctrl+Alt+T` or toolbar button | `Ctrl+Alt+Shift+U` or toolbar button |
 | Reveal temporarily | hover the top strip, switch or open a tab | hover its strip, focus the URL bar |
 
 The buttons are in *Customize Toolbar* as **Auto-hide the tab bar** and **Auto-hide the navigation bar** (in a Portuguese Firefox: **Ocultar a barra de abas automaticamente** and **Ocultar a barra de navegação automaticamente**). While a bar's autohide is on in a window, the button looks pressed in that window. The urlbar button lives in the bar it hides, so reveal the bar with its hover strip to click it; the shortcut works at any time.
 
-The default shortcuts avoid combinations that something else already uses. On Linux, `Ctrl+Alt+T` opens a terminal on GNOME, Ubuntu and Linux Mint, and the desktop takes it before Firefox sees it, so the tab bar uses `Ctrl+Alt+Shift+T` there (and on any system Peek-a-Foxy does not recognize); Windows and macOS keep `Ctrl+Alt+T`. `Ctrl+Alt+U` is Firefox's own shortcut for the Open Tabs sidebar, so the navigation bar uses `Ctrl+Alt+Shift+U` on every system. Versions up to 0.2.0 used `Ctrl+Alt+T` and `Ctrl+Alt+U` everywhere: if you never changed the shortcuts, they changed with the update. A shortcut that you chose yourself is kept, and you can change either one in Firefox's settings (see [Settings](#settings)); the page warns you when the shortcut you record is one that Firefox already uses.
+`Ctrl+Alt+U` is Firefox's own shortcut for the Open Tabs sidebar, so the navigation bar uses `Ctrl+Alt+Shift+U` instead of it. Versions up to 0.2.0 used `Ctrl+Alt+U` for the navigation bar: if you never changed that shortcut, it changed with the update. If a shortcut clashes with something on your system, change it in Firefox's settings (see [Settings](#settings)); a shortcut that you chose yourself is kept, and the page warns you when the one you record is already used by Firefox.
 
 A bar also stays open while a popup that belongs to it is open (the menu of one of its buttons, the list of all tabs, a bookmarks folder). A window that a page opens as a popup never hides its navigation bar, so its address stays visible. With Firefox's vertical tabs turned on there is no tab bar to hide, so the tab bar options do nothing, and the settings page says so.
 
@@ -233,7 +233,7 @@ Every setting is a real pref, listed in `about:config` with its type, and nothin
 | `peekafoxy.tabs.reveal.new` | `true` | Same, when you open a new tab (the new-tab page or your home page). |
 | `peekafoxy.tabs.reveal.link` | `true` | Same, when a tab opens straight to any other address (a link, a bookmark, `window.open`...). |
 | `peekafoxy.tabs.flash.ms` | `1500` | How long the tab bar stays open after one of those (0 to 10000). |
-| `peekafoxy.tabs.shortcut` | `Ctrl+Alt+Shift+T` (`Ctrl+Alt+T` on Windows and macOS) | Shortcut that toggles the tab bar in the current window. |
+| `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Shortcut that toggles the tab bar in the current window. |
 | `peekafoxy.urlbar.shortcut` | `Ctrl+Alt+Shift+U` | Shortcut that toggles the navigation bar. |
 | `peekafoxy.welcomed` | `false` | Set to `true` after the one-time greeting. Set it back to `false` to see it again. |
 
@@ -522,7 +522,7 @@ Removes this project's files and prefs. It leaves `chrome/utils` and the loader 
 
 ## Roadmap
 
-Planned work is tracked in the GitHub Project [Peek-a-Foxy](https://github.com/users/paodelonga/projects/22), and contributions are welcome. It lists, among other things, code signing for the Windows program through SignPath (a long-term goal) and the idea of splitting Peek-a-Foxy into modular tools.
+Planned work is tracked in the GitHub Project [Peek-a-Foxy](https://github.com/users/paodelonga/projects/22), and contributions are welcome.
 
 Known limits that you may run into today:
 

@@ -75,11 +75,10 @@ def test_the_default_shortcuts_in_the_prefs_table_are_the_ones_of_the_code(name:
     tabs = re.search(r"^\| `peekafoxy\.tabs\.shortcut` \| (.+?) \|", text, re.MULTILINE)
     urlbar = re.search(r"^\| `peekafoxy\.urlbar\.shortcut` \| (.+?) \|", text, re.MULTILINE)
     assert tabs and urlbar
-    assert f"`{cli.TABS_SHORTCUT_LINUX}`" in tabs.group(1)
-    assert f"`{cli.TABS_SHORTCUT}`" in tabs.group(1)
+    assert tabs.group(1) == f"`{cli.TABS_SHORTCUT}`"
     assert urlbar.group(1) == f"`{cli.URLBAR_SHORTCUT}`"
     usage = _section(name, "usage")
-    assert cli.TABS_SHORTCUT_LINUX in usage and cli.URLBAR_SHORTCUT in usage
+    assert cli.TABS_SHORTCUT in usage and cli.URLBAR_SHORTCUT in usage
 
 
 @pytest.mark.parametrize("name", [*READMES, ".github/ISSUE_TEMPLATE/bug_report.yml"])

@@ -17,15 +17,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
 // The version of the Peek-a-Foxy files (a test keeps it equal to the package version).
 export const SCRIPT_VERSION = "0.2.0";
 
-// The default shortcuts. Ctrl+Alt+T opens a terminal on GNOME, Ubuntu and Linux Mint, so on Linux (and on
-// any system this does not know) the tab bar uses Ctrl+Alt+Shift+T. Ctrl+Alt+U is Firefox's own
-// shortcut for the tabs sidebar, so the navigation bar uses Ctrl+Alt+Shift+U everywhere.
-// The operating system is Services.appinfo.OS: "Linux", "WINNT" or "Darwin".
+// The default shortcuts, the same on every system. Ctrl+Alt+U is Firefox's own shortcut for the tabs
+// sidebar, so the navigation bar uses Ctrl+Alt+Shift+U.
 export const DEFAULT_TABS_SHORTCUT = "Ctrl+Alt+T";
-export const DEFAULT_TABS_SHORTCUT_LINUX = "Ctrl+Alt+Shift+T";
 export const DEFAULT_URLBAR_SHORTCUT = "Ctrl+Alt+Shift+U";
-export const defaultTabsShortcut = (os) =>
-  os === "WINNT" || os === "Darwin" ? DEFAULT_TABS_SHORTCUT : DEFAULT_TABS_SHORTCUT_LINUX;
 
 // One entry per pref. Everything is registered on Firefox's default branch (see registerDefaults),
 // so about:config lists the prefs with the right type and nothing is written until a value changes.
@@ -42,7 +37,7 @@ export const PREFS = {
   revealSwitch: { name: "peekafoxy.tabs.reveal.switch", type: "bool", default: true },
   revealNew: { name: "peekafoxy.tabs.reveal.new", type: "bool", default: true },
   revealLink: { name: "peekafoxy.tabs.reveal.link", type: "bool", default: true },
-  tabsShortcut: { name: "peekafoxy.tabs.shortcut", type: "string", default: defaultTabsShortcut(Services.appinfo.OS) },
+  tabsShortcut: { name: "peekafoxy.tabs.shortcut", type: "string", default: DEFAULT_TABS_SHORTCUT },
   urlbarShortcut: { name: "peekafoxy.urlbar.shortcut", type: "string", default: DEFAULT_URLBAR_SHORTCUT },
   welcomed: { name: "peekafoxy.welcomed", type: "bool", default: false },
 };

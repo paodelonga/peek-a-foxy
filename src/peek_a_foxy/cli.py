@@ -24,15 +24,9 @@ from peek_a_foxy.profiles import Profile, default_profile, read_profiles
 log = logging.getLogger(__name__)
 
 # Shown to the user as the way to toggle each bar; they must match the script's TARGETS.
-# Ctrl+Alt+T opens a terminal on GNOME, Ubuntu and Linux Mint, and Ctrl+Alt+U is Firefox's own.
-TABS_SHORTCUT = "Ctrl+Alt+T"  # Windows and macOS
-TABS_SHORTCUT_LINUX = "Ctrl+Alt+Shift+T"  # Linux, and any other system
-URLBAR_SHORTCUT = "Ctrl+Alt+Shift+U"  # everywhere
-
-
-def tabs_shortcut() -> str:
-    """The default tab bar shortcut on this system (the script picks it the same way)."""
-    return TABS_SHORTCUT if sys.platform in ("win32", "darwin") else TABS_SHORTCUT_LINUX
+# Ctrl+Alt+U is Firefox's own shortcut for the tabs sidebar, so the navigation bar adds Shift.
+TABS_SHORTCUT = "Ctrl+Alt+T"
+URLBAR_SHORTCUT = "Ctrl+Alt+Shift+U"
 
 
 # The arguments of this run, as given (the log records them, redacted).
@@ -591,7 +585,7 @@ def done_summary(skipped_loader: bool, loader_conflict: bool) -> tuple[str, str]
     return "Done", (
         "Close [bold]all[/] Firefox windows and start it again.\n\n"
         f"Both autohides start [bold]off[/]. Turn them on with "
-        f"[bold]{tabs_shortcut()}[/] (tabs) and "
+        f"[bold]{TABS_SHORTCUT}[/] (tabs) and "
         f"[bold]{URLBAR_SHORTCUT}[/] (urlbar), or add the buttons from Customize Toolbar. "
         "The shortcuts, sizes and timings can be changed in Firefox's settings, under "
         "[bold]Peek a Foxy[/].\n\n"
