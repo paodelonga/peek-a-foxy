@@ -175,6 +175,7 @@ What the tests cover, and why:
   too), a folder that is a link or a junction, one that the system refuses to remove, one that gets a file
   or vanishes between the check and the removal, and an empty `chrome/utils` are all left alone, and the
   uninstall goes on.
+- **When each bar shows** (`test_pointer.py`, `test_popups.py`, `test_customtitlebar.py`, `test_in_firefox.py`): every situation in which the tab bar, the navigation bar and the bookmarks bar are visible or hidden, with the rule that causes it, its test and the gaps found, is listed in [docs/when-the-bars-show.md](docs/when-the-bars-show.md); update it when you add a way to reveal a bar.
 - **Failure modes** (`test_robustness.py`): failed or missing `git`, failed `sudo`, read-only
   directories, invalid UTF-8, a half-installed state. A failure must be a clean error, never a
   traceback or a partly modified profile.
