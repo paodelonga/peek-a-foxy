@@ -214,10 +214,17 @@ def test_a_window_that_is_never_tracked_is_retried_a_bounded_number_of_times(
         'user_pref("peekafoxy.tabs.autohide", true);\n',
         edit_script=with_fake_store("Window is not tracked"),
     ) as browser:
-        time.sleep(3.5)  # the retries last about two seconds
+        # The retries last about two seconds on a quick machine and longer on a slow runner: wait
+        # until the count has not moved for a while instead of for a fixed time.
         calls = browser.js("return {...window.__calls};")
-        time.sleep(1.5)
-        assert browser.js("return {...window.__calls};") == calls  # it gave up
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            time.sleep(1.5)
+            now = browser.js("return {...window.__calls};")
+            if now == calls:
+                break  # it gave up
+            calls = now
+        assert browser.js("return {...window.__calls};") == calls
         assert 1 <= calls["get"] <= 100 and calls["set"] == 0
         assert browser.js(HAS, "autohide-tabs")  # the pref default stands
         assert tracking_noise(events(browser)) == []  # being untracked is not worth a mention
