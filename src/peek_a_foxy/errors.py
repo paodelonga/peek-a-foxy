@@ -254,7 +254,8 @@ UNSUPPORTED_OS = _register(
     "PAF-501",
     "unsupported-os",
     "This operating system is not supported.",
-    "Peek-a-Foxy works on Linux, macOS and Windows. On another system, --profile with "
+    "Peek-a-Foxy works on Linux and Windows. It also knows where Firefox keeps its files on "
+    "macOS, but that has never been tried on a real Mac. On another system, --profile with "
     "--skip-loader skips the automatic search.",
 )
 NO_TERMINAL = _register(

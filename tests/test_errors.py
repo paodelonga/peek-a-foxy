@@ -144,3 +144,11 @@ def test_a_text_one_character_over_the_limit_is_cut_and_the_rest_is_counted():
     assert errors.clip("x" * (errors.MAX_DETAIL + 1)) == "x" * errors.MAX_DETAIL + (
         "... (1 more characters)"
     )
+
+
+def test_the_unsupported_system_hint_is_truthful_about_macos():
+    hint = errors.UNSUPPORTED_OS.hint
+    assert "works on Linux and Windows" in hint
+    assert "macOS" in hint and "never been tried on a real Mac" in hint
+    assert "Linux, macOS and Windows" not in hint  # that would promise macOS
+    assert "--profile" in hint and "--skip-loader" in hint  # the way around it stays

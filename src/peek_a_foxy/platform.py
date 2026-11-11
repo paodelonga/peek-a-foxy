@@ -79,7 +79,8 @@ def system() -> str:
         return "windows"
     raise PlatformError(
         errors.UNSUPPORTED_OS,
-        f"unsupported platform '{sys.platform}': only Linux, macOS and Windows are handled",
+        f"unsupported platform '{sys.platform}': only the Linux, macOS and Windows locations "
+        "are known",
     )
 
 
