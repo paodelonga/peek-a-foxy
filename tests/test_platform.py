@@ -30,7 +30,10 @@ def test_profiles_root_macos(monkeypatch, tmp_path):
 @pytest.mark.parametrize("name", ["cygwin", "msys", "freebsd14", "sunos5"])
 def test_other_platforms_are_rejected_clearly(monkeypatch, name):
     monkeypatch.setattr(sys, "platform", name)
-    with pytest.raises(platform.UnsupportedPlatformError, match="Linux, macOS and Windows"):
+    with pytest.raises(
+        platform.UnsupportedPlatformError,
+        match="only the Linux, macOS and Windows locations are known",
+    ):
         platform.system()
 
 

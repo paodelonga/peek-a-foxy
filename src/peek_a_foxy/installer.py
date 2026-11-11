@@ -33,6 +33,8 @@ LEGACY_FILES = (
     "JS/tabs_autohide.uc.js",
 )  # names before the project was renamed
 
+EMPTIED_FOLDERS = ("JS", "resources")  # in chrome/: removed on uninstall, only if left empty
+
 
 @dataclass
 class Step:
@@ -294,6 +296,37 @@ def _remove(path: Path) -> None:
     path.unlink(missing_ok=True)
 
 
+def _is_link(path: Path) -> bool:
+    """A symbolic link or, on Windows, any reparse point (a junction counts; Python < 3.12 cannot
+    tell), looked at without following it."""
+    if path.is_symlink():
+        return True
+    try:
+        attributes = getattr(os.lstat(path), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+
+
+def _remove_if_empty(folder: Path) -> None:
+    """Remove ``folder`` when nothing is in it; in every other case leave it, quietly.
+
+    One ``rmdir`` does the whole job: the system itself refuses a folder that holds anything, so
+    a file somebody adds between a check and the removal is never lost, and nothing is deleted
+    recursively. A link (or, on Windows, a junction) is not ours and is never removed or followed.
+    Whatever stops the removal (a folder with files, a missing one, no permission, a program that
+    has it open) only leaves an empty folder behind, which is not worth failing an uninstall for.
+    """
+    log.debug("removing %s if it is empty", folder)
+    if _is_link(folder):
+        log.info("%s is a link, not a folder of ours, so it was kept", folder)
+        return
+    try:
+        os.rmdir(folder)
+    except OSError as error:  # missing, not empty, not a folder, no permission, in use
+        log.info("%s was kept: %s", folder, error.strerror or type(error).__name__)
+
+
 def _remove_leftover(path: Path) -> str | None:
     """Remove a file that only holds diagnostics; if that is not possible, a warning, not a failure.
 
@@ -428,8 +461,14 @@ def plan_uninstall(profile: Path) -> Plan:
     def remove_files() -> None:
         for name in (*FILES, *LEGACY_FILES):
             _remove(chrome / name)
+        for folder in EMPTIED_FOLDERS:  # the files above were all that peek-a-foxy put in them
+            _remove_if_empty(chrome / folder)
 
-    plan.add(f"Remove {_names(FILES)} from {chrome}", remove_files)
+    plan.add(
+        f"Remove {_names(FILES)} from {chrome}, then the {' and '.join(EMPTIED_FOLDERS)} "
+        "folders there if nothing else is in them",
+        remove_files,
+    )
 
     def remove_status() -> str | None:
         problems = [

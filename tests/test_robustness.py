@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from support import fake_sudo, needs_permissions, needs_posix_shell, needs_symlinks
+from support import fake_sudo, flat, needs_permissions, needs_posix_shell, needs_symlinks
 from typer.testing import CliRunner
 
 from peek_a_foxy import cli, errors, loader
@@ -323,7 +323,11 @@ def test_no_firefox_found_is_a_clean_error(profile: Path, monkeypatch):
 def test_unsupported_platform_is_a_clean_error(monkeypatch):
     monkeypatch.setattr(cli.platform.sys, "platform", "freebsd14")
     result = runner.invoke(app, ["install", "--yes"])
-    assert result.exit_code == 1 and "Linux, macOS and Windows" in result.output
+    shown = flat(result.output)
+    assert result.exit_code == 1 and "PAF-501" in shown
+    # Truthful: it works on Linux and Windows, and macOS has never been tried on a real Mac.
+    assert "works on Linux and Windows" in shown and "never been tried on a real Mac" in shown
+    assert "works on Linux, macOS" not in shown
 
 
 def test_uninstall_dry_run_changes_nothing(profile: Path):

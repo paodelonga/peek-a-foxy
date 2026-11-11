@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, NoReturn
 
 import typer
 from rich.panel import Panel
@@ -39,6 +39,46 @@ def tabs_shortcut() -> str:
 _argv: list[str] = sys.argv[1:]
 
 
+INSTALL_COMPLETION_HELP = (
+    "Install completion for the current shell (bash, zsh or fish; for PowerShell, see "
+    "--show-completion)."
+)
+POWERSHELL_COMPLETION_REFUSED = (
+    "Peek-a-Foxy does not install completion for PowerShell. The installer that comes with Typer "
+    "first sets your PowerShell execution policy to Unrestricted for your user, which lets any "
+    "script run, and that is a change this tool will not make for you. To get completion in "
+    "PowerShell, run `peek-a-foxy --show-completion` there and add what it prints to your "
+    "PowerShell profile yourself."
+)
+
+
+def _refuse_powershell_completion(*args: Any, **kwargs: Any) -> NoReturn:
+    """Stands in for Typer's PowerShell installer, which would also change the execution policy."""
+    typer.echo(POWERSHELL_COMPLETION_REFUSED, err=True)
+    raise typer.Exit(errors.EXIT_FAILURE)
+
+
+def _guard_powershell_completion() -> None:
+    """Make ``--install-completion`` refuse PowerShell instead of loosening the execution policy.
+
+    Typer runs ``Set-ExecutionPolicy Unrestricted -Scope CurrentUser`` before it writes to the
+    PowerShell profile, with no question asked: a security setting changed as a side effect of a
+    convenience. Typer offers no option to skip it, so its installer function is replaced here.
+    bash, zsh and fish are not affected. If a Typer release renames the function, there is nothing
+    to replace and the tests that call the installer for PowerShell fail.
+    """
+    try:
+        from typer import _completion_shared
+    except ImportError:  # a Typer without the module has nothing for us to guard
+        return
+    if hasattr(_completion_shared, "install_powershell"):
+        # setattr, not an assignment: the stand-in does not have Typer's signature
+        setattr(_completion_shared, "install_powershell", _refuse_powershell_completion)  # noqa: B010
+
+
+_guard_powershell_completion()
+
+
 class _Group(TyperGroup):
     """The top-level command: every failure ends up as a message, a log entry and an exit code.
 
@@ -46,6 +86,13 @@ class _Group(TyperGroup):
     message; anything else is a bug: it exits with 70 and the unexpected-error code. Both are
     logged with their traceback. Typer's own handling would print a stack trace instead.
     """
+
+    def get_params(self, ctx: Any) -> list[Any]:
+        params: list[Any] = super().get_params(ctx)
+        for param in params:
+            if param.name == "install_completion":  # Typer's own option: say what it will not do
+                param.help = INSTALL_COMPLETION_HELP
+        return params
 
     def main(self, args: Sequence[str] | None = None, *rest: Any, **extra: Any) -> Any:
         global _argv
@@ -255,6 +302,29 @@ YesOption = Annotated[
         "-y",
         help="Don't ask anything: apply without confirming, and don't prompt for the profile or "
         "the Firefox installation (an unclear choice is an error instead).",
+    ),
+]
+UninstallYesOption = Annotated[  # uninstall never looks at the Firefox installation
+    bool,
+    typer.Option(
+        "--yes",
+        "-y",
+        help="Don't ask anything: apply without confirming, and don't prompt for the profile "
+        "(an unclear choice is an error instead).",
+    ),
+]
+LogsYesOption = Annotated[  # `logs` has no profile and no Firefox: --yes only answers --clear
+    bool,
+    typer.Option(
+        "--yes", "-y", help="With --clear, delete the log files without asking for confirmation."
+    ),
+]
+LogsFileOption = Annotated[  # for `logs` the file is the one to look at, not the one to write
+    Path | None,
+    typer.Option(
+        "--log-file",
+        help="Use this log file instead of the default one.",
+        dir_okay=False,
     ),
 ]
 
@@ -563,7 +633,7 @@ def uninstall(
     ctx: typer.Context,
     profile: ProfileOption = None,
     dry_run: DryRunOption = False,
-    yes: YesOption = False,
+    yes: UninstallYesOption = False,
     verbose: VerboseOption = False,
     log_file: LogFileOption = None,
     no_log: NoLogOption = False,
@@ -597,8 +667,8 @@ def logs_command(
         bool, typer.Option("--open", help="Open the folder that holds the log.")
     ] = False,
     clear: Annotated[bool, typer.Option("--clear", help="Delete the log files.")] = False,
-    yes: YesOption = False,
-    log_file: LogFileOption = None,
+    yes: LogsYesOption = False,
+    log_file: LogsFileOption = None,
 ) -> None:
     """Show where the log is and what the last run did; open its folder or delete it."""
     if open_folder and clear:
@@ -735,7 +805,13 @@ class _OptionalPathCommand(TyperCommand):
         return super().parse_args(ctx, rewritten)
 
 
-@app.command("doctor", cls=_OptionalPathCommand)
+DOCTOR_HELP = (  # one string: a line break inside the text would show in the commands list
+    "Checks this computer and tells you what is in the way of Peek-a-Foxy. Nothing is changed or "
+    "sent anywhere; only the local log is written (use --no-log to avoid that)."
+)
+
+
+@app.command("doctor", cls=_OptionalPathCommand, help=DOCTOR_HELP)
 def doctor_command(
     ctx: typer.Context,
     profile: DoctorProfileOption = None,
@@ -772,8 +848,6 @@ def doctor_command(
     log_file: LogFileOption = None,
     no_log: NoLogOption = False,
 ) -> None:
-    """Checks this computer and tells you what is in the way of Peek-a-Foxy. Nothing is changed or
-    sent anywhere; only the local log is written (use --no-log to avoid that)."""
     if markdown and as_json:
         raise typer.BadParameter("Use either --markdown or --json, but not both.")
     if save not in (None, SAVE_DEFAULT):
