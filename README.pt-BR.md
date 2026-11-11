@@ -367,6 +367,8 @@ O botão **Copiar informações de diagnóstico** coloca um relatório curto na 
 
 O script não coleta os endereços das páginas que você visita, os seus favoritos, as suas senhas nem o conteúdo das suas abas. O texto de uma mensagem de erro que o Firefox gerou é copiado como está, com a sua pasta pessoal, o seu nome de usuário e a pasta do perfil ocultos, o que é mais um motivo para ler o relatório antes de colá-lo. Nada é enviado a lugar nenhum: o relatório só vai para a sua área de transferência. Se o Firefox não conseguir acessá-la, o texto aparece numa caixa abaixo do botão, para que você o selecione e o copie por conta própria.
 
+A página de configurações também esconde alguns easter eggs ligados à música do nome do projeto. Nada é carregado até você acionar um deles. Quando isso acontece, a janela do navegador escurece e um player de vídeo carrega a música de youtube-nocookie.com, então o YouTube recebe essa requisição com o endereço deste repositório como referrer. Este é o único ponto em que o script carrega algo da Internet, e o player é removido de novo quando você o fecha com Esc, com o botão **Fechar** ou com um clique na área escura.
+
 ### O log
 
 Cada execução grava um log pequeno no seu computador, para ajudar a descobrir o que deu errado. Nada é enviado para lugar nenhum. Nele ficam escondidos a sua pasta pessoal, o seu nome de usuário, os nomes das pastas de perfil do Firefox, tokens e credenciais em endereços, e valores escritos como `NOME_TOKEN=...`, `password: ...` ou `Bearer ...` (`~`, `<user>`, `<profile>`, `***`), mas leia antes de compartilhar.

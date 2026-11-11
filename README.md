@@ -367,6 +367,8 @@ The **Copy diagnostic info** button puts a short report on your clipboard, and n
 
 The script does not collect the addresses of the pages you visit, your bookmarks, your passwords or the contents of your tabs. The text of an error message that Firefox raised is copied as it is, with your home folder, user name and profile folder hidden, which is one more reason to read the report before you paste it. Nothing is sent anywhere: the report only goes to your clipboard. If Firefox cannot reach the clipboard, the text is shown in a box under the button so that you can select it and copy it yourself.
 
+The settings page also hides a few easter eggs tied to the song in the project's name. Nothing is loaded until you trigger one. When you do, the browser window darkens and a video player loads the song from youtube-nocookie.com, so YouTube receives that request with the address of this repository as its referrer. This is the only place where the script loads anything from the Internet, and the player is removed again when you close it with Escape, the **Close** button or a click on the dark area.
+
 ### The log
 
 Every run writes a small log on your machine, to help find out what went wrong. Nothing is sent anywhere. Your home folder, your user name, Firefox profile folder names, tokens and credentials in URLs, and values written as `NAME_TOKEN=...`, `password: ...` or `Bearer ...` are hidden in it (`~`, `<user>`, `<profile>`, `***`), but read it before you share it.
