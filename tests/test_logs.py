@@ -603,3 +603,24 @@ def test_a_real_opener_gets_the_folder_and_cannot_write_to_our_terminal(tmp_path
     folder = tmp_path / "logs"
     assert logs.open_folder(folder, kind="linux")
     assert seen.read_text().split() == [str(folder), "no-tty"]
+
+
+@pytest.mark.parametrize(
+    ("text", "shown"),
+    [
+        ("/home/ana%20x/file", "/home/<user>%20x/file"),  # the folder "ana x", not the home
+        ("/home/ana%zz", "/home/<user>%zz"),
+        ("/home/ana%", "/home/<user>%"),
+        ("/home/ana%2Ffile", "~%2Ffile"),  # an encoded slash ends the name
+        ("/home/ana%2ffile", "~%2ffile"),
+        ("/home/ana%5Cfile", "~%5Cfile"),
+        ("/home/ana/%20x", "~/%20x"),  # a percent after the slash belongs to the next name
+        ("/home/ana", "~"),
+        ("/home/analytics%20x", "/home/analytics%20x"),
+    ],
+)
+def test_a_percent_after_the_home_continues_a_longer_folder_name(text: str, shown: str):
+    """Adversarial: ``/home/ana%20x`` is the folder "ana x", not the home followed by "%20x"."""
+    redactor = logs.Redactor(home="/home/ana", user="ana")
+    assert redactor(text) == shown
+    assert "~%20x" not in redactor(text)

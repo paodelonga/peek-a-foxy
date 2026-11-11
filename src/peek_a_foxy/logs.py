@@ -267,7 +267,10 @@ class Redactor:
             # Whole path components only: the home ``/home/al`` is not the start of ``/home/alice``,
             # whose name would otherwise be left half visible after the ``~``.
             alternatives = "|".join(_folder_pattern(h.rstrip("/\\")) for h in longest_first)
-            pieces.append("(?P<home>" + scoped.format(rf"(?<!\w)(?:{alternatives})(?![\w-])") + ")")
+            # A "%" goes on a name (``ana%20x`` is the folder "ana x"), except as the start of an
+            # encoded separator (``%2F``, ``%5C``), which ends it.
+            ends = r"(?![\w-]|%(?!2[Ff]|5[Cc]))"
+            pieces.append("(?P<home>" + scoped.format(rf"(?<!\w)(?:{alternatives}){ends}") + ")")
         # A profile name chosen by the person may be personal: each becomes ``<profile N>`` (N is
         # its place in profiles.ini, so a report stays readable). Standard names Firefox itself
         # gives, and names too short to tell apart from ordinary words, are kept.

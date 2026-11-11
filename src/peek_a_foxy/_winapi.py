@@ -50,8 +50,11 @@ class _ShellExecuteInfo(ctypes.Structure):  # pragma: no cover
 
 def short_path(path: str) -> str | None:  # pragma: no cover
     """The 8.3 name of an existing folder (``C:\\Users\\ANAMAR~1``), or ``None``."""
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    kernel32.GetShortPathNameW.restype = wintypes.DWORD
     buffer = ctypes.create_unicode_buffer(32768)
-    size = ctypes.windll.kernel32.GetShortPathNameW(path, buffer, len(buffer))
+    size = kernel32.GetShortPathNameW(path, buffer, len(buffer))
     return buffer.value if 0 < size < len(buffer) else None
 
 
