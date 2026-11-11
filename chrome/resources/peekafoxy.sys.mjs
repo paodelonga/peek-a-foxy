@@ -278,8 +278,8 @@ export const STRINGS = {
       timingGroup: "Size and timing",
       stripPx: "Hover strip thickness (px)",
       showMs: "Opening animation duration (ms)",
-      showDelayMs: "How long the pointer must stay on an activation strip before its bar opens (ms)",
-      hideDelayMs: "Delay before the bars collapse (ms)",
+      showDelayMs: "Time the pointer must stay on the activation strip before the bar opens (ms)",
+      hideDelayMs: "Time the bar waits after the pointer leaves it before it closes (ms)",
       flashMs: "How long the tab bar stays open after these (ms)",
       revealGroup: "Show the tab bar when",
       revealSwitch: "Tabs are switched",
@@ -291,7 +291,6 @@ export const STRINGS = {
       urlbarShortcut: "Toggle navigation bar visibility",
       shortcutPrompt: "Click here, then press the new shortcut",
       shortcutHint: "Combine Ctrl, Alt or Meta with a letter, a digit or F1–F12. Your system keeps some shortcuts for itself; if one does nothing, try another. Letters and digits name the key's position on a US keyboard, so on other layouts the label may differ from the keycap.",
-      shortcutHintLinux: "On Linux the default for the tab bar is {key}, because Ctrl+Alt+T opens a terminal on GNOME, Ubuntu and Linux Mint.",
       shortcutHintWindows: "AltGr counts as Ctrl+Alt on layouts that have it (Portuguese ABNT2, German, Czech...), so it isn't accepted. Use the left Ctrl and Alt, or Ctrl+Shift with a letter.",
       reset: "Restore default",
       resetFor: "Restore default: {label}",
@@ -361,8 +360,8 @@ export const STRINGS = {
       timingGroup: "Tamanho e tempos",
       stripPx: "Largura da faixa de ativação (px)",
       showMs: "Duração da animação de abertura (ms)",
-      showDelayMs: "Quanto tempo o cursor deve ficar na faixa de ativação para a barra abrir (ms)",
-      hideDelayMs: "Atraso antes do recolhimento das barras (ms)",
+      showDelayMs: "Tempo que o cursor deve permanecer na faixa de ativação antes de abrir a barra (ms)",
+      hideDelayMs: "Tempo que a barra espera depois de o cursor sair dela antes de fechar (ms)",
       flashMs: "Por quanto tempo a barra de abas fica aberta depois desses eventos (ms)",
       revealGroup: "Mostrar a barra de abas ao:",
       revealSwitch: "Ocorrer troca de abas",
@@ -374,7 +373,6 @@ export const STRINGS = {
       urlbarShortcut: "Alternar a exibição da barra de navegação",
       shortcutPrompt: "Clique aqui e pressione o novo atalho",
       shortcutHint: "Combine Ctrl, Alt ou Meta com uma letra, um dígito ou F1–F12. O sistema reserva alguns atalhos para ele; se um não fizer nada, tente outro. As letras e os dígitos indicam a posição da tecla em um teclado americano; em outros layouts, o nome pode não coincidir com o que está impresso na tecla.",
-      shortcutHintLinux: "No Linux, o padrão da barra de abas é {key}, porque Ctrl+Alt+T abre um terminal no GNOME, no Ubuntu e no Linux Mint.",
       shortcutHintWindows: "Em layouts com AltGr (ABNT2, alemão, tcheco...), o AltGr conta como Ctrl+Alt e não é aceito. Use o Ctrl e o Alt da esquerda, ou Ctrl+Shift com uma letra.",
       reset: "Restaurar padrão",
       resetFor: "Restaurar padrão: {label}",
@@ -428,11 +426,10 @@ export const STRINGS = {
   },
 };
 
-// The hint under the shortcuts: the same everywhere, plus what is true on this operating system
+// The hint under the shortcuts: the same everywhere, plus what is true on Windows
 // (Services.appinfo.OS is "Linux", "WINNT" or "Darwin").
 export function shortcutHint(settings, os = Services.appinfo.OS) {
-  const linux = settings.shortcutHintLinux.replace("{key}", DEFAULT_TABS_SHORTCUT_LINUX);
-  const extra = { Linux: linux, WINNT: settings.shortcutHintWindows }[os];
+  const extra = { WINNT: settings.shortcutHintWindows }[os];
   return extra ? `${settings.shortcutHint} ${extra}` : settings.shortcutHint;
 }
 

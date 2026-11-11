@@ -198,7 +198,7 @@ def test_altgr_presses_are_never_shortcuts(browser):
     assert result == [None, "Ctrl+Alt+T", False, True]
 
 
-def test_the_hint_is_the_same_everywhere_plus_what_is_true_on_this_system(browser):
+def test_the_hint_is_the_same_everywhere_plus_what_is_true_on_windows(browser):
     hints = browser.js(
         MODULE
         + """const s = P.STRINGS.en.settings;
@@ -206,8 +206,8 @@ def test_the_hint_is_the_same_everywhere_plus_what_is_true_on_this_system(browse
     )
     base = browser.js(MODULE + "return P.STRINGS.en.settings.shortcutHint;")
     assert all(hint.startswith(base) for hint in hints)
-    assert "GNOME" in hints[0] and "GNOME" not in base
-    assert "AltGr" in hints[1] and "GNOME" not in hints[1]
+    assert hints[0] == base  # nothing special to say on Linux
+    assert "AltGr" in hints[1]
     assert hints[2] == base  # nothing special to say on macOS
 
 
@@ -218,7 +218,7 @@ def test_the_hint_texts_exist_in_both_languages_and_name_no_system_in_the_neutra
         const out = [];
         for (const lang of ["en", "pt"]) {
           const s = P.STRINGS[lang].settings;
-          for (const key of ["shortcutHint", "shortcutHintLinux", "shortcutHintWindows"])
+          for (const key of ["shortcutHint", "shortcutHintWindows"])
             if (!s[key]) out.push(`${lang}.${key} missing`);
           if (/GNOME|Ubuntu|Windows/.test(s.shortcutHint))
             out.push(`${lang}: neutral hint names a system`);
@@ -294,23 +294,6 @@ def test_the_defaults_are_registered_read_and_shown_the_same_way(browser):
            ];"""
     )
     assert result == [True, True, True, True, False]
-
-
-def test_the_linux_hint_says_the_tab_bar_default_in_both_languages(browser):
-    hints = browser.js(
-        MODULE
-        + """const text = (lang) => P.STRINGS[lang].settings;
-           return ["en", "pt"].map((lang) => P.shortcutHint(text(lang), "Linux"));"""
-    )
-    assert hints[0].endswith(
-        " On Linux the default for the tab bar is Ctrl+Alt+Shift+T, because Ctrl+Alt+T opens a "
-        "terminal on GNOME, Ubuntu and Linux Mint."
-    )
-    assert hints[1].endswith(
-        " No Linux, o padrão da barra de abas é Ctrl+Alt+Shift+T, porque Ctrl+Alt+T abre um "
-        "terminal no GNOME, no Ubuntu e no Linux Mint."
-    )
-    assert "{key}" not in hints[0] + hints[1]
 
 
 def test_the_neutral_hint_ends_with_the_note_about_the_us_keyboard(browser):

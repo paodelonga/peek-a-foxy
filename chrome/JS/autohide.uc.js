@@ -376,7 +376,7 @@
               callback() {
                 // The argument Firefox passes here changes between versions, so don't rely on it:
                 // the notification lives in this window, which is the one that should open the tab.
-                window.openWebLinkIn("https://youtu.be/6uJf2IT2Zh8?t=59", "tab");
+                window.openWebLinkIn("https://github.com/paodelonga/peek-a-foxy", "tab");
                 return false;
               },
             },
