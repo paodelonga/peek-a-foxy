@@ -281,6 +281,10 @@ export const STRINGS = {
     greeting: "Instaalleeeeed PEEK A BOO!!! >.<",
     greetingButton: "Peek-a-boo!",
     playerLabel: "Peek-A-Boo",
+    keyboardHint: {
+      title: "Keyboard combos",
+      description: "Master this one to be the greatest Peek-a-Foxy player",
+    },
     tabs: { label: "Auto-hide the tab bar", tooltip: "Hide or show the tab bar in this window ({key})" },
     urlbar: { label: "Auto-hide the navigation bar", tooltip: "Hide or show the navigation bar in this window ({key})" },
     settings: {
@@ -372,6 +376,10 @@ export const STRINGS = {
     greeting: "Instaalaadoooo PEEK A BOO!!! >.<",
     greetingButton: "Peek-a-boo!",
     playerLabel: "Peek-A-Boo",
+    keyboardHint: {
+      title: "Combos de teclado",
+      description: "Domine este para ser o melhor jogador de Peek-a-Foxy",
+    },
     tabs: { label: "Ocultar a barra de abas automaticamente",
             tooltip: "Oculta ou mostra a barra de abas nesta janela ({key})" },
     urlbar: { label: "Ocultar a barra de navegação automaticamente",
@@ -1404,6 +1412,64 @@ function openPlayer(run, locale) {
   } catch (e) {
     Diag.warn("easter-egg:open", `the video player could not be opened: ${describe(e)}`, e);
     finish(run);
+  }
+}
+
+// A hint on Firefox's keyboard shortcuts page (about:keyboard), under its "Restore defaults" button, in
+// the style of a "keyboard combos" tip: the keys of the konami sequence, for whoever looks there. The
+// page lives in a content process, where the scripts of this project do not run, so a frame script adds
+// the hint once the page has loaded. It does nothing in a Firefox whose page looks different, and
+// puts the hint in only once.
+function keyboardHintInPage(text) {
+  const { setTimeout } = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
+  const doc = content.document;
+  let tries = 0;
+  const put = () => {
+    try {
+      if (content.location.href.split("#")[0] !== "about:keyboard") return;
+      if (doc.getElementById("peekafoxy-hint")) return;
+      const actions = doc.querySelector(".customkeys-sidebar-actions");
+      if (!actions) {
+        if (++tries < 50) setTimeout(put, 100);
+        return;
+      }
+      const html = (name, css, words) => {
+        const node = doc.createElement(name);
+        if (css) node.style.cssText = css;
+        if (words) node.textContent = words;
+        return node;
+      };
+      const box = html("div", "display: flex; flex-direction: column; gap: 6px; margin-block-start: 16px;");
+      box.id = "peekafoxy-hint";
+      box.append(
+        html("strong", "", text.title),
+        html("span", "font-size: 0.9em; color: var(--text-color-deemphasized, GrayText);", text.description)
+      );
+      const keys = html("div", "display: flex; flex-wrap: wrap; gap: 3px;");
+      for (const key of ["S", "W", "S", "W", "S", "A", "D"]) {
+        keys.append(html("kbd",
+          "min-width: 1.4em; padding: 2px 4px; text-align: center; font: 600 0.8em monospace; " +
+          "border: 1px solid var(--border-color, GrayText); border-bottom-width: 3px; border-radius: 6px; " +
+          "background: var(--background-color-box, Canvas); color: var(--text-color, CanvasText);", key));
+      }
+      box.append(keys);
+      actions.append(box);
+    } catch (e) {
+      // The page is not the one this was written for: leave it alone.
+    }
+  };
+  put();
+}
+
+// Called when a tab has loaded: puts the hint on the keyboard shortcuts page.
+export function hintOnKeyboardPage(browser, locale = Services.locale.appLocaleAsBCP47) {
+  try {
+    if (browser.currentURI?.specIgnoringRef !== "about:keyboard") return;
+    const text = textFor(locale).keyboardHint;
+    const code = `(${keyboardHintInPage.toString()})(${JSON.stringify(text)});`;
+    browser.messageManager.loadFrameScript(`data:,${encodeURIComponent(code)}`, false);
+  } catch (e) {
+    Diag.info("easter-egg:keyboard-hint", e); // only the hint is lost
   }
 }
 
