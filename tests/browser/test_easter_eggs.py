@@ -170,6 +170,7 @@ def clean(browser):
         browser.js(
             PEEK
             + """Peek.EasterEgg.close();
+               Peek.Clock.now = () => new Date();
                Peek.Player.url = arguments[0]; Peek.Player.referrer = arguments[1];
                for (const name of ['ui.prefersReducedMotion', 'ui.useAccessibilityTheme', 'dom.disable_open_during_load'])
                  Services.prefs.clearUserPref(name);
@@ -1110,3 +1111,109 @@ def test_the_sequence_matcher_needs_the_keys_in_a_row(browser):
         "mixed": ["peek", "konami"],
         "digit": [],
     }
+
+
+# --- typing "boo": a small startle -------------------------------------------------------------
+
+SHAKES = "return document.getElementById('browser').getAnimations().length;"
+
+
+def test_typing_boo_shakes_the_page_area_and_opens_nothing(browser, video):
+    """Default path, real keys: an animation runs on the page area, no player, nothing busy."""
+    open_page(browser)
+    assert browser.js(SHAKES) == 0
+    type_real(browser, "boo")
+    browser.wait("document.getElementById('browser').getAnimations().length > 0", 3, "no shake")
+    assert not player_open(browser) and not busy(browser)
+    browser.wait(
+        "document.getElementById('browser').getAnimations().length === 0", 3, "never ended"
+    )
+
+
+def test_boo_with_reduced_motion_does_nothing(browser, video):
+    """Adversarial: the startle respects the person's motion setting."""
+    browser.js("Services.prefs.setIntPref('ui.prefersReducedMotion', 1);")
+    open_page(browser)
+    type_real(browser, "boo")
+    time.sleep(0.5)
+    assert browser.js(SHAKES) == 0
+
+
+@pytest.mark.parametrize("keys", ["bo", "bxo", "bo o", "obo", "b-o-o"])
+def test_a_broken_boo_does_not_shake(browser, video, keys):
+    """Adversarial: the three keys have to come one right after the other."""
+    open_page(browser)
+    type_real(browser, keys)
+    time.sleep(0.4)
+    assert browser.js(SHAKES) == 0
+
+
+def test_boo_can_be_repeated_and_a_held_key_counts_once(browser, video):
+    """Adversarial: a second boo shakes again; the held O of a long press does not make a boo."""
+    open_page(browser)
+    type_synthetic(browser, codes("boo"))
+    browser.wait("document.getElementById('browser').getAnimations().length > 0", 3)
+    browser.wait("document.getElementById('browser').getAnimations().length === 0", 3)
+    type_synthetic(browser, codes("boo"))
+    browser.wait("document.getElementById('browser').getAnimations().length > 0", 3)
+    browser.wait("document.getElementById('browser').getAnimations().length === 0", 3)
+    held = {"repeat": True}
+    type_synthetic(browser, codes("b") + codes("o") + codes("o", **held))
+    time.sleep(0.4)
+    assert browser.js(SHAKES) == 0
+
+
+def test_boo_typed_in_a_text_field_does_not_shake(browser, video):
+    open_page(browser)
+    browser.settings("doc.getElementById('searchInput').focus();")
+    type_real(browser, "boo")
+    time.sleep(0.4)
+    assert browser.js(SHAKES) == 0
+
+
+def test_boo_is_ignored_while_the_player_is_open(browser, video):
+    open_page(browser)
+    type_real(browser, "peek")
+    wait_for_player(browser)
+    type_synthetic(browser, codes("boo"))
+    time.sleep(0.4)
+    assert browser.js(SHAKES) == 0
+
+
+# --- 17 November: the title wears a hat --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("date", "hat"),
+    [
+        ("new Date(2026, 10, 17)", True),
+        ("new Date(2030, 10, 17, 23, 59, 59)", True),
+        ("new Date(2026, 10, 17, 0, 0, 0)", True),
+        ("new Date(2026, 10, 16, 23, 59, 59)", False),
+        ("new Date(2026, 10, 18)", False),
+        ("new Date(2026, 9, 17)", False),
+        ("new Date(2026, 11, 17)", False),
+        ("new Date(2026, 0, 1)", False),
+        ("new Date(2028, 1, 29)", False),
+        ("new Date(NaN)", False),
+    ],
+)
+def test_only_the_seventeenth_of_november_gives_the_title_a_hat(browser, date, hat):
+    """Adversarial: the neighbouring days and months, a leap day, an invalid date."""
+    got = browser.js(
+        PEEK
+        + f"""Peek.Clock.now = () => {date};
+           return [Peek.isAnniversary(), Peek.titleFor(Peek.textFor('en').settings)];"""
+    )
+    title = browser.js(PEEK + "return Peek.textFor('en').settings.category;")
+    assert got[0] is hat
+    assert got[1] == (title.replace("🦊", "🎩🦊") if hat else title)
+
+
+def test_the_settings_page_shows_the_hat_and_the_fox_still_counts(browser, video):
+    browser.js(PEEK + "Peek.Clock.now = () => new Date(2026, 10, 17);")
+    open_page(browser)
+    heading = browser.settings(f"return {HEADING}.textContent;")
+    assert "🎩🦊" in heading
+    click_fox(browser)
+    wait_for_player(browser)

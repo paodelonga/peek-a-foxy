@@ -1154,9 +1154,19 @@ const ACTIVATE = "data:,content.document.notifyUserGestureActivation();";
 
 // The key sequences, as KeyboardEvent.code, so that they do not depend on the keyboard layout
 // (WASD, not the arrows, which are Firefox's own keys).
+// What day it is, as an object so that a test can change it. On 17 November, the day the song came
+// out (in 2017), the title of the settings page wears a hat (titleFor).
+export const Clock = { now: () => new Date() };
+export const isAnniversary = () => {
+  const day = Clock.now();
+  return day.getMonth() === 10 && day.getDate() === 17;
+};
+export const titleFor = (text) => (isAnniversary() ? text.category.replace("🦊", "🎩🦊") : text.category);
+
 export const SEQUENCES = {
   konami: ["KeyS", "KeyW", "KeyS", "KeyW", "KeyS", "KeyA", "KeyD"],
   peek: ["KeyP", "KeyE", "KeyE", "KeyK"],
+  boo: ["KeyB", "KeyO", "KeyO"],
 };
 const LONGEST_SEQUENCE = Math.max(...Object.values(SEQUENCES).map((keys) => keys.length));
 
@@ -1430,7 +1440,22 @@ export const EasterEgg = {
     }
     const { keys, matched } = nextKeys(typedIn.get(win) ?? [], event.code);
     typedIn.set(win, keys);
-    if (matched) EasterEgg.play(win, { peek: matched === "konami" });
+    if (matched === "boo") EasterEgg.startle(win);
+    else if (matched) EasterEgg.play(win, { peek: matched === "konami" });
+  },
+
+  // A small startle: the page area of `win` shakes for a moment (not with reduced motion). It is not
+  // an egg of its own: nothing is created, nothing is left behind, and it can repeat.
+  startle(win) {
+    try {
+      if (!win || isClosed(win) || win.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      win.document.getElementById("browser")?.animate(
+        [0, -7, 6, -5, 4, -2, 0].map((x, i) => ({ transform: `translate(${x}px, ${i % 2 ? -2 : 1}px)` })),
+        { duration: 450, easing: "ease-out" }
+      );
+    } catch (e) {
+      Diag.info("easter-egg:startle", e);
+    }
   },
 
   // The ending in browser window `win`, after the bars peek when `peek` is true (not with reduced
