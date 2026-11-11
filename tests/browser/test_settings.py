@@ -268,6 +268,12 @@ def test_the_timings_are_applied_as_css_variables(browser):
         "document.documentElement.style.getPropertyValue('--autohide-show-duration') === '250ms'"
     )
     assert root_var(browser, "--autohide-hide-delay") == "900ms"
+    # The media query for reduced motion is re-evaluated a moment after the pref changes, so wait
+    # for the value to settle instead of reading it once.
+    browser.wait(
+        "getComputedStyle(document.documentElement).getPropertyValue('--autohide-hide').trim()"
+        " === '0.2s ease-in 900ms'"
+    )
     computed = browser.js(
         "return getComputedStyle(document.documentElement)"
         ".getPropertyValue('--autohide-hide').trim();"
