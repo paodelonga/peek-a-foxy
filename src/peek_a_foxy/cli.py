@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, NoReturn
 
 import typer
 from rich.panel import Panel
@@ -39,6 +39,46 @@ def tabs_shortcut() -> str:
 _argv: list[str] = sys.argv[1:]
 
 
+INSTALL_COMPLETION_HELP = (
+    "Install completion for the current shell (bash, zsh or fish; for PowerShell, see "
+    "--show-completion)."
+)
+POWERSHELL_COMPLETION_REFUSED = (
+    "Peek-a-Foxy does not install completion for PowerShell. The installer that comes with Typer "
+    "first sets your PowerShell execution policy to Unrestricted for your user, which lets any "
+    "script run, and that is a change this tool will not make for you. To get completion in "
+    "PowerShell, run `peek-a-foxy --show-completion` there and add what it prints to your "
+    "PowerShell profile yourself."
+)
+
+
+def _refuse_powershell_completion(*args: Any, **kwargs: Any) -> NoReturn:
+    """Stands in for Typer's PowerShell installer, which would also change the execution policy."""
+    typer.echo(POWERSHELL_COMPLETION_REFUSED, err=True)
+    raise typer.Exit(errors.EXIT_FAILURE)
+
+
+def _guard_powershell_completion() -> None:
+    """Make ``--install-completion`` refuse PowerShell instead of loosening the execution policy.
+
+    Typer runs ``Set-ExecutionPolicy Unrestricted -Scope CurrentUser`` before it writes to the
+    PowerShell profile, with no question asked: a security setting changed as a side effect of a
+    convenience. Typer offers no option to skip it, so its installer function is replaced here.
+    bash, zsh and fish are not affected. If a Typer release renames the function, there is nothing
+    to replace and the tests that call the installer for PowerShell fail.
+    """
+    try:
+        from typer import _completion_shared
+    except ImportError:  # a Typer without the module has nothing for us to guard
+        return
+    if hasattr(_completion_shared, "install_powershell"):
+        # setattr, not an assignment: the stand-in does not have Typer's signature
+        setattr(_completion_shared, "install_powershell", _refuse_powershell_completion)  # noqa: B010
+
+
+_guard_powershell_completion()
+
+
 class _Group(TyperGroup):
     """The top-level command: every failure ends up as a message, a log entry and an exit code.
 
@@ -46,6 +86,13 @@ class _Group(TyperGroup):
     message; anything else is a bug: it exits with 70 and the unexpected-error code. Both are
     logged with their traceback. Typer's own handling would print a stack trace instead.
     """
+
+    def get_params(self, ctx: Any) -> list[Any]:
+        params: list[Any] = super().get_params(ctx)
+        for param in params:
+            if param.name == "install_completion":  # Typer's own option: say what it will not do
+                param.help = INSTALL_COMPLETION_HELP
+        return params
 
     def main(self, args: Sequence[str] | None = None, *rest: Any, **extra: Any) -> Any:
         global _argv
