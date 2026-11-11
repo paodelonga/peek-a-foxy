@@ -131,7 +131,7 @@ by synthetic panel, by `focus()` instead of keys, or by checking one bar only. 1
 `popover="manual"` that is always open in the top layer. `overflow: hidden` and `opacity: 0` on `#nav-bar` do not
 reach it. The result: the urlbar paints over the top ~28 px of the page across its width, takes the clicks there,
 and hovering it opens the navigation bar. That strip is several times taller than the 8 px one. In `visible` mode
-it covers the bookmarks bar, which is why `test_pointer.py:376` failed on ESR in 4 of 4 runs. Fixed by a rule for `#urlbar` itself (transparent, no pointer events while the bar is collapsed) and tested on all three builds.
+it covers the bookmarks bar, which is why `test_pointer.py:376` failed on ESR in 4 of 4 runs. Fixed in #94 by a rule for `#urlbar` itself (transparent, no pointer events while the bar is collapsed), tested on all three builds.
 - Reproduce: ESR 153.6, nav autohide on, pointer on the page → the urlbar is still drawn under the tab strip. Or run
   `PEEK_A_FOXY_FIREFOX=<esr> pytest -m browser "tests/browser/test_pointer.py::test_the_bookmarks_bar_can_stay_visible_while_the_navigation_bar_hides"`.
 - Proposed test: with nav collapsed and the pointer away, assert that
