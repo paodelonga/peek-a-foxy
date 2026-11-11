@@ -257,6 +257,29 @@ YesOption = Annotated[
         "the Firefox installation (an unclear choice is an error instead).",
     ),
 ]
+UninstallYesOption = Annotated[  # uninstall never looks at the Firefox installation
+    bool,
+    typer.Option(
+        "--yes",
+        "-y",
+        help="Don't ask anything: apply without confirming, and don't prompt for the profile "
+        "(an unclear choice is an error instead).",
+    ),
+]
+LogsYesOption = Annotated[  # `logs` has no profile and no Firefox: --yes only answers --clear
+    bool,
+    typer.Option(
+        "--yes", "-y", help="With --clear, delete the log files without asking for confirmation."
+    ),
+]
+LogsFileOption = Annotated[  # for `logs` the file is the one to look at, not the one to write
+    Path | None,
+    typer.Option(
+        "--log-file",
+        help="Use this log file instead of the default one.",
+        dir_okay=False,
+    ),
+]
 
 
 VerboseOption = Annotated[
@@ -563,7 +586,7 @@ def uninstall(
     ctx: typer.Context,
     profile: ProfileOption = None,
     dry_run: DryRunOption = False,
-    yes: YesOption = False,
+    yes: UninstallYesOption = False,
     verbose: VerboseOption = False,
     log_file: LogFileOption = None,
     no_log: NoLogOption = False,
@@ -597,8 +620,8 @@ def logs_command(
         bool, typer.Option("--open", help="Open the folder that holds the log.")
     ] = False,
     clear: Annotated[bool, typer.Option("--clear", help="Delete the log files.")] = False,
-    yes: YesOption = False,
-    log_file: LogFileOption = None,
+    yes: LogsYesOption = False,
+    log_file: LogsFileOption = None,
 ) -> None:
     """Show where the log is and what the last run did; open its folder or delete it."""
     if open_folder and clear:
@@ -735,7 +758,13 @@ class _OptionalPathCommand(TyperCommand):
         return super().parse_args(ctx, rewritten)
 
 
-@app.command("doctor", cls=_OptionalPathCommand)
+DOCTOR_HELP = (  # one string: a line break inside the text would show in the commands list
+    "Checks this computer and tells you what is in the way of Peek-a-Foxy. Nothing is changed or "
+    "sent anywhere; only the local log is written (use --no-log to avoid that)."
+)
+
+
+@app.command("doctor", cls=_OptionalPathCommand, help=DOCTOR_HELP)
 def doctor_command(
     ctx: typer.Context,
     profile: DoctorProfileOption = None,
@@ -772,8 +801,6 @@ def doctor_command(
     log_file: LogFileOption = None,
     no_log: NoLogOption = False,
 ) -> None:
-    """Checks this computer and tells you what is in the way of Peek-a-Foxy. Nothing is changed or
-    sent anywhere; only the local log is written (use --no-log to avoid that)."""
     if markdown and as_json:
         raise typer.BadParameter("Use either --markdown or --json, but not both.")
     if save not in (None, SAVE_DEFAULT):
