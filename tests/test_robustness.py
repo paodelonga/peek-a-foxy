@@ -102,8 +102,11 @@ def test_a_failed_fetch_changes_nothing(profile: Path, firefox_dir: Path, monkey
     assert tree(profile, firefox_dir) == before  # the fetch is the first step
 
 
-def test_missing_git_is_explained(profile: Path, firefox_dir: Path, monkeypatch):
+def test_missing_git_is_explained_when_another_loader_was_asked_for(
+    profile: Path, firefox_dir: Path, monkeypatch
+):
     monkeypatch.setattr(loader.shutil, "which", lambda name: None)
+    monkeypatch.setenv("FXAC_COMMIT", "a" * 40)  # another loader than the one that comes along
     result = runner.invoke(
         app, ["install", "--profile", str(profile), "--firefox-dir", str(firefox_dir), "--yes"]
     )

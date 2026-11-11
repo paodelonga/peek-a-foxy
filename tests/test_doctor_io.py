@@ -492,60 +492,7 @@ def test_the_command_survives_a_clipboard_that_hangs(
     assert result.exit_code == 0 and "could not be copied to the clipboard" in result.output
 
 
-# --- git and other blocking helpers (adversarial) ----------------------------------------------
-
-
-def fake_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> None:
-    folder = tmp_path / "bin"
-    folder.mkdir()
-    git = folder / "git"
-    git.write_text("#!/bin/sh\n" + script)
-    git.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{folder}{os.pathsep}{os.environ['PATH']}")
-
-
-def git_check(home: Path):
-    ctx = doctor.Context.detect(log_target=None)
-    ctx.home = home
-    return doctor._git_check(ctx)
-
-
-@posix_only
-def test_a_git_that_hangs_does_not_hang_the_doctor(
-    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    fake_git(tmp_path, monkeypatch, "sleep 60\n")
-    monkeypatch.setattr(doctor, "GIT_TIMEOUT", 0.5)
-    check = git_check(home)  # a git that was waited for would answer "found" after its minute
-    assert check.status == WARN and check.code == errors.GIT_MISSING.code
-    assert "could not be run" in check.message
-
-
-@posix_only
-def test_a_git_that_fails_is_a_warning(home: Path, tmp_path: Path, monkeypatch):
-    fake_git(tmp_path, monkeypatch, "echo broken >&2; exit 128\n")
-    assert git_check(home).status == WARN
-
-
-@posix_only
-def test_a_git_that_prints_garbage_is_shortened_and_cleaned(
-    home: Path, tmp_path: Path, monkeypatch
-):
-    fake_git(
-        tmp_path,
-        monkeypatch,
-        "printf 'git version \\033[2J'; head -c 3000000 /dev/zero | tr '\\0' x\n",
-    )
-    check = git_check(home)
-    assert check.status == OK and len(check.value) <= 200
-    cleaned = report.clean(check.value)
-    assert "\x1b" not in cleaned
-
-
-@posix_only
-def test_a_git_that_prints_invalid_utf8_is_survived(home: Path, tmp_path: Path, monkeypatch):
-    fake_git(tmp_path, monkeypatch, "printf 'git version \\377\\376 2.0\\n'\n")
-    assert git_check(home).status == OK
+# --- other blocking helpers (adversarial) ------------------------------------------------------
 
 
 def test_an_is_admin_that_raises_is_a_warning_not_a_crash(home: Path):
@@ -557,13 +504,13 @@ def test_an_is_admin_that_raises_is_a_warning_not_a_crash(home: Path):
     assert admin.status == WARN and admin.code == errors.UNEXPECTED.code
 
 
-def test_a_which_that_raises_is_a_warning_not_a_crash(home: Path):
-    def boom(name):
-        raise OSError("PATH is poisoned")
+def test_loader_files_that_raise_something_odd_are_a_warning_not_a_crash(home: Path):
+    def boom():
+        raise OSError("the disk went away")
 
-    found = doctor.collect(make_context(home, which=boom))
-    git = next(c for c in found.all_checks() if c.id == "program.git")
-    assert git.status == WARN and git.code == errors.UNEXPECTED.code
+    found = doctor.collect(make_context(home, loader_files=boom))
+    check = next(c for c in found.all_checks() if c.id == "program.loader_files")
+    assert check.status == WARN and check.code == errors.UNEXPECTED.code
     assert found.all_checks()  # the rest of the report is there
 
 

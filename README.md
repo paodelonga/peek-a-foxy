@@ -52,9 +52,8 @@ English · [Português (Brasil)](README.pt-BR.md)
 
 - Firefox 121 or newer (the CSS uses `:has()`).
 - Linux or Windows 10/11. Snap, Flatpak and Microsoft Store (MSIX) builds of Firefox are not supported (their install directory is read-only).
-- Python 3.10 or newer and `git`. The standalone Windows program, once a release includes it, needs no Python; it still needs `git` (see [Windows notes](#windows-notes)).
+- Python 3.10 or newer. The standalone Windows program, once a release includes it, needs no Python and nothing else (see [Windows notes](#windows-notes)).
 - `sudo` (Linux) or an administrator prompt (Windows, UAC), only if the Firefox install directory isn't writable by you. Only the copy of two files is elevated; everything else runs as you.
-- On Windows, [Git for Windows](https://git-scm.com/download/win) (`winget install Git.Git`), which the installer uses to fetch the loader.
 
 **Windows** is tested in CI on a real Windows runner (unit tests, the whole headless-Firefox suite, the real loader download), but not yet by hand on a desktop: see [Windows notes](#windows-notes). The code also knows where Firefox keeps its files on macOS, but that has never been tried on a real Mac, so treat macOS as unsupported for now.
 
@@ -439,10 +438,10 @@ A code is `PAF-` followed by three digits. The first digit is the area, and the 
 
 | Code | What happened | What to do |
 | --- | --- | --- |
-| `PAF-201` | git is not installed, and it is needed to download the loader. | Install git and run the command again. If fx-autoconfig is already set up in your Firefox, use `--skip-loader`. |
+| `PAF-201` | git is not installed, and it is needed to download the loader you asked for with `FXAC_REPO` or `FXAC_COMMIT`. | Install git, or remove `FXAC_REPO` and `FXAC_COMMIT` to use the loader that comes with the program, and run the command again. |
 | `PAF-202` | git could not download the loader. | Check your internet connection (and any proxy or firewall) and run the command again. Running it with `--verbose` shows git's own output. |
 | `PAF-203` | The `FXAC_COMMIT` environment variable is not a full commit hash. | Remove `FXAC_COMMIT`, or set it to a full 40-digit commit hash. |
-| `PAF-204` | The downloaded loader is not the version this program expects. | Run the command again. If it keeps happening, please report it: it should not happen. |
+| `PAF-204` | The loader is not the version this program expects. | Run the command again. If it keeps happening, install Peek-a-Foxy again, and if that does not help please report it: it should not happen. |
 | `PAF-205` | sudo could not copy the loader into the Firefox folder. | Run the command in a terminal where sudo can ask for your password, or make the Firefox folder writable for your user. |
 | `PAF-206` | The Firefox folder cannot be written, even as administrator. | Check that Firefox is not a Microsoft Store build and that no antivirus is blocking writes to the Firefox folder, then run the command again. |
 | `PAF-207` | The loader to copy as administrator is not the pinned one, so it was not copied. | Remove `FXAC_REPO` and `FXAC_COMMIT` from the environment and run the command again. Only if you wrote that loader yourself or trust its source, add `--allow-unverified-loader` to copy it without checking it. |

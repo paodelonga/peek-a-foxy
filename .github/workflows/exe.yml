@@ -43,6 +43,7 @@ jobs:
           --hidden-import winreg
           --copy-metadata peek-a-foxy
           --add-data "chrome;peek_a_foxy/assets"
+          --add-data "fx-autoconfig;peek_a_foxy/fx-autoconfig"
           packaging/entry.py
       - name: Smoke test
         shell: pwsh
@@ -91,6 +92,9 @@ jobs:
           $checks = @($report.sections | ForEach-Object { $_.checks })
           $version = @($checks | Where-Object { $_.id -eq "program.version" })[0].value
           if ($version -ne $expected) { throw "the program says it is version '$version', pyproject.toml says '$expected'" }
+          # The fx-autoconfig files that come inside the program are found and match their manifest.
+          $loader = @($checks | Where-Object { $_.id -eq "program.loader_files" })[0]
+          if ($loader.status -ne "ok") { throw "the bundled loader files are not fine: $($loader | ConvertTo-Json -Compress)" }
           $folders = @($checks | Where-Object { $_.id -eq "firefox.path" } | ForEach-Object { $_.value })
           if (-not ($folders | Where-Object { $_ -like "*peek-a-foxy-smoke-firefox" })) {
             throw "the Firefox registered in the registry was not found; doctor listed: $($folders -join ', ')"

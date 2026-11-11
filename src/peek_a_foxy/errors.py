@@ -119,9 +119,10 @@ NOT_A_FIREFOX_FOLDER = _register(
 GIT_MISSING = _register(
     "PAF-201",
     "git-missing",
-    "git is not installed, and it is needed to download the loader.",
-    "Install git and run the command again. If fx-autoconfig is already set up in your Firefox, "
-    "use --skip-loader.",
+    "git is not installed, and it is needed to download the loader you asked for with "
+    "FXAC_REPO or FXAC_COMMIT.",
+    "Install git, or remove FXAC_REPO and FXAC_COMMIT to use the loader that comes with the "
+    "program, and run the command again.",
 )
 GIT_FAILED = _register(
     "PAF-202",
@@ -139,8 +140,9 @@ BAD_PINNED_COMMIT = _register(
 CHECKOUT_MISMATCH = _register(
     "PAF-204",
     "checkout-mismatch",
-    "The downloaded loader is not the version this program expects.",
-    "Run the command again. If it keeps happening, please report it: it should not happen.",
+    "The loader is not the version this program expects.",
+    "Run the command again. If it keeps happening, install Peek-a-Foxy again, and if that does not "
+    "help please report it: it should not happen.",
 )
 SUDO_FAILED = _register(
     "PAF-205",

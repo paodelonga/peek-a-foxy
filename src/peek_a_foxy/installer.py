@@ -363,10 +363,12 @@ def plan_install(
     checkout: list[Path] = []
     if firefox_dir is not None:
         commit = loader.pinned_commit()  # refuses anything but a full hash, before any change
-        plan.add(
-            f"Fetch fx-autoconfig ({commit[:10]}, verified)",
-            lambda: checkout.append(plan.enter(loader.fetch_loader())),
+        label = (
+            f"Fetch fx-autoconfig ({commit[:10]}, with git)"
+            if loader.overridden()
+            else f"Check the fx-autoconfig files that come with Peek-a-Foxy ({commit[:10]})"
         )
+        plan.add(label, lambda: checkout.append(plan.enter(loader.loader_files())))
 
     def copy_files() -> None:
         for name in FILES:

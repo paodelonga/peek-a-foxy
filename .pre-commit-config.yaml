@@ -6,9 +6,13 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
     hooks:
+      # fx-autoconfig/ holds upstream's files byte for byte (their SHA-256 are pinned), so these two
+      # hooks must not "fix" them.
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        exclude: ^fx-autoconfig/
       - id: end-of-file-fixer
+        exclude: ^fx-autoconfig/
       - id: check-yaml
         # Templates: placeholders such as @VERSION@ make them YAML only once render_manifests.py
         # has filled them in, and tests/test_packaging.py parses the filled-in files.

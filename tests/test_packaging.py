@@ -27,13 +27,13 @@ def load_renderer():
     return module
 
 
-def test_the_scoop_manifest_points_at_the_release_asset_and_needs_git(tmp_path):
+def test_the_scoop_manifest_points_at_the_release_asset_and_needs_nothing_else(tmp_path):
     load_renderer().render("0.3.0", DIGEST, tmp_path)
     manifest = json.loads((tmp_path / "peek-a-foxy.json").read_text(encoding="utf-8"))
     assert manifest["version"] == "0.3.0"
     assert manifest["url"].endswith("/releases/download/v0.3.0/peek-a-foxy.exe")
     assert manifest["hash"] == DIGEST
-    assert manifest["depends"] == "git"
+    assert "depends" not in manifest
     assert manifest["bin"] == "peek-a-foxy.exe"
     assert manifest["autoupdate"]["hash"]["url"] == "$url.sha256"
 
@@ -48,7 +48,7 @@ def test_the_winget_files_share_one_identifier_version_and_upper_case_hash(tmp_p
         assert "@VERSION@" not in text
     installer = texts["paodelonga.PeekAFoxy.installer.yaml"]
     assert f"InstallerSha256: {DIGEST.upper()}" in installer
-    assert "PackageIdentifier: Git.Git" in installer and "InstallerType: portable" in installer
+    assert "Dependencies" not in installer and "InstallerType: portable" in installer
 
 
 @pytest.mark.parametrize(

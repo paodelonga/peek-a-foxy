@@ -40,8 +40,11 @@ Peek-a-Foxy is pre-1.0. Only the latest release, and `main`, get security fixes.
   elevated copy refuses them. On Linux and macOS the copy through `sudo` refuses them too, unless
   `--allow-unverified-loader` is given; the log then records that the copy was made without
   verification.
-- It downloads fx-autoconfig with `git`, at a pinned commit, and refuses to continue if the checked-out
-  commit differs from the pinned one.
+- The few fx-autoconfig files it installs (about 85 KB, under the MPL-2.0) come inside the program, at a
+  pinned commit. Every one is checked against the SHA-256 of a manifest, and the two that go into
+  Firefox's folder against the hashes pinned in the code, before anything is changed, so nothing is
+  downloaded for them. With `FXAC_REPO` or `FXAC_COMMIT` (meant for tests) it fetches that commit with
+  `git` instead, and refuses to continue if the checked-out commit differs from the one asked for.
 - **The standalone Windows program and `install.ps1` (not published yet).** `install.ps1` is meant to be
   run as `irm https://github.com/paodelonga/peek-a-foxy/releases/latest/download/install.ps1 | iex`,
   which runs a script downloaded from GitHub at that moment, so it trusts GitHub and this repository's
