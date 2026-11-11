@@ -398,3 +398,68 @@ def test_the_bookmarks_bar_can_stay_visible_while_the_navigation_bar_hides(brows
         browser.wait(
             f"{BOOKMARKS_HEIGHT} === 0", 8, "the bookmarks bar did not go back to following the bar"
         )
+
+
+# --- the address bar of a collapsed navigation bar ----------------------------------------------
+
+URLBAR_BELOW_THE_STRIP = """
+  const urlbar = document.getElementById('urlbar'), nav = document.getElementById('nav-bar');
+  const box = urlbar.getBoundingClientRect(), strip = nav.getBoundingClientRect();
+  const hit = document.elementFromPoint(box.left + box.width / 2, strip.bottom + 10);
+  return {
+    hitsTheUrlbar: !!hit?.closest('#urlbar'),
+    opacity: getComputedStyle(urlbar).opacity,
+    pointerEvents: getComputedStyle(urlbar).pointerEvents,
+  };
+"""
+
+
+@variants
+@pytest.mark.parametrize("bookmarks", ["follow", "visible"])
+def test_the_address_bar_of_a_collapsed_navigation_bar_is_invisible_and_takes_no_clicks(
+    browser, customtitlebar, bookmarks
+):
+    """Adversarial: Firefox 153 keeps the address bar open in the top layer, outside the clipping of
+    the bar, so it must be hidden by its own rule: transparent, and no pointer events below the strip."""
+    with collapsed_window(browser, customtitlebar):
+        browser.js("Services.prefs.setStringPref('peekafoxy.bookmarks', arguments[0]);", bookmarks)
+        browser.move_pointer(*OUTSIDE)
+        browser.wait(f"{NAV_HEIGHT} <= 8", 5, "the navigation bar did not collapse")
+        browser.wait(
+            "getComputedStyle(document.getElementById('urlbar')).opacity === '0'",
+            5,
+            "the address bar stayed visible",
+        )
+        state = browser.js(URLBAR_BELOW_THE_STRIP)
+        assert state == {"hitsTheUrlbar": False, "opacity": "0", "pointerEvents": "none"}
+
+
+@variants
+def test_the_address_bar_is_back_when_the_navigation_bar_opens_and_takes_clicks(
+    browser, customtitlebar
+):
+    """The way back: hovering the strip, or focusing the address bar, makes it opaque and clickable."""
+    with collapsed_window(browser, customtitlebar) as natural:
+        hover(browser, "nav-bar")
+        browser.wait(f"{NAV_HEIGHT} === {natural['nav']}", 5, "the bar did not open on hover")
+        browser.wait(
+            "getComputedStyle(document.getElementById('urlbar')).opacity === '1'",
+            5,
+            "still transparent",
+        )
+        assert (
+            browser.js("return getComputedStyle(document.getElementById('urlbar')).pointerEvents;")
+            != "none"
+        )
+        leave(browser)
+        browser.js("document.getElementById('urlbar').focus();")  # what Ctrl+L, Alt+D and F6 do
+        browser.wait(
+            f"{NAV_HEIGHT} === {natural['nav']}", 5, "focusing the address bar did not open it"
+        )
+        browser.wait(
+            "getComputedStyle(document.getElementById('urlbar')).opacity === '1'",
+            5,
+            "still transparent",
+        )
+        browser.js("gBrowser.selectedBrowser.focus();")
+        browser.wait(f"{NAV_HEIGHT} <= 8", 8, "the bar did not close after the focus left")
