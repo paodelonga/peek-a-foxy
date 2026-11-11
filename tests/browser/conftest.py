@@ -1,9 +1,9 @@
 """A real Firefox for the tests in this folder.
 
 Opt-in: ``pytest -m browser``. It needs a Firefox install (``PEEK_A_FOXY_FIREFOX`` = path to its
-binary, otherwise the first one found), ``marionette-driver`` and network access (the real
-fx-autoconfig is cloned). Firefox runs headless with a throwaway profile, and from a *copy* of its
-install directory, because the loader has to be written there.
+binary, otherwise the first one found) and ``marionette-driver``; the fx-autoconfig files that
+come with the program are installed. Firefox runs headless with a throwaway profile, and from a
+*copy* of its install directory, because the loader has to be written there.
 """
 
 from __future__ import annotations

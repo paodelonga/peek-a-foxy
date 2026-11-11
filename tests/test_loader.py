@@ -9,7 +9,6 @@ import pytest
 from support import git, needs_permissions, needs_symlinks
 
 from peek_a_foxy import errors, loader
-from peek_a_foxy.errors import PlatformError
 from peek_a_foxy.loader import LoaderError, fetch_loader
 
 
@@ -196,29 +195,12 @@ def test_a_tree_with_read_only_files_can_be_removed_on_every_platform(tmp_path: 
     assert not tree.exists()
 
 
-@pytest.mark.parametrize(
-    ("system", "needle"), [("windows", "Git for Windows"), ("linux", "Install git")]
-)
-def test_missing_git_is_explained_for_the_platform(monkeypatch, system, needle):
+def test_missing_git_is_explained_and_points_to_the_loader_that_comes_with_the_program(monkeypatch):
     monkeypatch.setattr(loader.shutil, "which", lambda name: None)
-    monkeypatch.setattr(loader.platform, "system", lambda: system)
     with pytest.raises(LoaderError, match="git is required") as caught, fetch_loader():
         pass
     assert caught.value.code is errors.GIT_MISSING
-    # The platform-specific advice is the hint (what to do), not the message (what happened).
-    assert needle in caught.value.hint
-    assert "--skip-loader" in caught.value.hint
-    assert ("winget" in caught.value.hint) is (system == "windows")
-
-
-def test_missing_git_on_an_unsupported_platform_still_says_so(monkeypatch):
-    def unsupported():
-        raise PlatformError(errors.UNSUPPORTED_OS, "nope")
-
-    monkeypatch.setattr(loader.shutil, "which", lambda name: None)
-    monkeypatch.setattr(loader.platform, "system", unsupported)
-    with pytest.raises(LoaderError, match="git is required"), fetch_loader():
-        pass
+    assert "FXAC_REPO" in caught.value.hint and "FXAC_COMMIT" in caught.value.hint
 
 
 @needs_symlinks

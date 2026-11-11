@@ -147,6 +147,7 @@ def make_context(home: Path, **overrides: object) -> Context:
         "firefox_candidates": lambda: [],
         "profiles_root": lambda: home / ".mozilla" / "firefox",
         "assets_dir": assets.assets_dir,
+        "loader_files": lambda: home,
         "encoding": "utf-8",
         "is_tty": False,
         "log_target": None,

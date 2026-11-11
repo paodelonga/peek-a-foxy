@@ -108,22 +108,24 @@ Things to know when you make a release:
 
 ## Updating the pinned fx-autoconfig
 
-The loader is fetched at one fixed commit (`DEFAULT_COMMIT` in `src/peek_a_foxy/loader.py`), never at a
-branch or a tag, so what gets installed can't change under users. To move to a newer fx-autoconfig:
+The loader files that get installed come inside the program, in the folder `fx-autoconfig/` (with the
+licence they come with and a `manifest.json` that names the commit and the SHA-256 of every file), at one
+fixed commit (`DEFAULT_COMMIT` in `src/peek_a_foxy/loader.py`), never at a branch or a tag, so what gets
+installed can't change under users and nothing is downloaded. To move to a newer fx-autoconfig:
 
 1. Read what changed upstream between the current commit and the new one
    (`https://github.com/MrOtherGuy/fx-autoconfig/compare/<old>...<new>`), paying attention to
    `program/config.js`, `program/defaults/pref/config-prefs.js` and `profile/chrome/utils/`: these are
    the files this project installs.
-2. Put the new **full 40-digit hash** in `DEFAULT_COMMIT`. Abbreviated hashes, branches and tags are
-   refused on purpose.
-3. Put the SHA-256 values of `config.js` and `defaults/pref/config-prefs.js` at the new commit (with LF
-   line endings) in `PINNED_SHA256` in `src/peek_a_foxy/elevate.py`. The copy into a folder that needs
-   `sudo` or the administrator prompt checks the files against these values, so they must change
-   together with the commit.
-4. Run `pytest -m network` (the commit exists upstream, has the expected files, the pinned SHA-256 values
-   match them, and GitHub serves it without its history) and `pytest -m browser` (the script still loads
-   and works with it).
+2. Run `python packaging/update_loader.py <new full 40-digit hash>`. It fetches the files into
+   `fx-autoconfig/`, writes the manifest and prints the SHA-256 of each file. Abbreviated hashes,
+   branches and tags are refused on purpose.
+3. Put the same hash in `DEFAULT_COMMIT`, and the SHA-256 values of `config.js` and
+   `defaults/pref/config-prefs.js` in `PINNED_SHA256` in `src/peek_a_foxy/elevate.py`. The copy into a
+   folder that needs `sudo` or the administrator prompt checks the files against these values, so they
+   must change together with the commit; a test compares them with the manifest.
+4. Run `pytest -m network` (the files match the commit upstream, and `python packaging/update_loader.py
+   --check` agrees) and `pytest -m browser` (the script still loads and works with it).
 5. Update the short hash in the sample plan of `README.md` / `README.pt-BR.md` and add a `Changed` entry to
    `CHANGELOG.md`.
 
@@ -176,7 +178,7 @@ What the tests cover, and why:
   or vanishes between the check and the removal, and an empty `chrome/utils` are all left alone, and the
   uninstall goes on.
 - **When each bar shows** (`test_pointer.py`, `test_popups.py`, `test_customtitlebar.py`, `test_in_firefox.py`): every situation in which the tab bar, the navigation bar and the bookmarks bar are visible or hidden, with the rule that causes it, its test and the gaps found, is listed in [docs/when-the-bars-show.md](docs/when-the-bars-show.md); update it when you add a way to reveal a bar.
-- **Failure modes** (`test_robustness.py`): failed or missing `git`, failed `sudo`, read-only
+- **Failure modes** (`test_robustness.py`): damaged bundled loader files, failed or missing `git` (only with the `FXAC_*` overrides), failed `sudo`, read-only
   directories, invalid UTF-8, a half-installed state. A failure must be a clean error, never a
   traceback or a partly modified profile.
 - **Environments** (`test_platform.py`, `test_profiles.py`): Linux, macOS and Windows paths (the platform

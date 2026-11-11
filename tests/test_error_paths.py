@@ -155,7 +155,7 @@ def windows_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, firefox_dir
     def refused(source: Path, destination: Path) -> None:
         raise PermissionError(13, "Access is denied")
 
-    monkeypatch.setattr(loader, "fetch_loader", fetched)
+    monkeypatch.setattr(loader, "loader_files", fetched)
     monkeypatch.setattr(loader, "_copy_direct", refused)
     monkeypatch.setattr(loader.platform, "is_windows", lambda: True)
     monkeypatch.setattr(elevate, "is_admin", lambda: False)
