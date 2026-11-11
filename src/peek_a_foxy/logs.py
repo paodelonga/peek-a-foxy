@@ -8,8 +8,8 @@ and so a person asked for "the log" has something to hand over. Three promises:
   ``~``, the user name and Firefox profile folder names disappear, and tokens in URLs are hidden.
 * Logging never breaks a command. If the log cannot be created or written (read-only disk, full
   disk, a locked file) one warning is shown and the command goes on.
-* The elevated helper process (:data:`peek_a_foxy.elevate.HELPER_CODE`) has no part in this: it
-  imports nothing from this package and reports only through its exit code.
+* The elevated process (the PowerShell script :data:`peek_a_foxy.elevate.HELPER_SCRIPT`) has no
+  part in this: it uses nothing from this package and reports only through its exit code.
 
 Where the file lives (``kind`` is ``windows``, ``macos`` or ``linux``) is decided by pure functions
 that take the environment and the home folder as arguments, so every platform is tested anywhere.

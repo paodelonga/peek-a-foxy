@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: paodelonga.PeekAFoxy
+PackageVersion: @VERSION@
+PackageLocale: en-US
+Publisher: paodelonga
+PackageName: Peek-a-Foxy
+PackageUrl: https://github.com/paodelonga/peek-a-foxy
+License: MIT
+LicenseUrl: https://github.com/paodelonga/peek-a-foxy/blob/main/LICENSE
+ShortDescription: Autohide the Firefox tab bar and navigation bar per window.
+Tags:
+  - firefox
+  - userchrome
+  - autohide
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

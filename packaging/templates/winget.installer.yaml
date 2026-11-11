@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: paodelonga.PeekAFoxy
+PackageVersion: @VERSION@
+InstallerType: portable
+Commands:
+  - peek-a-foxy
+Dependencies:
+  PackageDependencies:
+    - PackageIdentifier: Git.Git
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/paodelonga/peek-a-foxy/releases/download/v@VERSION@/peek-a-foxy.exe
+    InstallerSha256: @SHA256_UPPER@
+ManifestType: installer
+ManifestVersion: 1.6.0

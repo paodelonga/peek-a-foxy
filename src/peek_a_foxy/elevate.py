@@ -1,29 +1,37 @@
 """Copying the two loader files into a Firefox folder that needs administrator rights (Windows).
 
-Only that copy is elevated; the rest of the command runs as the user. The elevated process is a
-fresh ``python -I -S -c <code>``: no module or file from a user-writable place is loaded, the files
-to write travel inside its command line, and it checks them against SHA-256 values pinned in this
-package (next to the pinned fx-autoconfig commit) before writing anything. Its only way to report
-is its exit code. A same-user attacker who can rewrite the Python installation can still abuse the
-prompt the user approves; that cannot be removed from here and is stated in the README.
+Only that copy is elevated; the rest of the command runs as the user. The elevated process is the
+Windows PowerShell of the system folder (``System32``, found through ``GetSystemDirectoryW``, never
+through ``PATH`` or an environment variable), started with ``-NoProfile -NonInteractive
+-EncodedCommand``. The script it runs is generated here and carries everything it needs as
+literals: the Firefox folder, the two files to write (base64) and their SHA-256 values pinned in
+this package (next to the pinned fx-autoconfig commit). It checks the files and the folder before
+writing anything, and its only way to report is its exit code. The same route serves the standalone
+``peek-a-foxy.exe`` and an installation with Python, so there is one elevated program to test and
+nothing from a user-writable place (a Python installation, the program itself) runs with the
+rights the user approves. A same-user attacker can still abuse that prompt through what Windows
+and .NET read from the user's own settings (for example environment variables that load a .NET
+profiler); that cannot be removed from here and is stated in the README.
 """
 
 from __future__ import annotations
 
 import base64
-import json
 import logging
+import ntpath
 import os
+import re
 import subprocess
 import sys
 import time
+import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 
 from peek_a_foxy import errors
 from peek_a_foxy.errors import ElevationError
 
-log = logging.getLogger(__name__)  # only the parent process logs; HELPER_CODE imports nothing
+log = logging.getLogger(__name__)  # only the parent process logs; the script writes no log
 
 # SHA-256 of the files at DEFAULT_COMMIT of fx-autoconfig, with LF line endings. A test fetches the
 # real commit and compares: bump them together with the commit.
@@ -44,103 +52,297 @@ TIMEOUT_SECONDS = 180
 # applied to the whole line that CreateProcessW is assumed to receive:
 #     quoted executable + one space + parameters + the terminating null <= 32,767
 # The executable is counted as always quoted ("<path>", two characters more than a path without
-# spaces), which is the pessimistic case. The real command is about 3.4 thousand characters (3,443
-# measured with the real payloads), a tenth of the limit; the guard only turns a command that cannot
-# work into a clear error instead of an opaque Win32 failure.
+# spaces), which is the pessimistic case. The script travels as base64 of its UTF-16LE text, so
+# every character of it costs about 2.7 characters of command line. With the real files (429 and
+# 194 bytes) and the usual folder the command is about 11 thousand characters, a third of the
+# limit; the guard turns a command that cannot work into a clear error instead of an opaque Win32
+# failure.
 MAX_COMMAND_LINE_CHARS = 32767
 
 # Exit codes of the elevated process.
-OK, USAGE, NOT_FIREFOX, MISMATCH, LINKED, WRITE_FAILED = 0, 10, 11, 12, 13, 14
+OK, USAGE, NOT_FIREFOX, MISMATCH, LINKED, WRITE_FAILED, LANGUAGE_MODE = 0, 10, 11, 12, 13, 14, 15
 MESSAGES = {
     USAGE: "the elevated process was started with bad arguments",
     NOT_FIREFOX: "it is not a Firefox installation folder (firefox.exe, omni.ja or application.ini "
     "is missing or says another product)",
     MISMATCH: "the files to install do not match the pinned fx-autoconfig",
-    LINKED: "a symbolic link or junction is in the way, so nothing was written",
+    LINKED: "the folder is reached through a link, a junction, a short name or a substituted "
+    "drive, so nothing was written; give the full path",
     WRITE_FAILED: "writing the files failed even with administrator rights",
+    LANGUAGE_MODE: "the system policy keeps PowerShell in a restricted mode, so the administrator "
+    "step cannot run",
 }
 
-# The code of the elevated process. It is plain text on purpose: it is handed to ``python -c``.
-# {pinned} is replaced by a JSON list of the two SHA-256 values.
-HELPER_CODE = r"""
-import base64, hashlib, os, sys
+# Where Windows PowerShell 5.1 lives under the system folder, and how it is started.
+POWERSHELL = ("WindowsPowerShell", "v1.0", "powershell.exe")
+POWERSHELL_FLAGS = ("-NoProfile", "-NonInteractive", "-EncodedCommand")
+# Only used to build and measure the command on Linux and macOS, where it never runs.
+STAND_IN_SYSTEM_DIRECTORY = "C:\\Windows\\System32"
+_SYSTEM_DIRECTORY = re.compile(r"[A-Za-z]:\\[^\x00-\x1f\"*<>?|]*")
 
-PINNED = {pinned}
-NAMES = ("config.js", os.path.join("defaults", "pref", "config-prefs.js"))
+# The script of the elevated process. It uses the language and .NET only: the one cmdlet is
+# Set-StrictMode, which is built in, so nothing is auto-loaded from a module folder that the user
+# can write (PSModulePath). It has no comment, no double-quoted string and no here-string, and every
+# @@NAME@@ is replaced in one pass by a single-quoted literal (see helper_script). $failure is the
+# exit code for an exception in the step that is running, so no exception ends with an unmapped 1.
+# Its steps are those of the former Python helper: the arguments (USAGE), the pinned hashes
+# (MISMATCH), a Firefox folder (NOT_FIREFOX), no link, junction or short (8.3) name from the drive
+# root to the files (LINKED), then each file written aside with CreateNew and renamed over the old
+# one (WRITE_FAILED). The very first statement is the language mode: a policy (Constrained Language
+# Mode by WDAC, AppLocker or __PSLockdownPolicy) that blocks the .NET calls below would otherwise be
+# reported as the code of whatever step it broke, so it has a code of its own (LANGUAGE_MODE).
+HELPER_SCRIPT = r"""if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
+    exit 15
+}
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$failure = 10
+$temporary = $null
+function attributes([string]$path) {
+    try {
+        return [IO.File]::GetAttributes($path)
+    } catch [IO.FileNotFoundException], [IO.DirectoryNotFoundException] {
+        return $null
+    }
+}
+try {
+    $folder = '@@FOLDER@@'
+    $encoded = @('@@CONFIG@@', '@@PREFS@@')
+    $pinned = @('@@PINNED_CONFIG@@', '@@PINNED_PREFS@@')
+    $names = @('config.js', 'defaults\pref\config-prefs.js')
+    $reparse = [IO.FileAttributes]::ReparsePoint
+    if ($folder -match '[\x00-\x1f\x7f]' -or $folder -notmatch '^(?:[A-Za-z]:\\|\\\\[^\\?.])') {
+        exit 10
+    }
+    $full = [IO.Path]::GetFullPath($folder)
+    $payloads = [Collections.Generic.List[byte[]]]::new()
+    foreach ($item in $encoded) {
+        $payloads.Add([Convert]::FromBase64String($item))
+    }
 
-def is_firefox(folder):
-    if not (os.path.isfile(os.path.join(folder, "omni.ja"))):
-        return False
-    if not any(os.path.isfile(os.path.join(folder, n)) for n in ("firefox.exe", "firefox")):
-        return False
-    try:
-        with open(os.path.join(folder, "application.ini"), encoding="utf-8", errors="replace") as f:
-            return any(line.strip() == "Name=Firefox" for line in f)
-    except OSError:
-        return False
+    $failure = 12
+    $sha = [Security.Cryptography.SHA256CryptoServiceProvider]::new()
+    for ($i = 0; $i -lt 2; $i++) {
+        $digest = [BitConverter]::ToString($sha.ComputeHash($payloads[$i])).Replace('-', '')
+        if ($digest.ToLowerInvariant() -cne $pinned[$i]) {
+            exit 12
+        }
+    }
 
-def main(argv):
-    if len(argv) != 4:
-        return 10
-    folder = argv[1]
-    try:
-        payloads = [base64.b64decode(item, validate=True) for item in argv[2:]]
-    except ValueError:
-        return 10
-    if [hashlib.sha256(p).hexdigest() for p in payloads] != PINNED:
-        return 12
-    folder = os.path.abspath(folder)
-    if not is_firefox(folder):
-        return 11
-    if os.path.normcase(os.path.realpath(folder)) != os.path.normcase(folder):
-        return 13
-    # Nothing on the way may be a link or a junction: check before anything is created.
-    for part in ("defaults", os.path.join("defaults", "pref")) + NAMES:
-        path = os.path.join(folder, part)
-        same = os.path.normcase(os.path.realpath(path)) == os.path.normcase(path)
-        if os.path.lexists(path) and not same:
-            return 13
-    temporary = None
-    try:
-        os.makedirs(os.path.join(folder, "defaults", "pref"), exist_ok=True)
-        for name, data in zip(NAMES, payloads):
-            target = os.path.join(folder, name)
-            temporary = target + ".peek-a-foxy.tmp"
-            if os.path.lexists(temporary):
-                os.unlink(temporary)  # never write through whatever someone left under that name
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
-            descriptor = os.open(temporary, flags, 0o644)
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(data)
-            os.replace(temporary, target)
-            temporary = None
-    except OSError:
-        if temporary and os.path.lexists(temporary):
-            try:
-                os.unlink(temporary)
-            except OSError:
-                pass
-        return 14
-    return 0
+    $failure = 11
+    foreach ($name in @('omni.ja', 'firefox.exe', 'application.ini')) {
+        if (-not [IO.File]::Exists([IO.Path]::Combine($full, $name))) {
+            exit 11
+        }
+    }
+    $named = $false
+    foreach ($line in [IO.File]::ReadAllLines([IO.Path]::Combine($full, 'application.ini'))) {
+        if ($line.Trim() -ceq 'Name=Firefox') {
+            $named = $true
+        }
+    }
+    if (-not $named) {
+        exit 11
+    }
 
-sys.exit(main(sys.argv))
+    $failure = 13
+    $same = [StringComparison]::OrdinalIgnoreCase
+    if (-not [string]::Equals($full.TrimEnd([char]92), $folder.TrimEnd([char]92), $same)) {
+        exit 13
+    }
+    $path = $full
+    while ($path) {
+        if ([IO.File]::GetAttributes($path).HasFlag($reparse)) {
+            exit 13
+        }
+        $parent = [IO.Path]::GetDirectoryName($path)
+        $leaf = [IO.Path]::GetFileName($path)
+        if ($parent -and $leaf) {
+            $listed = $false
+            foreach ($entry in [IO.Directory]::GetFileSystemEntries($parent, $leaf)) {
+                if ([string]::Equals([IO.Path]::GetFileName($entry), $leaf, $same)) {
+                    $listed = $true
+                }
+            }
+            if (-not $listed) {
+                exit 13
+            }
+        }
+        $path = $parent
+    }
+    foreach ($part in @('defaults', 'defaults\pref') + $names) {
+        $found = attributes ([IO.Path]::Combine($full, $part))
+        if ($null -ne $found -and $found.HasFlag($reparse)) {
+            exit 13
+        }
+    }
+
+    $failure = 14
+    [void][IO.Directory]::CreateDirectory([IO.Path]::Combine($full, 'defaults\pref'))
+    for ($i = 0; $i -lt 2; $i++) {
+        $target = [IO.Path]::Combine($full, $names[$i])
+        $temporary = $target + '.peek-a-foxy.tmp'
+        if ($null -ne (attributes $temporary)) {
+            [IO.File]::Delete($temporary)
+        }
+        $mode = [IO.FileMode]::CreateNew
+        $stream = [IO.File]::Open($temporary, $mode, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try {
+            $stream.Write($payloads[$i], 0, $payloads[$i].Length)
+            $stream.Flush($true)
+        } finally {
+            $stream.Dispose()
+        }
+        if ($null -ne (attributes $target)) {
+            [IO.File]::Replace($temporary, $target, [NullString]::Value)
+        } else {
+            [IO.File]::Move($temporary, $target)
+        }
+        $temporary = $null
+    }
+    exit 0
+} catch {
+    if ($null -ne $temporary) {
+        try {
+            [IO.File]::Delete($temporary)
+        } catch {
+        }
+    }
+    exit $failure
+}
 """
+
+# PowerShell ends a single-quoted string at any of these five characters, not only at the ASCII
+# one; inside the string each is written twice (what its own EscapeSingleQuotedStringContent does).
+SINGLE_QUOTES = "'\u2018\u2019\u201a\u201b"
+_PLACEHOLDER = re.compile(r"@@([A-Z_]+)@@")
+_BASE64 = re.compile(r"[A-Za-z0-9+/]*={0,2}")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+# Characters a folder name may not have here: control characters (NUL, line breaks, tabs...) and
+# the Unicode line and paragraph separators. Windows forbids the control characters in file names
+# anyway, so a real Firefox folder never has them.
+_REFUSED_CATEGORIES = {"Cc", "Zl", "Zp"}
 
 
 Elevator = Callable[[list[str]], int]
 
 
-def helper_code() -> str:
-    return HELPER_CODE.replace("{pinned}", json.dumps(list(PINNED_SHA256.values())))
+def quote(text: str) -> str:
+    """``text`` as the inside of a PowerShell single-quoted string: nothing in it is code."""
+    return "".join(char * 2 if char in SINGLE_QUOTES else char for char in text)
+
+
+def refused_character(folder: str) -> str | None:
+    """The first character of ``folder`` that the script does not accept, if any."""
+    for char in folder:
+        if unicodedata.category(char) in _REFUSED_CATEGORIES:
+            return char
+    return None
+
+
+def helper_script(folder: str, payloads: list[bytes]) -> str:
+    """The script of the elevated process for ``folder`` (taken as given) and the two files."""
+    if len(payloads) != len(PINNED_SHA256):
+        raise ValueError(f"expected {len(PINNED_SHA256)} files, got {len(payloads)}")
+    pinned = list(PINNED_SHA256.values())
+    encoded = [base64.b64encode(data).decode("ascii") for data in payloads]
+    # Neither can hold a quote, so they need no escaping; checked anyway, the script depends on it.
+    if not all(_SHA256.fullmatch(digest) for digest in pinned):
+        raise ValueError("a pinned SHA-256 value is not 64 lowercase hexadecimal digits")
+    if not all(_BASE64.fullmatch(item) for item in encoded):  # pragma: no cover - b64encode's
+        raise ValueError("a payload is not plain base64")
+    values = {
+        "FOLDER": quote(folder),
+        "CONFIG": encoded[0],
+        "PREFS": encoded[1],
+        "PINNED_CONFIG": pinned[0],
+        "PINNED_PREFS": pinned[1],
+    }
+    # One pass: a value that looks like a placeholder (a folder called @@CONFIG@@) stays as it is.
+    return _PLACEHOLDER.sub(lambda match: values[match.group(1)], HELPER_SCRIPT)
+
+
+def encoded_command(script: str) -> str:
+    """What ``-EncodedCommand`` takes: base64 of the UTF-16LE text, without a byte order mark.
+
+    ``surrogatepass`` keeps a lone surrogate, which an NTFS name may have, as the same UTF-16 unit.
+    """
+    return base64.b64encode(script.encode("utf-16-le", "surrogatepass")).decode("ascii")
+
+
+def system_directory() -> str:
+    """The Windows system folder as ``GetSystemDirectoryW`` reports it (a stand-in elsewhere)."""
+    if sys.platform != "win32":
+        return STAND_IN_SYSTEM_DIRECTORY
+    return _windows_system_directory()  # pragma: no cover - needs Windows
+
+
+def _windows_system_directory() -> str:  # pragma: no cover - needs Windows
+    from peek_a_foxy import _winapi
+
+    try:
+        return _winapi.system_directory()
+    except _winapi.ElevationFailed as error:
+        raise ElevationError(
+            errors.UAC_UNAVAILABLE,
+            "could not find the Windows system folder, where Windows PowerShell lives",
+            detail=repr(error),
+        ) from error
+
+
+def powershell_path(system_dir: str) -> str:
+    """Windows PowerShell under ``system_dir``, after checking that it is a plain local folder."""
+    parts = system_dir.split("\\")
+    if not _SYSTEM_DIRECTORY.fullmatch(system_dir) or ".." in parts or "." in parts:
+        raise ElevationError(
+            errors.UAC_UNAVAILABLE,
+            f"Windows reported an unexpected system folder ({system_dir!r}), so Windows "
+            "PowerShell cannot be found safely",
+        )
+    return ntpath.join(system_dir, *POWERSHELL)
 
 
 def helper_command(firefox_dir: Path, payloads: list[bytes]) -> list[str]:
-    """Command line of the elevated process: isolated Python, the code, the folder, the bytes."""
-    encoded = [base64.b64encode(data).decode("ascii") for data in payloads]
-    # The base interpreter, not a virtual environment's copy (pipx, uv): a venv lives in the user's
-    # profile, where another program could swap python.exe or pyvenv.cfg.
-    python = getattr(sys, "_base_executable", None) or sys.executable
-    return [python, "-I", "-S", "-c", helper_code(), str(firefox_dir), *encoded]
+    """Command line of the elevated process: Windows PowerShell and the encoded script."""
+    folder = os.path.abspath(firefox_dir)  # the elevated process starts in System32
+    char = refused_character(folder)
+    if char is not None:
+        raise ElevationError(
+            errors.UAC_HELPER_FAILED,
+            f"could not install the loader into {folder!r}: the folder name has a character "
+            f"({char!r}) that the administrator step does not accept, so it was not started",
+        )
+    script = helper_script(folder, payloads)
+    return [powershell_path(system_directory()), *POWERSHELL_FLAGS, encoded_command(script)]
+
+
+def aliased_folder(folder: str, resolve: Callable[[str], str] | None = None) -> str | None:
+    """Where Windows really goes when ``folder`` is not that place spelled out, else ``None``.
+
+    ``os.path.realpath`` asks Windows for the final path (``GetFinalPathNameByHandle``), which turns
+    a short 8.3 name (``C:\\PROGRA~1``), a ``subst`` or mapped drive, a junction and a symbolic link
+    into the long path they stand for. The elevated script refuses a folder that is not the real
+    one; asking here first spares the user an administrator prompt that could only end in a refusal,
+    and sees the drives of this session, which the elevated process may not share. Only Windows has
+    such names, so elsewhere (where the command is built but never runs) nothing is resolved, unless
+    ``resolve`` is given.
+    """
+    if resolve is None:
+        if sys.platform != "win32":
+            return None
+        resolve = os.path.realpath
+
+    def same_place(path: str) -> str:
+        return ntpath.normcase(ntpath.normpath(path)).rstrip("\\")
+
+    try:
+        real = resolve(folder)
+    except (OSError, ValueError):
+        # Python 3.10 raises for a path Windows cannot have (a NUL, more than 32 767 characters)
+        # where later versions return it unchanged; the checks after this one refuse such a folder
+        # with their own message.
+        return None
+    return None if same_place(real) == same_place(folder) else real
 
 
 def parameters_of(command: list[str]) -> str:
@@ -161,6 +363,11 @@ def parameters_allowed(executable: str) -> int:
 def windows_elevator(command: list[str]) -> int:
     from peek_a_foxy import _winapi
 
+    if not os.path.isfile(command[0]):
+        raise ElevationError(
+            errors.UAC_UNAVAILABLE,
+            f"{command[0]} was not found, so the administrator step cannot be started",
+        )
     try:
         return _winapi.run_elevated(command[0], parameters_of(command), TIMEOUT_SECONDS)
     except _winapi.ElevationFailed as error:
@@ -195,6 +402,17 @@ def copy_as_administrator(
             "FXAC_REPO and FXAC_COMMIT are set: the administrator copy only accepts the pinned "
             "fx-autoconfig, so unset them",
         )
+    folder = os.path.abspath(firefox_dir)
+    real = aliased_folder(folder)
+    if real is not None:
+        raise ElevationError(
+            errors.UAC_HELPER_FAILED,
+            f"could not install the loader into {firefox_dir}: {MESSAGES[LINKED]}",
+            detail=(
+                f"refused before the administrator step: {folder!r} is {real!r} for Windows "
+                "(a short name, a substituted or mapped drive, a junction or a link)"
+            ),
+        )
     payloads = [(checkout / "program" / name).read_bytes() for name in PINNED_SHA256]
     run = elevator or windows_elevator
     command = helper_command(firefox_dir, payloads)
@@ -219,7 +437,7 @@ def copy_as_administrator(
     if code != OK:
         reason = MESSAGES.get(code, f"the elevated process failed (exit code {code})")
         raise ElevationError(
-            errors.UAC_HELPER_FAILED,
+            errors.UAC_RESTRICTED_POWERSHELL if code == LANGUAGE_MODE else errors.UAC_HELPER_FAILED,
             f"could not install the loader into {firefox_dir}: {reason}",
             detail=f"the elevated process exited with code {code}",
         )

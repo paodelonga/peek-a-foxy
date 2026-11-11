@@ -208,6 +208,14 @@ COMMAND_TOO_LONG = _register(
     "This should not happen with the files that Peek-a-Foxy installs. Please report it at "
     f"{ISSUES_URL} with the result of `peek-a-foxy doctor --copy`.",
 )
+UAC_RESTRICTED_POWERSHELL = _register(
+    "PAF-307",
+    "uac-restricted-powershell",
+    "The system policy keeps PowerShell in a restricted mode, so the administrator step cannot "
+    "run.",
+    "Ask whoever manages this computer to allow Windows PowerShell in its normal mode, or copy "
+    "config.js and defaults/pref/config-prefs.js into the Firefox folder by hand.",
+)
 
 # --- 4xx: the user's files ----------------------------------------------------------------------
 

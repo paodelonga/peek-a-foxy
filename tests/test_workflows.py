@@ -85,7 +85,7 @@ def uses_lines(name: str) -> list[tuple[str, str, str]]:
     return found
 
 
-@pytest.mark.parametrize("name", ["ci.yml", "firefox-weekly.yml"])
+@pytest.mark.parametrize("name", ["ci.yml", "firefox-weekly.yml", "exe.yml"])
 def test_every_action_is_pinned_by_a_full_commit_with_its_version_in_a_comment(name: str):
     """A tag can be moved to other code: the commit cannot (the third-party action most of all)."""
     found = uses_lines(name)
@@ -95,7 +95,7 @@ def test_every_action_is_pinned_by_a_full_commit_with_its_version_in_a_comment(n
         assert re.fullmatch(r"#\s*v\d+(\.\d+){0,2}", comment), (action, comment)
 
 
-@pytest.mark.parametrize("name", ["ci.yml", "firefox-weekly.yml"])
+@pytest.mark.parametrize("name", ["ci.yml", "firefox-weekly.yml", "exe.yml"])
 def test_no_checkout_leaves_the_token_in_the_git_configuration(name: str):
     workflow = load(name)
     checkouts = [
