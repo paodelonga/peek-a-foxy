@@ -234,6 +234,9 @@ Cada configuração é uma pref de verdade, listada no `about:config` com o seu 
 | `peekafoxy.hide.delay.ms` | `300` | Espera antes de uma barra se fechar, em milissegundos (0 a 5000). |
 | `peekafoxy.tabs.reveal.switch` | `true` | Abre a barra de abas por um instante ao trocar para outra aba. |
 | `peekafoxy.tabs.reveal.new` | `true` | Idem, ao abrir uma aba nova (a página de nova aba ou a sua página inicial). |
+| `peekafoxy.tabs.reveal.load` | `false` | Idem, quando a página da aba atual termina de carregar. |
+| `peekafoxy.tabs.reveal.download` | `false` | Idem, quando um download termina. |
+| `peekafoxy.tabs.reveal.title` | `false` | Idem, quando o título de uma aba em segundo plano muda. |
 | `peekafoxy.tabs.reveal.link` | `true` | Idem, quando uma aba abre direto em qualquer outro endereço (um link, um favorito, `window.open`...). |
 | `peekafoxy.tabs.flash.ms` | `1500` | Quanto tempo a barra de abas fica aberta depois de um desses eventos (0 a 10000). |
 | `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Atalho que alterna a barra de abas na janela atual. |

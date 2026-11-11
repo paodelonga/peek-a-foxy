@@ -234,6 +234,9 @@ Every setting is a real pref, listed in `about:config` with its type, and nothin
 | `peekafoxy.hide.delay.ms` | `300` | Wait before a bar closes, in milliseconds (0 to 5000). |
 | `peekafoxy.tabs.reveal.switch` | `true` | Open the tab bar for a moment when you switch to another tab. |
 | `peekafoxy.tabs.reveal.new` | `true` | Same, when you open a new tab (the new-tab page or your home page). |
+| `peekafoxy.tabs.reveal.load` | `false` | Same, when the page of the current tab finishes loading. |
+| `peekafoxy.tabs.reveal.download` | `false` | Same, when a download finishes. |
+| `peekafoxy.tabs.reveal.title` | `false` | Same, when the title of a tab in the background changes. |
 | `peekafoxy.tabs.reveal.link` | `true` | Same, when a tab opens straight to any other address (a link, a bookmark, `window.open`...). |
 | `peekafoxy.tabs.flash.ms` | `1500` | How long the tab bar stays open after one of those (0 to 10000). |
 | `peekafoxy.tabs.shortcut` | `Ctrl+Alt+T` | Shortcut that toggles the tab bar in the current window. |

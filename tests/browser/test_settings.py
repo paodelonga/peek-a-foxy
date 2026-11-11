@@ -496,6 +496,9 @@ def test_prefs_are_real_and_listed_with_their_types(browser):
         "peekafoxy.tabs.reveal.switch": "bool",
         "peekafoxy.tabs.reveal.new": "bool",
         "peekafoxy.tabs.reveal.link": "bool",
+        "peekafoxy.tabs.reveal.load": "bool",
+        "peekafoxy.tabs.reveal.download": "bool",
+        "peekafoxy.tabs.reveal.title": "bool",
         "peekafoxy.tabs.shortcut": "string",
         "peekafoxy.urlbar.shortcut": "string",
         "peekafoxy.welcomed": "bool",
@@ -544,3 +547,115 @@ def test_the_shortcut_hint_has_the_windows_note_only_on_windows(browser):
     )
     assert "GNOME" not in hint  # no system-specific note besides the AltGr one on Windows
     assert ("AltGr" in hint) is (system == "WINNT")
+
+
+# --- the three extra reasons to open the tab bar (all off by default) -------------------------
+
+FLASHING = "document.documentElement.hasAttribute('tabs-flash')"
+REMOVE_TABS = (
+    "for (const tab of [...gBrowser.tabs].slice(1)) gBrowser.removeTab(tab);"
+    "document.documentElement.removeAttribute('tabs-flash');"
+)
+CLEAR_FLASH = (
+    REMOVE_TABS + "Services.prefs.setIntPref('peekafoxy.tabs.flash.ms', 4000);"
+    "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.new', false);"
+    "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.link', false);"
+    "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.switch', false);"
+)
+RESET_FLASH = (
+    "for (const name of ['load', 'download', 'title', 'new', 'link', 'switch'])"
+    " Services.prefs.clearUserPref('peekafoxy.tabs.reveal.' + name);"
+    "Services.prefs.clearUserPref('peekafoxy.tabs.flash.ms');"
+)
+
+
+@pytest.fixture()
+def quiet_flash(browser):
+    """Only the reason under test can flash the bar: the other three stay off."""
+    browser.js(CLEAR_FLASH)
+    yield
+    browser.js(RESET_FLASH)
+    browser.js(REMOVE_TABS)
+
+
+@pytest.mark.parametrize("name", ["load", "download", "title"])
+def test_the_extra_reveal_checkboxes_start_off_and_write_real_prefs(browser, name):
+    pref = f"peekafoxy.tabs.reveal.{name}"
+    browser.open_settings("#peekafoxy")
+    box = f"doc.getElementById('peekafoxy-{pref}')"
+    assert browser.settings(f"return {box}.checked;") is False
+    browser.settings(f"{box}.checked = true; {box}.dispatchEvent(new win.Event('change'));")
+    assert browser.js("return Services.prefs.getBoolPref(arguments[0]);", pref) is True
+    browser.js("Services.prefs.clearUserPref(arguments[0]);", pref)
+    browser.wait(f"{FIELD % pref}.checked === false", message="the box did not follow the pref")
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_a_page_finishing_to_load_flashes_the_bar_only_when_asked(browser, quiet_flash, enabled):
+    browser.js(f"Services.prefs.setBoolPref('peekafoxy.tabs.reveal.load', {str(enabled).lower()});")
+    browser.js(
+        "gBrowser.selectedBrowser.loadURI(Services.io.newURI(arguments[0]), "
+        "{triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});",
+        "data:text/html,<title>loaded</title>hello",
+    )
+    if enabled:
+        browser.wait(FLASHING, 5, "the finished load did not flash the bar")
+    else:
+        time.sleep(1.5)
+        assert not browser.js(f"return {FLASHING};")
+
+
+def test_a_page_loading_in_the_background_does_not_flash_the_bar(browser, quiet_flash):
+    """Adversarial: the reason is the current tab's page, not any tab's."""
+    browser.js("Services.prefs.setBoolPref('peekafoxy.tabs.reveal.load', true);")
+    browser.js(
+        "const tab = gBrowser.addTab(arguments[0], {inBackground: true, "
+        "triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});",
+        "data:text/html,<title>background</title>quiet",
+    )
+    time.sleep(2)
+    assert not browser.js(f"return {FLASHING};")
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_a_finished_download_flashes_the_bar_only_when_asked(browser, quiet_flash, enabled):
+    browser.js(
+        f"Services.prefs.setBoolPref('peekafoxy.tabs.reveal.download', {str(enabled).lower()});"
+    )
+    browser.js(
+        """(async () => {
+             const { Downloads } = ChromeUtils.importESModule('resource://gre/modules/Downloads.sys.mjs');
+             const dir = Services.dirsvc.get('ProfD', Ci.nsIFile).path;
+             const target = PathUtils.join(dir, 'flash-test.txt');
+             const source = 'data:text/plain,hello';
+             const download = await Downloads.createDownload({source, target});
+             (await Downloads.getList(Downloads.ALL)).add(download);
+             await download.start();
+           })();"""
+    )
+    if enabled:
+        browser.wait(FLASHING, 5, "the finished download did not flash the bar")
+    else:
+        time.sleep(1.5)
+        assert not browser.js(f"return {FLASHING};")
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_a_background_tab_changing_its_title_flashes_the_bar_only_when_asked(
+    browser, quiet_flash, enabled
+):
+    browser.js(
+        f"Services.prefs.setBoolPref('peekafoxy.tabs.reveal.title', {str(enabled).lower()});"
+    )
+    browser.js(
+        "gBrowser.addTab(arguments[0], {inBackground: true, "
+        "triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});",
+        "data:text/html,<title>one</title>"
+        "<script>setTimeout(() => document.title = 'two', 1500)</script>",
+    )
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 3)
+    if enabled:
+        browser.wait(FLASHING, 8, "the changed title did not flash the bar")
+    else:
+        time.sleep(3)
+        assert not browser.js(f"return {FLASHING};")
