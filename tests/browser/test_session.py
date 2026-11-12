@@ -317,7 +317,17 @@ def test_a_window_closed_while_it_is_starting_leaves_no_error_behind_and_asks_no
         )
 
     with launched(firefox_install, tmp_path, edit_script=edit) as browser:
-        time.sleep(3.5)  # the first window has asked, and given up
+        # The first window asks, retries for about two seconds on a quick machine (longer on a slow
+        # runner) and gives up: wait until its count has stopped moving, or the reset below would
+        # count its late retries as the closing window's.
+        asked = browser.js("return Services.prefs.getIntPref('peekafoxytest', 0);")
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            time.sleep(1.5)
+            now = browser.js("return Services.prefs.getIntPref('peekafoxytest', 0);")
+            if now == asked:
+                break
+            asked = now
         before = len(browser.client.chrome_window_handles)
         browser.js("Services.prefs.setIntPref('peekafoxytest', 0);")
         browser.client.set_context(browser.client.CONTEXT_CHROME)
