@@ -381,6 +381,11 @@ def launched(
     if before_start is not None:
         before_start(profile)
 
+    # Firefox unpacks a built-in add-on of about 3.5 MB into its temporary folder on every start and
+    # does not always remove it when it is stopped, which filled /tmp (and its quota) after a few
+    # hundred launches. It gets a folder of its own, removed with the launch.
+    firefox_tmp = root / "firefox-tmp"
+    firefox_tmp.mkdir(exist_ok=True)
     process = subprocess.Popen(
         [
             str(install_dir / FIREFOX_BINARY),
@@ -391,7 +396,14 @@ def launched(
             "--profile",
             str(profile),
         ],
-        env={**os.environ, "MOZ_HEADLESS": "1", "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS": "1"},
+        env={
+            **os.environ,
+            "MOZ_HEADLESS": "1",
+            "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS": "1",
+            "TMPDIR": str(firefox_tmp),
+            "TEMP": str(firefox_tmp),
+            "TMP": str(firefox_tmp),
+        },
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -435,6 +447,7 @@ def launched(
                 raise
     finally:
         _stop(process)
+        shutil.rmtree(firefox_tmp, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
