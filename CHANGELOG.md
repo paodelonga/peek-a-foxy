@@ -181,6 +181,9 @@ is and what controls it, with a *Known issues* section for what is not covered.
 - Ctrl+C in the middle of a plan says how many steps had finished and that the running step was interrupted.
 - The message "Firefox cannot run the script without them.run the script." is fixed; the texts that said `doctor` and `--dry-run` change nothing although they write the log now say so; error messages of an edit name `userChrome.css` and not its temporary file.
 - A folder is refused as Flatpak only when its path has `/flatpak/app/` or `/flatpak/runtime/`; `/usr/lib64/firefox` is searched; the invisible direction marks U+200E, U+200F and U+061C are neutralised in reports.
+- **An empty box instead of the fox in the closing panel of `install`.** The classic Windows console accepts the fox emoji but has no glyph for it. The fox is now printed outside Windows, or on Windows only inside Windows Terminal, VS Code or ConEmu; the link after it is always printed.
+- **The *Peek-a-Foxy issue page* link in Firefox's settings opened a blank tab.** The click now opens the page through Firefox's own function for opening a link in a tab; for someone who is not signed in to GitHub, the tab shows GitHub's sign-in page, which leads on to the issue form.
+- A note ("can't access property forWindow") that the script recorded at every start, because the first settings pass runs before the toolbar buttons exist, is no longer recorded.
 
 ### Security
 
