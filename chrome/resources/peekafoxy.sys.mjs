@@ -43,7 +43,7 @@ export const PREFS = {
   revealLoad: { name: "peekafoxy.tabs.reveal.load", type: "bool", default: false },
   revealDownload: { name: "peekafoxy.tabs.reveal.download", type: "bool", default: false },
   revealTitle: { name: "peekafoxy.tabs.reveal.title", type: "bool", default: false },
-  revealMove: { name: "peekafoxy.tabs.reveal.move", type: "bool", default: false },
+  revealMove: { name: "peekafoxy.tabs.reveal.move", type: "bool", default: true },
   tabsShortcut: { name: "peekafoxy.tabs.shortcut", type: "string", default: DEFAULT_TABS_SHORTCUT },
   urlbarShortcut: { name: "peekafoxy.urlbar.shortcut", type: "string", default: DEFAULT_URLBAR_SHORTCUT },
   easing: { name: "peekafoxy.easing", type: "string", default: "smooth", values: ["smooth", "linear", "snappy"] },

@@ -236,7 +236,7 @@ Cada configuração é uma pref de verdade, listada no `about:config` com o seu 
 | `peekafoxy.tabs.reveal.load` | `false` | Idem, quando a página da aba atual termina de carregar. |
 | `peekafoxy.tabs.reveal.download` | `false` | Idem, quando um download termina. |
 | `peekafoxy.tabs.reveal.title` | `false` | Idem, quando o título de uma aba em segundo plano muda. |
-| `peekafoxy.tabs.reveal.move` | `false` | Idem, quando as abas são reordenadas (`Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` ou um arrasto). |
+| `peekafoxy.tabs.reveal.move` | `true` | Idem, quando as abas são reordenadas (`Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` ou um arrasto). |
 | `peekafoxy.tabs.reveal.link` | `true` | Idem, quando uma aba abre direto em qualquer outro endereço (um link, um favorito, `window.open`...). |
 | `peekafoxy.easing` | `smooth` | Curva da animação: `smooth`, `linear` ou `snappy`. |
 | `peekafoxy.bookmarks` | `follow` | `follow`: a barra de favoritos abre e fecha junto com a barra de navegação; `visible`: ela fica sempre visível. |
