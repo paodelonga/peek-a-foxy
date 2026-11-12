@@ -224,11 +224,11 @@
 }
 
 /* 3. revealed */
-:root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#nav-bar:is(:hover, :focus-within)) #PersonalToolbar,
-:root[autohide-urlbar]:not([inFullscreen], [customizing]) #navigator-toolbox:has(#nav-bar toolbarbutton[open]) #PersonalToolbar,
-:root[autohide-urlbar]:not([inFullscreen], [customizing]):has(#urlbar[open]) #PersonalToolbar,
-:root[autohide-urlbar]:not([inFullscreen], [customizing]):is([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]) #PersonalToolbar,
-:root[autohide-urlbar]:not([inFullscreen], [customizing]) #PersonalToolbar:is(:hover, :focus-within) {
+:root[autohide-urlbar]:not([peekafoxy-bookmarks="visible"], [inFullscreen], [customizing]) #navigator-toolbox:has(#nav-bar:is(:hover, :focus-within)) #PersonalToolbar,
+:root[autohide-urlbar]:not([peekafoxy-bookmarks="visible"], [inFullscreen], [customizing]) #navigator-toolbox:has(#nav-bar toolbarbutton[open]) #PersonalToolbar,
+:root[autohide-urlbar]:not([peekafoxy-bookmarks="visible"], [inFullscreen], [customizing]):has(#urlbar[open]) #PersonalToolbar,
+:root[autohide-urlbar]:not([peekafoxy-bookmarks="visible"], [inFullscreen], [customizing]):is([peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]) #PersonalToolbar,
+:root[autohide-urlbar]:not([peekafoxy-bookmarks="visible"], [inFullscreen], [customizing]) #PersonalToolbar:is(:hover, :focus-within) {
   max-height: var(--autohide-bookmarks-height) !important;
   opacity: 1;
   transition:
@@ -236,12 +236,14 @@
     margin var(--autohide-show), border-width var(--autohide-show);
 }
 
-/* The pointer alone opens the bar: it has to rest there for --autohide-show-delay first. */
-:root[autohide-tabs]:not([inFullscreen], [customizing], [tabs-flash], [peekafoxy-dragging], [peekafoxy-popup-open], [peekafoxy-peek]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
+/* The pointer alone opens the bar: it has to rest there for --autohide-show-delay first.
+   Only what concerns the bar itself cancels the delay (a popup open on the tab bar does not make the
+   navigation bar open at once). */
+:root[autohide-tabs]:not([inFullscreen], [customizing], [tabs-flash], [peekafoxy-dragging="tabs"], [peekafoxy-popup-open~="tabs"], [peekafoxy-peek~="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
   #TabsToolbar:hover:not(:focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])),
-:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing], [tabs-flash], [peekafoxy-dragging], [peekafoxy-popup-open], [peekafoxy-peek]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
+:root[autohide-tabs][customtitlebar]:not([inFullscreen], [customizing], [tabs-flash], [peekafoxy-dragging="tabs"], [peekafoxy-popup-open~="tabs"], [peekafoxy-peek~="tabs"]):not(:has(#tabContextMenu:is([state="open"], [state="showing"])))
   #TabsToolbar:hover:not(:focus-within, :has(#tabbrowser-tabs[movingtab], .tabbrowser-tab[dragtarget])) .toolbar-items,
-:root[autohide-urlbar]:not([inFullscreen], [customizing], [peekafoxy-dragging], [peekafoxy-popup-open], [peekafoxy-peek]):not(:has(#urlbar[open]))
+:root[autohide-urlbar]:not([inFullscreen], [customizing], [peekafoxy-dragging="navbar"], [peekafoxy-dragging="bookmarks"], [peekafoxy-popup-open~="navbar"], [peekafoxy-popup-open~="bookmarks"], [peekafoxy-peek~="navbar"]):not(:has(#urlbar[open]))
   #navigator-toolbox:has(#nav-bar:hover, #PersonalToolbar:hover):not(:has(#nav-bar:focus-within, #PersonalToolbar:focus-within, #nav-bar toolbarbutton[open]))
   :is(#nav-bar, #PersonalToolbar) {
   transition-delay: var(--autohide-show-delay) !important;
