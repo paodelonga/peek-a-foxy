@@ -504,6 +504,10 @@ def test_prefs_are_real_and_listed_with_their_types(browser):
         "peekafoxy.tabs.reveal.download": "bool",
         "peekafoxy.tabs.reveal.title": "bool",
         "peekafoxy.tabs.reveal.move": "bool",
+        "peekafoxy.tabs.reveal.close": "bool",
+        "peekafoxy.tabs.reveal.pin": "bool",
+        "peekafoxy.tabs.reveal.mute": "bool",
+        "peekafoxy.tabs.reveal.attention": "bool",
         "peekafoxy.tabs.shortcut": "string",
         "peekafoxy.urlbar.shortcut": "string",
         "peekafoxy.welcomed": "bool",
@@ -584,7 +588,7 @@ def quiet_flash(browser):
     browser.js(REMOVE_TABS)
 
 
-@pytest.mark.parametrize("name", ["load", "download", "title"])
+@pytest.mark.parametrize("name", ["load", "download", "title", "close", "pin", "mute", "attention"])
 def test_the_extra_reveal_checkboxes_start_off_and_write_real_prefs(browser, name):
     pref = f"peekafoxy.tabs.reveal.{name}"
     browser.open_settings("#peekafoxy")
@@ -753,3 +757,86 @@ def test_the_issue_link_opens_the_page_in_a_new_tab_and_not_a_blank_one(browser)
              if (spec !== 'about:preferences#peekafoxy') gBrowser.removeTab(t);
            }"""
     )
+
+
+# --- closing, pinning, muting and a tab asking for attention ----------------------------------
+
+TWO_BACKGROUND_TABS = """
+  for (let i = 0; i < 2; i++) {
+    gBrowser.addTab('about:blank', {
+      inBackground: true, triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+  }
+  gBrowser.selectedTab = gBrowser.tabs[0];
+  document.documentElement.removeAttribute('tabs-flash');
+"""
+BACKGROUND_TAB_CLOSED = "gBrowser.removeTab(gBrowser.tabs[2]);"
+PINNED = "gBrowser.pinTab(gBrowser.tabs[1]);"
+MUTED = "gBrowser.tabs[1].toggleMuteAudio();"
+ATTENTION = (
+    "gBrowser.tabs[1].setAttribute('attention', 'true');"
+    "gBrowser._tabAttrModified(gBrowser.tabs[1], ['attention']);"
+)
+
+
+@pytest.mark.parametrize(
+    ("name", "action"),
+    [
+        ("close", BACKGROUND_TAB_CLOSED),
+        ("pin", PINNED),
+        ("mute", MUTED),
+        ("attention", ATTENTION),
+    ],
+)
+@pytest.mark.parametrize("enabled", [False, True])
+def test_closing_pinning_muting_and_attention_flash_the_bar_only_when_asked(
+    browser, quiet_flash, name, action, enabled
+):
+    browser.js(
+        f"Services.prefs.setBoolPref('peekafoxy.tabs.reveal.{name}', {str(enabled).lower()});"
+    )
+    browser.js(TWO_BACKGROUND_TABS)
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 3)
+    browser.js(action)
+    if enabled:
+        browser.wait(FLASHING, 5, f"{name} did not flash the bar")
+    else:
+        time.sleep(1.5)
+        assert not browser.js(f"return {FLASHING};")
+
+
+def test_unpinning_and_unmuting_flash_too(browser, quiet_flash):
+    browser.js(
+        "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.pin', true);"
+        "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.mute', true);"
+    )
+    browser.js(TWO_BACKGROUND_TABS)
+    browser.js(PINNED + MUTED)
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 8)
+    for action in ("gBrowser.unpinTab(gBrowser.tabs[0]);", MUTED):
+        browser.js("document.documentElement.removeAttribute('tabs-flash');")
+        browser.js(action)
+        browser.wait(FLASHING, 5, f"{action} did not flash the bar")
+
+
+def test_the_selected_tab_closing_or_asking_for_attention_is_not_a_background_event(
+    browser, quiet_flash
+):
+    """Adversarial: both reasons are about tabs in the background."""
+    browser.js(
+        "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.close', true);"
+        "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.attention', true);"
+    )
+    browser.js(TWO_BACKGROUND_TABS)
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 3)
+    browser.js(
+        "gBrowser.selectedTab.setAttribute('attention', 'true');"
+        "gBrowser._tabAttrModified(gBrowser.selectedTab, ['attention']);"
+    )
+    time.sleep(1.5)
+    assert not browser.js(f"return {FLASHING};")
+    browser.js("gBrowser.tabs[1].setAttribute('attention', 'true');")
+    browser.js("gBrowser.tabs[1].removeAttribute('attention');")
+    browser.js("gBrowser._tabAttrModified(gBrowser.tabs[1], ['attention']);")  # cleared: no flash
+    time.sleep(1.5)
+    assert not browser.js(f"return {FLASHING};")

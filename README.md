@@ -237,6 +237,10 @@ Every setting is a real pref, listed in `about:config` with its type, and nothin
 | `peekafoxy.tabs.reveal.download` | `false` | Same, when a download finishes. |
 | `peekafoxy.tabs.reveal.title` | `false` | Same, when the title of a tab in the background changes. |
 | `peekafoxy.tabs.reveal.move` | `true` | Same, when tabs are reordered (`Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` or a drag). |
+| `peekafoxy.tabs.reveal.close` | `false` | Same, when a tab in the background is closed. |
+| `peekafoxy.tabs.reveal.pin` | `false` | Same, when a tab is pinned or unpinned. |
+| `peekafoxy.tabs.reveal.mute` | `false` | Same, when a tab is muted or unmuted. |
+| `peekafoxy.tabs.reveal.attention` | `false` | Same, when a tab in the background asks for attention. |
 | `peekafoxy.tabs.reveal.link` | `true` | Same, when a tab opens straight to any other address (a link, a bookmark, `window.open`...). |
 | `peekafoxy.easing` | `smooth` | Animation curve: `smooth`, `linear` or `snappy`. |
 | `peekafoxy.bookmarks` | `follow` | `follow`: the bookmarks bar opens and closes with the navigation bar; `visible`: it always stays visible. |

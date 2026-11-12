@@ -77,7 +77,10 @@ bookmarks 0.
 | 32 | Background tab changes its title after loading (off by default) | open if `reveal.title` | - | - | `chrome/autohide.uc.js:286-290` | `test_settings.py::test_a_background_tab_changing_its_title_flashes_the_bar_only_when_asked` (:647) | suite pass / pass / pass |
 | 33 | Every reveal pref off / `flash.ms = 0` | nothing opens | - | - | prefs read on every event (`chrome/autohide.uc.js:251`, `:260`) | `test_triggers.py::test_with_everything_off_nothing_opens_the_bar` (:98); `test_settings.py::test_the_flash_time_comes_from_the_pref` (:295) | suite pass / pass / pass |
 | 34 | Closing the **selected** tab | flashes (through the TabSelect of the next tab) | - | - | `chrome/autohide.uc.js:250-252` | **none** | probe: flash, tabs open, on R / E / B |
-| 35 | Closing a **background** tab | no flash | - | - | no TabClose listener | **none** | probe: no flash on R / E / B |
+| 35 | Closing a **background** tab (off by default) | open if `reveal.close` | - | - | `TabClose` listener in `chrome/JS/autohide.uc.js` | `test_settings.py::test_closing_pinning_muting_and_attention_flash_the_bar_only_when_asked[close]`, `::test_the_selected_tab_closing_or_asking_for_attention_is_not_a_background_event` | suite pass / pass / pass |
+| 35b | A tab pinned or unpinned (off by default) | open if `reveal.pin` | - | - | `TabPinned` and `TabUnpinned` listeners | `test_settings.py::..._only_when_asked[pin]`, `::test_unpinning_and_unmuting_flash_too` | suite pass / pass / pass |
+| 35c | A tab muted or unmuted, selected or not (off by default) | open if `reveal.mute` | - | - | `TabAttrModified` with `muted` | `test_settings.py::..._only_when_asked[mute]`, `::test_unpinning_and_unmuting_flash_too` | suite pass / pass / pass |
+| 35d | A background tab starts asking for attention (off by default) | open if `reveal.attention` | - | - | `TabAttrModified` with `attention` set, tab not selected | `test_settings.py::..._only_when_asked[attention]`, `::test_the_selected_tab_closing_or_asking_for_attention_is_not_a_background_event` | suite pass / pass / pass |
 | 36 | Moving a tab with the keyboard (Ctrl+Shift+PgUp/PgDn, `gBrowser.moveTabBackward()`) | **no flash** | - | - | there is no TabMove listener: `grep TabMove chrome/` finds nothing. The brief lists "tab move" as a flash reason, but it does not exist in the code | **none** | probe: no flash on R / E / B |
 | 37 | Pin / unpin a tab | no flash | - | - | no listener | none | probe: no flash on R / E / B |
 
@@ -153,14 +156,7 @@ button, its shortcut and every flash do nothing visible, and the probe found no 
   button (the project chooses not to support it), or the sidebar tab list collapsing (the project chooses to
   support it).
 
-**G4. Tab changes that produce no flash (low/medium).** #35-37. A keyboard tab move (Ctrl+Shift+PgUp/PgDn) moves
-Tracked in #87.
-
-a tab you cannot see. Closing a background tab, pinning, muting, and a tab asking for attention also give no
-feedback. The brief names "tab move" as a flash reason, but there is no `TabMove` listener anywhere in `chrome/`.
-- Proposed test: `gBrowser.moveTabBackward()` → expect `tabs-flash` when a new pref (for example
-  `peekafoxy.tabs.reveal.move`) is on, and no flash while `#tabbrowser-tabs[movingtab]` is set (a drag already keeps
-  the bar open).
+**G4. Tab changes that produce no flash (closed, #87).** Closing a background tab, pinning or unpinning, muting or unmuting and a background tab asking for attention are now reasons of their own, each a preference that is off by default (situations 35 to 35d). The keyboard tab move has its own reason since `reveal.move`.
 
 **G5. An inactive window drops its navigation bar even with the urlbar focused (decide).** #25. Switching to
 Tracked in #88.

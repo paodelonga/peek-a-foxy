@@ -293,9 +293,28 @@
 
     gBrowser.tabContainer.addEventListener("TabAttrModified", (event) => {
       const tab = event.target;
-      if (!event.detail?.changed?.includes("label") || tab.selected || tab.hasAttribute("busy")) return;
-      if (Peek.read(PREFS.revealTitle)) flashTabs();
+      const changed = event.detail?.changed ?? [];
+      if (changed.includes("label") && !tab.selected && !tab.hasAttribute("busy")) {
+        if (Peek.read(PREFS.revealTitle)) flashTabs();
+      }
+      // A tab muted or unmuted, selected or not; and a tab in the background that starts asking for
+      // attention (the attribute is set, not removed again).
+      if (changed.includes("muted") && Peek.read(PREFS.revealMute)) flashTabs();
+      if (changed.includes("attention") && tab.hasAttribute("attention") && !tab.selected) {
+        if (Peek.read(PREFS.revealAttention)) flashTabs();
+      }
     });
+
+    // A tab in the background closed, and a tab pinned or unpinned. Closing the selected tab is left
+    // to the tab switch that follows it.
+    gBrowser.tabContainer.addEventListener("TabClose", (event) => {
+      if (!event.target.selected && Peek.read(PREFS.revealClose)) flashTabs();
+    });
+    for (const type of ["TabPinned", "TabUnpinned"]) {
+      gBrowser.tabContainer.addEventListener(type, () => {
+        if (Peek.read(PREFS.revealPin)) flashTabs();
+      });
+    }
 
     (async () => {
       try {

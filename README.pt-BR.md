@@ -237,6 +237,10 @@ Cada configuração é uma pref de verdade, listada no `about:config` com o seu 
 | `peekafoxy.tabs.reveal.download` | `false` | Idem, quando um download termina. |
 | `peekafoxy.tabs.reveal.title` | `false` | Idem, quando o título de uma aba em segundo plano muda. |
 | `peekafoxy.tabs.reveal.move` | `true` | Idem, quando as abas são reordenadas (`Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` ou um arrasto). |
+| `peekafoxy.tabs.reveal.close` | `false` | Idem, quando uma aba em segundo plano é fechada. |
+| `peekafoxy.tabs.reveal.pin` | `false` | Idem, quando uma aba é fixada ou desafixada. |
+| `peekafoxy.tabs.reveal.mute` | `false` | Idem, quando uma aba é silenciada ou tem o som reativado. |
+| `peekafoxy.tabs.reveal.attention` | `false` | Idem, quando uma aba em segundo plano chama a atenção. |
 | `peekafoxy.tabs.reveal.link` | `true` | Idem, quando uma aba abre direto em qualquer outro endereço (um link, um favorito, `window.open`...). |
 | `peekafoxy.easing` | `smooth` | Curva da animação: `smooth`, `linear` ou `snappy`. |
 | `peekafoxy.bookmarks` | `follow` | `follow`: a barra de favoritos abre e fecha junto com a barra de navegação; `visible`: ela fica sempre visível. |
