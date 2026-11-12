@@ -434,3 +434,76 @@ def test_the_shortcut_in_a_tooltip_is_the_one_that_works(browser):
         tip = browser.js(BUTTON_TEXTS)[button][1]
         assert browser.default_shortcut(bar) in tip
         assert tip.endswith(f"+{code[-1]})")
+
+
+# --- dragging something onto a hidden bar ------------------------------------------------------
+
+DRAG_OVER = """
+  const where = arguments[0];
+  const target = where === 'window' ? gBrowser.selectedBrowser : document.querySelector(where);
+  const dataTransfer = new DataTransfer();
+  const init = {bubbles: true, composed: true, dataTransfer, relatedTarget: null};
+  target.dispatchEvent(new DragEvent(arguments[1], init));
+"""
+
+
+def drag_over(browser, selector: str, kind: str = "dragenter") -> None:
+    browser.js(DRAG_OVER, selector, kind)
+
+
+def test_a_link_dragged_over_the_hidden_tab_bar_opens_it_until_it_leaves(browser):
+    browser.new_window()
+    press(browser, "KeyT")
+    browser.wait(f"{browser.TABS_HEIGHT} <= 8", 8)
+
+    drag_over(browser, "#TabsToolbar")  # an item from outside, not from a bar
+    browser.wait(f"{browser.TABS_HEIGHT} > 8", 5, "the tab bar did not open under the dragged item")
+    assert (
+        browser.js("return document.documentElement.getAttribute('peekafoxy-dragging');") == "tabs"
+    )
+
+    drag_over(browser, "window")  # the item goes on to the page
+    browser.wait(f"{browser.TABS_HEIGHT} <= 8", 8, "the tab bar stayed open over the page")
+    assert not browser.js(f"return {HAS};", "peekafoxy-dragging")
+    press(browser, "KeyT")
+
+
+def test_a_link_dragged_over_the_hidden_navigation_bar_opens_it_and_a_drop_closes_it(browser):
+    browser.new_window()
+    press(browser, "KeyU")
+    nav = "document.getElementById('nav-bar').getBoundingClientRect().height"
+    browser.wait(f"{nav} <= 8", 8)
+
+    drag_over(browser, "#nav-bar")
+    browser.wait(f"{nav} > 8", 5, "the navigation bar did not open under the dragged item")
+    drag_over(browser, "#nav-bar", "drop")
+    browser.wait(f"{nav} <= 8", 8, "the navigation bar stayed open after the drop")
+    press(browser, "KeyU")
+
+
+def test_leaving_the_window_with_a_dragged_item_closes_the_bar(browser):
+    browser.new_window()
+    press(browser, "KeyT")
+    browser.wait(f"{browser.TABS_HEIGHT} <= 8", 8)
+    drag_over(browser, "#TabsToolbar")
+    assert browser.js(f"return {HAS};", "peekafoxy-dragging")
+    drag_over(
+        browser, "#TabsToolbar", "dragleave"
+    )  # relatedTarget null: the pointer left the window
+    assert not browser.js(f"return {HAS};", "peekafoxy-dragging")
+    press(browser, "KeyT")
+
+
+def test_an_item_dragged_out_of_a_bar_keeps_its_bar_when_it_passes_over_the_page(browser):
+    """Adversarial: the new handlers must not end a drag that started in a bar."""
+    browser.new_window()
+    press(browser, "KeyT")
+    drag(browser, "#tabbrowser-tabs .tabbrowser-tab")  # dragstart in the tab bar
+    drag_over(browser, "window")  # over the page
+    drag_over(browser, "#nav-bar")  # over another bar
+    assert (
+        browser.js("return document.documentElement.getAttribute('peekafoxy-dragging');") == "tabs"
+    )
+    drag(browser, "#tabbrowser-tabs .tabbrowser-tab", "dragend")
+    assert not browser.js(f"return {HAS};", "peekafoxy-dragging")
+    press(browser, "KeyT")

@@ -104,7 +104,7 @@ bookmarks 0.
 | 49 | Dragging a bookmark out of the bookmarks bar | - | open | open | `peekafoxy-dragging="bookmarks"`; CSS `chrome/autohide.css:173`, `:211` | `test_in_firefox.py::test_dragging_a_bookmark_keeps_the_bookmarks_bar_open` (:321) | suite pass / pass / pass |
 | 50 | Dragging a button out of the navigation bar (outside Customize) | - | open | open | `peekafoxy-dragging="navbar"`, same selectors | none | read |
 | 51 | A drag that never sends `dragend`/`drop` | marker cleared on the next mouse move | same | same | `chrome/autohide.uc.js:356-358` | `test_in_firefox.py::test_a_drag_that_never_reports_its_end_still_ends_on_the_next_mouse_move` (:349) | suite pass / pass / pass |
-| 52 | Dragging **into** a hidden bar from the page, the desktop or another window (a link onto the tab strip, a link onto the urlbar, a tab into another window's strip, a link onto the bookmarks bar) | **stays collapsed** | **stays collapsed** | **stays collapsed** | only a `dragstart` whose source is inside a bar is recorded (`chrome/autohide.uc.js:351-354`); hover does not update during a drag (comment at `:334`) | **none** | probe (synthetic `dragstart` on the page plus `dragenter` on the bars): no marker, nothing opens, on R / E / B |
+| 52 | Dragging **into** a hidden bar from the page, the desktop or another window (a link onto the tab strip, a link onto the urlbar, a tab into another window's strip) | open | open | open (together with the navigation bar: its own strip is 0 px) | `dragenter`/`dragleave` handlers in `chrome/JS/autohide.uc.js` set `peekafoxy-dragging` with a `draggedOver` flag; they leave a marker set by a `dragstart` in a bar alone | `test_in_firefox.py`: `test_a_link_dragged_over_the_hidden_tab_bar_opens_it_until_it_leaves`, `test_a_link_dragged_over_the_hidden_navigation_bar_opens_it_and_a_drop_closes_it`, `test_leaving_the_window_with_a_dragged_item_closes_the_bar`, `test_an_item_dragged_out_of_a_bar_keeps_its_bar_when_it_passes_over_the_page`. Synthetic events: a real drag from another program is not covered | suite pass / pass / pass |
 
 ### G. Modes and environment
 
@@ -142,16 +142,7 @@ it covers the bookmarks bar, which is why `test_pointer.py:376` failed on ESR in
   that it flips after the hide animation. `visibility` is inherited through the DOM, so it also reaches a top-layer
   descendant, and hidden elements are not hit-tested.
 
-**G2. Dragging something into a hidden bar does not open it (medium).** See #52. You cannot drop a link on the tab
-Tracked in #85.
-
-strip to open it in a new tab, drop a link on the urlbar, drop a tab into another window's strip, or drop a page
-onto the bookmarks bar. The target is an invisible 8 px strip (0 px for bookmarks).
-- Reproduce: tabs autohidden, drag a link from a page up to the top of the window → the strip does not open.
-- Proposed test: dispatch a `dragenter`/`dragover` carrying a `DataTransfer` on `#TabsToolbar` (and `#nav-bar`) with
-  no prior bar `dragstart`, and expect the bar to open. That needs a new listener (for example `dragenter` on
-  `#navigator-toolbox` setting a "drop target" marker, cleared on `dragleave` out of the toolbox, `drop`, `dragend`,
-  or the mousemove fallback at `chrome/autohide.uc.js:356-358`).
+**G2. Dragging something into a hidden bar did not open it (closed, #85).** A `dragenter` over a hidden bar now opens it, and it closes when the item goes on to the page, leaves the window, or is dropped. The tests send synthetic drag events carrying a `DataTransfer`; a real drag from another program was not tried on this machine.
 
 **G3. Vertical tabs are not handled (medium).** See #57. With Firefox's vertical tabs the tab-bar autohide, its
 Tracked in #86.

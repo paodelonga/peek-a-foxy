@@ -125,6 +125,7 @@ is and what controls it, with a *Known issues* section for what is not covered.
 - **A one-time backup of the user's files.** The first time `install` or `uninstall` is about to change an existing `userChrome.css` or `user.js`, a copy is kept next to it as `<file>.peek-a-foxy.bak`; it is never replaced and `uninstall` never deletes it. It holds the file as it was when a version that makes backups first changed it, so it already has Peek-a-Foxy's lines if an earlier version, or an `install` that created the file, wrote them.
 - **`uninstall` removes `chrome/peekafoxy-status.json` and its `.tmp` leftover**, and only warns if something else is at that name.
 - **The weekly Firefox run also covers the ESR** (`latest-esr`), and every test job of the CI uploads a doctor report for its system and Python version.
+- **A link, a file or a tab dragged over a hidden bar opens it**, so it can be dropped there: a link on the tab strip opens in a new tab, a link on the address bar, a tab into another window's strip. The bar closes again when the item moves on to the page, leaves the window, or is dropped. The bookmarks bar has no strip of its own, so it opens together with the navigation bar.
 
 ### Changed
 
