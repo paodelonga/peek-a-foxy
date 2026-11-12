@@ -724,3 +724,32 @@ def test_the_tab_that_stays_where_it_is_does_not_flash(browser, quiet_flash):
     time.sleep(1.5)
     assert not browser.js(f"return {FLASHING};")
     assert browser.js(SELECTED_INDEX) == 0
+
+
+# --- the issue-page link ------------------------------------------------------------------------
+
+ISSUES = "https://github.com/paodelonga/peek-a-foxy/issues/new/choose"
+# Not signed in, GitHub answers with its sign-in page that returns to the issue form: that counts.
+LOAD_STARTED = """
+  return gBrowser.tabs.some(t => {
+    const spec = t.linkedBrowser.currentURI.spec;
+    return spec.startsWith(arguments[0]) ||
+      (spec.startsWith('https://github.com/login') && spec.includes('peek-a-foxy'));
+  });"""
+
+
+def test_the_issue_link_opens_the_page_in_a_new_tab_and_not_a_blank_one(browser):
+    """Adversarial: a plain target="_blank" link from this page left the new tab on about:blank."""
+    browser.open_settings("#peekafoxy")
+    browser.wait(f"{PANE}?.hidden === false", 10, "the pane did not open")
+    browser.settings("doc.querySelector('#peekafoxy-pane a[target=_blank]').click();")
+    deadline = time.monotonic() + 15
+    while not browser.js(LOAD_STARTED, ISSUES):
+        assert time.monotonic() < deadline, "the link did not lead to the issue page"
+        time.sleep(0.1)
+    browser.js(
+        """for (const t of gBrowser.tabs.slice(1)) {
+             const spec = t.linkedBrowser.currentURI.spec;
+             if (spec !== 'about:preferences#peekafoxy') gBrowser.removeTab(t);
+           }"""
+    )

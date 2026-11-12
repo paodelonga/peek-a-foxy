@@ -113,9 +113,17 @@ def can_print(text: str) -> bool:
     return True
 
 
+def has_emoji_font() -> bool:
+    """Whether the terminal can draw emoji. The classic Windows console (what PowerShell opens in
+    when it is not inside Windows Terminal) accepts the character but draws an empty box."""
+    if sys.platform != "win32":
+        return True
+    return any(os.environ.get(name) for name in ("WT_SESSION", "TERM_PROGRAM", "ConEmuPID"))
+
+
 def fox() -> str:
     """The fox, followed by spaces, or nothing where the console cannot show it."""
-    return "\U0001f98a  " if can_print("\U0001f98a") else ""
+    return "\U0001f98a  " if can_print("\U0001f98a") and has_emoji_font() else ""
 
 
 def setup_streams() -> None:

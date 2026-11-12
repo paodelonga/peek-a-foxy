@@ -250,6 +250,16 @@
 
   const issuesNote = () => {
     const link = el("a", { href: Peek.ISSUES_URL, target: "_blank", rel: "noopener noreferrer", text: TEXT.supportLink });
+    // A plain target="_blank" link from this page opens a tab that stays blank (about:blank), so the
+    // click is handed to Firefox's own function for opening a link in a tab. If it is not there the
+    // link keeps its normal behavior.
+    const open = (event) => {
+      if (typeof window.openTrustedLinkIn !== "function") return;
+      event.preventDefault();
+      window.openTrustedLinkIn(Peek.ISSUES_URL, "tab");
+    };
+    link.addEventListener("click", open);
+    link.addEventListener("auxclick", (event) => event.button === 1 && open(event));
     const [before, after = ""] = TEXT.supportNote.split("{link}");
     return el("p", { class: "pf-note" }, before, link, after);
   };

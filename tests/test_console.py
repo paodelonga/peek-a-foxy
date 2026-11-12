@@ -25,6 +25,7 @@ def console_with(encoding: str) -> Console:
     ("encoding", "shown"), [("utf-8", True), ("cp1252", False), ("ascii", False)]
 )
 def test_the_fox_is_only_shown_where_it_can_be_printed(monkeypatch, encoding, shown):
+    monkeypatch.setattr(ui, "has_emoji_font", lambda: True)
     monkeypatch.setattr(ui, "console", console_with(encoding))
     assert ui.can_print("\U0001f98a") is shown
     assert (ui.fox() != "") is shown
@@ -55,7 +56,31 @@ def test_the_closing_panel_has_no_emoji_when_the_console_cannot_show_it(monkeypa
     assert "\U0001f98a" not in body and "PEEK-A-BOO!" in body and "youtu.be" in body
 
 
+@pytest.mark.parametrize(
+    ("platform", "env", "drawn"),
+    [
+        ("linux", {}, True),
+        ("darwin", {}, True),
+        ("win32", {}, False),  # the classic console: an empty box instead of the fox
+        ("win32", {"WT_SESSION": "1"}, True),
+        ("win32", {"TERM_PROGRAM": "vscode"}, True),
+        ("win32", {"WT_SESSION": ""}, False),  # set but empty is not set
+    ],
+)
+def test_the_fox_needs_a_terminal_that_draws_emoji(monkeypatch, platform, env, drawn):
+    for name in ("WT_SESSION", "TERM_PROGRAM", "ConEmuPID"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(ui.sys, "platform", platform)
+    monkeypatch.setattr(ui, "console", console_with("utf-8"))
+    assert (ui.fox() != "") is drawn
+    # Whatever the terminal, the link after it is still printed.
+    assert "youtu.be" in cli.done_summary(False, False)[1]
+
+
 def test_the_closing_panel_has_the_fox_in_utf8(monkeypatch):
+    monkeypatch.setattr(ui, "has_emoji_font", lambda: True)
     monkeypatch.setattr(ui, "console", console_with("utf-8"))
     assert "\U0001f98a" in cli.done_summary(False, False)[1]
 

@@ -114,10 +114,12 @@
     const updateTooltips = () => {
       for (const target of TARGETS) {
         try {
-          const node = CustomizableUI.getWidget(target.button.id).forWindow(window).node;
+          // The first run is before the buttons are created (they get their tooltip when they are),
+          // so no widget yet is expected and not worth a note.
+          const node = CustomizableUI.getWidget(target.button.id)?.forWindow(window).node;
           node?.setAttribute("tooltiptext", tooltipFor(target));
         } catch (e) {
-          // The button may not exist yet or any more; the tooltip is only a convenience.
+          // The button may have gone away, or Firefox changed its API; the tooltip is only a convenience.
           Diag.info("autohide:tooltip", e);
         }
       }
