@@ -347,7 +347,12 @@
 
     const BAR_NAMES = { TabsToolbar: "tabs", "nav-bar": "navbar", PersonalToolbar: "bookmarks" };
     const barOf = (node) => (node?.closest ? node : node?.parentElement)?.closest("#TabsToolbar, #nav-bar, #PersonalToolbar");
-    const endDrag = () => root.removeAttribute("peekafoxy-dragging");
+    // True while the marker was set by an item being dragged over a bar (not out of one).
+    let draggedOver = false;
+    const endDrag = () => {
+      root.removeAttribute("peekafoxy-dragging");
+      draggedOver = false;
+    };
     const dragInProgress = () => {
       try {
         return Boolean(Services.dragService.getCurrentSession(window));
@@ -361,6 +366,24 @@
       if (bar) root.setAttribute("peekafoxy-dragging", BAR_NAMES[bar.id]);
     }, true);
     for (const type of ["dragend", "drop"]) window.addEventListener(type, endDrag, true);
+
+    // Something dragged in from the page, another window or another program (a link, a file, a tab)
+    // and held over a hidden bar's strip opens that bar, so it can be dropped on it. It stays open
+    // while the item is over the bar and closes when the item goes to the page or leaves the window.
+    // An item dragged out of a bar keeps the marker that dragstart set: this does not touch it.
+    // The bookmarks bar has a strip of 0 px, so it opens with the navigation bar's.
+    window.addEventListener("dragenter", (event) => {
+      const bar = barOf(event.composedTarget ?? event.target);
+      if (bar && (draggedOver || !root.hasAttribute("peekafoxy-dragging"))) {
+        root.setAttribute("peekafoxy-dragging", BAR_NAMES[bar.id]);
+        draggedOver = true;
+      } else if (!bar && draggedOver) {
+        endDrag();
+      }
+    }, true);
+    window.addEventListener("dragleave", (event) => {
+      if (draggedOver && !event.relatedTarget) endDrag();
+    }, true);
     window.addEventListener("mousemove", () => {
       if (root.hasAttribute("peekafoxy-dragging") && !dragInProgress()) endDrag();
     }, true);
