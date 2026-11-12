@@ -531,7 +531,7 @@ def test_reduced_motion_still_wins_over_the_timing_settings(browser):
         browser.js("Services.prefs.clearUserPref('ui.prefersReducedMotion');")
 
 
-@pytest.mark.parametrize("name", ["switch", "new", "link"])
+@pytest.mark.parametrize("name", ["switch", "new", "link", "move"])
 def test_the_reveal_checkboxes_start_on_and_write_real_prefs(browser, name):
     pref = f"peekafoxy.tabs.reveal.{name}"
     browser.open_settings("#peekafoxy")
@@ -566,6 +566,7 @@ CLEAR_FLASH = (
     "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.new', false);"
     "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.link', false);"
     "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.switch', false);"
+    "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.move', false);"
 )
 RESET_FLASH = (
     "for (const name of ['load', 'download', 'title', 'move', 'new', 'link', 'switch'])"
@@ -583,7 +584,7 @@ def quiet_flash(browser):
     browser.js(REMOVE_TABS)
 
 
-@pytest.mark.parametrize("name", ["load", "download", "title", "move"])
+@pytest.mark.parametrize("name", ["load", "download", "title"])
 def test_the_extra_reveal_checkboxes_start_off_and_write_real_prefs(browser, name):
     pref = f"peekafoxy.tabs.reveal.{name}"
     browser.open_settings("#peekafoxy")
