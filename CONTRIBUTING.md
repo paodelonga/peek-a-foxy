@@ -71,6 +71,13 @@ Releases are cut from `main` by the maintainer. The version lives in `pyproject.
    `peek-a-foxy.exe`, `peek-a-foxy.exe.sha256`, `install.ps1` and the four manifest files, and that
    `gh attestation verify peek-a-foxy.exe -R paodelonga/peek-a-foxy` succeeds for the downloaded program.
 
+A release candidate (`vX.Y.ZrcN`, made with `cz bump --prerelease rc`, published as a *pre-release*) is
+the way to try the whole chain, in particular the Windows program, before the real release: GitHub's
+"latest release" ignores pre-releases, so `releases/latest/download/install.ps1` and the package
+managers keep pointing at the last real release, and a candidate is installed on purpose with
+`install.ps1 -Version X.Y.ZrcN`. `SCRIPT_VERSION` in `chrome/resources/peekafoxy.sys.mjs` has to be
+changed by hand to the same version as `pyproject.toml` (a test checks that they agree).
+
 The commit types decide the number: a `feat` is a minor bump, a `fix` a patch, and a `!` or a
 `BREAKING CHANGE:` footer a major bump (a minor one while the version is below 1.0).
 The first release, `v0.1.0`, was made by hand with the same steps, since there was no earlier tag.

@@ -39,10 +39,10 @@ $ErrorActionPreference = "Stop"
 $repository = "https://github.com/paodelonga/peek-a-foxy/releases"
 if ($Version -eq "latest") {
     $base = "$repository/latest/download"
-} elseif ($Version -match '^v?(\d+\.\d+\.\d+)$') {
+} elseif ($Version -match '^v?(\d+\.\d+\.\d+(?:rc\d+)?)$') {
     $base = "$repository/download/v$($Matches[1])"
 } else {
-    throw "Version must look like 1.2.3 (or be 'latest'), not '$Version'."
+    throw "Version must look like 1.2.3 or 1.2.3rc1 (or be 'latest'), not '$Version'."
 }
 
 # The hash file is saved and then read as text. Invoke-WebRequest's own .Content is a byte array,

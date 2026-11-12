@@ -53,7 +53,18 @@ def test_the_winget_files_share_one_identifier_version_and_upper_case_hash(tmp_p
 
 @pytest.mark.parametrize(
     ("version", "digest"),
-    [("v0.3.0", DIGEST), ("0.3", DIGEST), ("0.3.0", "abc"), ("0.3.0", "zz" * 32)],
+    [
+        ("v0.3.0", DIGEST),
+        ("0.3", DIGEST),
+        ("0.3.0", "abc"),
+        ("0.3.0", "zz" * 32),
+        ("0.3.0-rc.1", DIGEST),
+        ("0.3.0rc", DIGEST),
+        ("0.3.0rc1rc2", DIGEST),
+        ("0.3.0.dev1", DIGEST),
+        ("0.3.0rc1\n", DIGEST),
+        ("", DIGEST),
+    ],
 )
 def test_bad_versions_and_hashes_are_refused(tmp_path, version, digest):
     with pytest.raises(ValueError):
@@ -292,3 +303,41 @@ def test_the_smoke_test_proves_registry_discovery_and_the_version_and_cannot_be_
         assert needed in script
     # The registration is private to the run and removed even when the check throws.
     assert re.search(r"finally\s*\{[^}]*Remove-Item", script)
+
+
+def test_a_release_candidate_version_is_accepted_by_the_renderer(tmp_path):
+    written = load_renderer().render("0.3.0rc1", DIGEST, tmp_path)
+    assert json.loads((tmp_path / "peek-a-foxy.json").read_text())["version"] == "0.3.0rc1"
+    assert written
+
+
+def _install_script_version_pattern() -> re.Pattern[str]:
+    script = (ROOT / "packaging" / "install.ps1").read_text(encoding="utf-8")
+    found = re.search(r"\$Version -match '(\^v\?\(.*?\)\$)'", script)
+    assert found, "the version check of install.ps1 was not found"
+    return re.compile(found.group(1))
+
+
+@pytest.mark.parametrize("version", ["0.3.0", "v0.3.0", "10.20.30", "0.3.0rc1", "v0.3.0rc12"])
+def test_install_ps1_takes_releases_and_release_candidates(version):
+    assert _install_script_version_pattern().match(version)
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "0.3",
+        "0.3.0-rc.1",
+        "0.3.0rc",
+        "0.3.0rc1rc2",
+        "latest ",
+        "..\\1.2.3",
+        "1.2.3/../../x",
+        "0.3.0\n",
+        "",
+    ],
+)
+def test_install_ps1_refuses_anything_else_as_a_version(version):
+    # ``$`` in .NET also matches before a final newline, which is why the newline case is here:
+    # the pattern is applied to a value that goes into a URL, so it has to be exact.
+    assert not _install_script_version_pattern().fullmatch(version)
