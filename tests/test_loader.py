@@ -6,21 +6,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from support import needs_permissions, needs_symlinks
+from support import git, needs_permissions, needs_symlinks
 
-from peek_a_foxy import loader
+from peek_a_foxy import errors, loader
 from peek_a_foxy.loader import LoaderError, fetch_loader
-
-
-def git(repo: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
 
 
 def add_commit(repo: Path, message: str) -> str:
@@ -115,7 +104,7 @@ def test_a_server_that_refuses_a_fetch_by_hash_falls_back_to_a_clone(fxac_repo: 
 
     def refuse_fetch(*args: str, **kwargs):
         if args[0] == "fetch":
-            raise LoaderError("git fetch failed: not our ref")
+            raise LoaderError(errors.GIT_FAILED, "git fetch failed: not our ref")
         return real(*args, **kwargs)
 
     monkeypatch.setattr(loader, "_git", refuse_fetch)
@@ -206,26 +195,12 @@ def test_a_tree_with_read_only_files_can_be_removed_on_every_platform(tmp_path: 
     assert not tree.exists()
 
 
-@pytest.mark.parametrize(
-    ("system", "needle"), [("windows", "Git for Windows"), ("linux", "git is")]
-)
-def test_missing_git_is_explained_for_the_platform(monkeypatch, system, needle):
+def test_missing_git_is_explained_and_points_to_the_loader_that_comes_with_the_program(monkeypatch):
     monkeypatch.setattr(loader.shutil, "which", lambda name: None)
-    monkeypatch.setattr(loader.platform, "system", lambda: system)
-    with pytest.raises(LoaderError, match=needle) as caught, fetch_loader():
+    with pytest.raises(LoaderError, match="git is required") as caught, fetch_loader():
         pass
-    assert "--skip-loader" in str(caught.value)
-    assert ("winget" in str(caught.value)) is (system == "windows")
-
-
-def test_missing_git_on_an_unsupported_platform_still_says_so(monkeypatch):
-    def unsupported():
-        raise loader.platform.UnsupportedPlatformError("nope")
-
-    monkeypatch.setattr(loader.shutil, "which", lambda name: None)
-    monkeypatch.setattr(loader.platform, "system", unsupported)
-    with pytest.raises(LoaderError, match="git is required"), fetch_loader():
-        pass
+    assert caught.value.code is errors.GIT_MISSING
+    assert "FXAC_REPO" in caught.value.hint and "FXAC_COMMIT" in caught.value.hint
 
 
 @needs_symlinks

@@ -11,6 +11,16 @@ is and what controls it, with a *Known issues* section for what is not covered.
 
 ### Added
 
+- **A new setting: how long the pointer must stay on an activation strip before its bar opens** (`peekafoxy.show.delay.ms`, 0 to 5000, default 100, so a pointer that only brushes past a strip no longer opens the bar; set it to 0 for the old behaviour). It applies to the hover strips only; shortcuts, flashes and popups still open the bars at once. In the CSS it is `--autohide-show-delay`.
+- Something small is hiding in the settings page, and there is a clue to it in one of the shortcuts.
+- **A fourth extra reason for the tab bar to open for a moment: tabs being reordered** (`peekafoxy.tabs.reveal.move`, on by default like the reasons of tab switches and new tabs), with `Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` or a drag, so that with the bar hidden you can see where the tab went.
+- **Git is no longer needed.** The few fx-autoconfig files that get installed (about 85 KB, under the MPL-2.0, at the commit that was already pinned) now come inside the package and the standalone program, and every one is checked against the SHA-256 of a manifest before anything is changed, so nothing is downloaded for the loader. The Scoop and winget manifests no longer depend on Git, `doctor` checks the bundled files instead of Git (a damaged copy is `PAF-204`), and `FXAC_REPO` and `FXAC_COMMIT` still fetch another commit with `git` for tests. `python packaging/update_loader.py` refreshes the files from a new commit.
+- **Three more reasons for the tab bar to open for a moment**, all off by default: the page of the current tab finishes loading (`peekafoxy.tabs.reveal.load`), a download finishes (`peekafoxy.tabs.reveal.download`) and the title of a tab in the background changes (`peekafoxy.tabs.reveal.title`). They share the reveal time of the other three.
+- **The activation strip of each bar can have its own thickness** (`peekafoxy.tabs.strip.px` and `peekafoxy.urlbar.strip.px`, 0 to 40). The default, 0, keeps following `peekafoxy.strip.px`, so nothing changes until you set one. In the CSS they are `--autohide-tabs-strip` and `--autohide-nav-strip`.
+- **The closing animation has a duration of its own** (`peekafoxy.hide.ms`, 0 to 2000, default 200, which is what it always was). In the CSS it is `--autohide-hide-duration`.
+- The setting for the strip thickness is now called *Activation strip thickness* in the settings page.
+- **The animation curve can be chosen** (`peekafoxy.easing`: `smooth`, the default and what it always was, `linear` or `snappy`). In the CSS they are `--autohide-show-easing` and `--autohide-hide-easing`. The settings page gets its first list of choices for it.
+- **The bookmarks bar can stay visible** while the navigation bar hides (`peekafoxy.bookmarks`: `follow`, the default, opens and closes it with the navigation bar; `visible` keeps it showing, and hovering it then no longer opens the navigation bar).
 - **Windows support** (Windows 10/11, tested in CI on a real Windows runner and not yet by hand on a
   desktop; see the README's *Windows notes*):
   - **Profiles and Firefox are found.** Profiles in `%APPDATA%\Mozilla\Firefox` (falling back to the
@@ -24,13 +34,21 @@ is and what controls it, with a *Known issues* section for what is not covered.
     user, so when the direct copy is refused, `config.js` and `defaults\pref\config-prefs.js` are
     written by a short-lived elevated process; the rest of the command runs as you. An administrator
     who still cannot write gets an error instead of a second prompt; saying no to the prompt, a
-    timeout or a failed copy each have a clear message. The elevated process is `python -I -S -c`,
-    run with the base interpreter rather than a pipx or uv environment's copy (no module, file or working directory from a writable place is loaded), receives the two files'
-    bytes in its command line, checks them against SHA-256 values pinned in the package next to the
-    fx-autoconfig commit (a network test compares them with the real files), writes only into a folder
-    with `omni.ja`, `firefox.exe` and an `application.ini` saying Firefox, refuses links and
-    junctions, reports through its exit code, and is refused when `FXAC_REPO` or `FXAC_COMMIT`
-    override the pin. Residual risk, stated in the README: it runs `python.exe` with your approval.
+    timeout or a failed copy each have a clear message. The elevated process is the Windows PowerShell
+    of the system folder (found through `GetSystemDirectoryW`, never through `PATH`), started with
+    `-NoProfile -NonInteractive -EncodedCommand`; the same route serves the standalone program and an
+    installation with Python, so neither a Python installation nor the program itself runs elevated.
+    Its script is generated with the Firefox folder, the two files and their SHA-256 values pinned in
+    the package next to the fx-autoconfig commit (a network test compares them with the real files).
+    It stops unless PowerShell is in its full language mode (`PAF-307`), the hashes match, the folder
+    is a Firefox folder (`omni.ja`, `firefox.exe` and an `application.ini` saying Firefox) and no link,
+    junction, short (8.3) name or substituted drive is on the way; then it writes each file aside and
+    renames it into place, and it reports only through its exit code. It is refused when `FXAC_REPO` or
+    `FXAC_COMMIT` override the pin, and Peek-a-Foxy asks Windows first whether the folder is the real
+    place, so a path that the script would refuse does not show a prompt. Residual risk, stated in the
+    README and in `SECURITY.md`: a program that already runs as you can still try to abuse the prompt
+    through what Windows and .NET read from your own settings (for example environment variables that
+    load a .NET profiler).
   - **Tab bar and the title bar Firefox draws itself.** On Windows (and on Linux with client-side
     decorations, and on macOS) Firefox sets `customtitlebar` and puts the window buttons and the drag
     area inside the tab bar. In that case the autohide hides only the tabs and keeps the window
@@ -43,30 +61,55 @@ is and what controls it, with a *Known issues* section for what is not covered.
     Python, the error explains `--yes` and `winpty`.
   - `windows-latest` joins the unit tests (Python 3.10 and 3.13), the headless-Firefox suite, the
     network tests and the weekly Firefox run, including a check of the real title bar layout.
-
-### Changed
-
-- **The loader is fetched with `core.autocrlf=false` and `core.longpaths=true`**, read as UTF-8, and the
-  checkout is removed even when git's object files are read-only. Git for Windows converts line
-  endings by default, which handed Firefox a `config.js` with CRLF. A missing git on Windows points to
-  Git for Windows and `winget`.
-- The step that installs the loader says "asks for administrator permission if needed" on Windows
-  instead of "uses sudo if needed".
-- The README no longer says the shortcuts will become configurable (they have been since 0.2.0).
-
-### Known issues
-
-- The administrator prompt, a Firefox update replacing its folder, Microsoft Store builds, per-user
-  installs, the real title bar and window dragging, hover and menus, native drag, AltGr layouts, the
-  consoles (cmd, PowerShell, Windows Terminal, Git Bash), antivirus and long paths have only been
-  exercised on a headless CI runner, not by hand on a desktop.
-- With the title bar drawn by Firefox, a slim row with the window buttons stays when the tab bar is
-  hidden; turn on Firefox's own title bar to collapse it fully.
-- The runner image's Firefox already uses autoconfig (`mozilla.cfg`); the loader still worked there.
-  Another `general.config.filename` set elsewhere is not detected.
-- Windows still needs Python and Git for Windows. A standalone program with Scoop and winget packages
-  is planned.
-
+  - **A guard on the length of the elevated command.** A command over 32,767 characters is refused
+    with `PAF-306` and a hint before anything is started (the real command is about 12.7 thousand
+    characters).
+- **A standalone Windows program, an install script and package manifests (not published yet).** When
+  a release is published, `.github/workflows/exe.yml` builds `peek-a-foxy.exe` with PyInstaller from a
+  hash-pinned lock, checks it (its version, a registry lookup of Firefox, an install into a throwaway
+  profile) and attaches it to the release with its SHA-256, `install.ps1` and filled-in Scoop and winget
+  manifests; a separate job signs a build provenance attestation, which
+  `gh attestation verify peek-a-foxy.exe -R paodelonga/peek-a-foxy` checks. `install.ps1`
+  (`irm https://github.com/paodelonga/peek-a-foxy/releases/latest/download/install.ps1 | iex`)
+  installs for the current user without administrator rights: it checks the download against its
+  published SHA-256, copies the program to `%LOCALAPPDATA%\Programs\peek-a-foxy` and adds that folder
+  to the user `PATH`, keeping the entries that use `%VARIABLES%` as they were. No release has these
+  files yet, the program is not code-signed, and the manifests are templates that nothing has
+  submitted to Scoop or winget; the README says so.
+- **Every expected error has a code, a plain message and a "What to do" line** (`PAF-101` to `PAF-900`,
+  listed in the README). `--verbose` (`-v`) adds the technical details. An unexpected error is a bug in
+  Peek-a-Foxy: it ends with code `PAF-900`, exit code 70 and a pointer to the log, and a traceback never
+  prints local variables. Exit codes are `0`, `1` (an expected failure, or you said no), `2` (a wrong
+  option), `70` and `130` (Ctrl+C). Codes are never reused.
+- **A local log** of every run (3 files of at most 5 MB, in the place each system keeps this kind of
+  file, private to your account), with your home folder, user name, Firefox profile folder names,
+  tokens and credentials hidden. `--log-file`, `--no-log` and `PEEK_A_FOXY_LOG=off|PATH` control it.
+  If it cannot be written, one warning is shown and the command carries on. Nothing is sent anywhere.
+- **`peek-a-foxy logs`** shows where the log is and what the last run did; `--open` opens its folder
+  and `--clear` deletes it (after asking, or with `--yes`).
+- **`peek-a-foxy doctor`**, a report of the program, of every Firefox installation, of the profiles
+  and of what the script saw inside Firefox, with a code and a hint for every problem (`PAF-601` to
+  `PAF-617`). It is a table in a terminal, Markdown otherwise (`--markdown`) or JSON (`--json`), and
+  `--copy` puts it on the clipboard and `--save [PATH]` saves it without replacing a file (`PAF-403`).
+  It changes none of your files. Every part of it that comes from a file is cleaned and limited, and a
+  part that crashes becomes a warning instead of ending the report.
+- **A status file, a health check and a Support group.** The script saves what it found in
+  `chrome/peekafoxy-status.json` (schema 1) when Firefox starts and whenever something changes, with the
+  last 50 events of the script. A health check looks for the elements, toolbar buttons, settings and
+  shortcuts that Peek-a-Foxy depends on and names the change in Firefox that it suspects. The Peek a
+  Foxy settings page has a **Support** group with a line that says whether the script is working in the
+  window and a **Copy diagnostic info** button that needs no terminal (in English and Portuguese). The
+  doctor reads the status file.
+- **`--allow-unverified-loader`** lets `sudo` copy a loader chosen with `FXAC_REPO` or `FXAC_COMMIT`
+  (see *Security*), and `--firefox-dir` must now be a Firefox folder: a folder without `omni.ja` (on
+  Windows also `firefox.exe`) is refused with `PAF-109`.
+- **The toolbar buttons look pressed** while the bar they belong to is hidden in their window.
+- **A bar stays open while a popup that belongs to it is open** (the menu of one of its buttons, the
+  list of all tabs, a bookmarks folder), however many popups are nested, and a window that a page opens
+  as a popup never hides its navigation bar.
+- **The settings page says when vertical tabs are on**, because Firefox then has no tab bar to hide and
+  the tab bar options do nothing, and **warns when the shortcut you record is one that Firefox already
+  uses**. Backspace or Delete in a shortcut field restores the default.
 - **Choose what opens the tab bar for a moment.** The Peek-a-Foxy section of Firefox's settings has a
   "Reveal the tab bar when" group with one switch for each trigger, all on by default (the behavior
   until now), applied to every open window at once: switching to another tab
@@ -79,6 +122,113 @@ is and what controls it, with a *Known issues* section for what is not covered.
     other address counts as a link. A bookmark opened in a new tab therefore follows the "link" switch.
   - A tab that is opened and selected fires two events; the "new tab" or "link" switch decides, so
     turning one off is not undone by the tab switch that comes with it.
+- **A one-time backup of the user's files.** The first time `install` or `uninstall` is about to change an existing `userChrome.css` or `user.js`, a copy is kept next to it as `<file>.peek-a-foxy.bak`; it is never replaced and `uninstall` never deletes it. It holds the file as it was when a version that makes backups first changed it, so it already has Peek-a-Foxy's lines if an earlier version, or an `install` that created the file, wrote them.
+- **`uninstall` removes `chrome/peekafoxy-status.json` and its `.tmp` leftover**, and only warns if something else is at that name.
+- **The weekly Firefox run also covers the ESR** (`latest-esr`), and every test job of the CI uploads a doctor report for its system and Python version.
+
+### Changed
+
+- **The default shortcut of the navigation bar changed** to `Ctrl+Alt+Shift+U`, because `Ctrl+Alt+U` is Firefox's own shortcut for the Open Tabs sidebar. The tab bar keeps `Ctrl+Alt+T` on every system. **If you never changed the navigation bar shortcut in 0.2.0 or earlier, it changes with this update.** A value that you set yourself is kept; to go back to the old one, set `peekafoxy.urlbar.shortcut` to `Ctrl+Alt+U` in the settings page or in `about:config`.
+- **The settings page and the toolbar buttons are reworded** in English and Portuguese so that they read
+  naturally. The section is called **Peek a Foxy 🦊**, the buttons are **Auto-hide the tab bar** and
+  **Auto-hide the navigation bar** (the Portuguese ones say "barra de navegação", not "barra de
+  endereço"), reset buttons are **Restore default**, and the page and the buttons say "navigation bar"
+  everywhere. Each shortcut field shows its instruction as a visible line, names its reset button after
+  the field, and gives the focus back after a reset; a right-to-left Firefox no longer mirrors the English
+  sentences. The **show the greeting again** button is gone; the one-time greeting on first run stays
+  (set `peekafoxy.welcomed` to `false` to see it again).
+- **The loader is fetched with `core.autocrlf=false` and `core.longpaths=true`**, read as UTF-8, and the
+  checkout is removed even when git's object files are read-only. Git for Windows converts line
+  endings by default, which handed Firefox a `config.js` with CRLF.
+- **`git` gets a time limit of 120 seconds and never asks for a password**, and an offline run shows one
+  failure instead of two attempts. A loader copy into a writable Firefox folder is written aside and
+  renamed, so it appears whole or not at all. A loader that is already in place is left alone, so a run
+  that has nothing to do no longer asks for `sudo` or for the administrator prompt.
+- The step that installs the loader says "asks for administrator permission if needed" on Windows
+  instead of "uses sudo if needed".
+- The README no longer says the shortcuts will become configurable (they have been since 0.2.0).
+- **The user files are replaced atomically.** The new content is written to a temporary file in the same folder and renamed over the old one, so a crash or a full disk cannot leave half a file; a symbolic link is followed to the real file and stays a link; permissions and owner are kept; a read-only file is respected; a change made by another program while the command works makes the edit start over from the new content; a file over 64 MiB is refused.
+- **`user.js` and `userChrome.css` are read the way Firefox reads them.** A pref or an `@import` inside a `/* */` comment (or after `//` in `user.js`) does not count, in `install`, `uninstall` and `doctor`; an added line is never put inside a comment, and goes in front of one that is never closed. Each line keeps its own ending in a file that mixes LF and CRLF. A named pipe, a socket, a device or a folder behind either file (a link to `/dev/null`, for example) is refused with `PAF-402` before anything changes.
+- **`doctor --profile` and `--firefox-dir` accept a folder that does not exist** (the report says `PAF-605` or `PAF-105` instead of the command ending with exit code 2), and `--save` takes a path that starts with `-`.
+- **Typer and Rich have lower and upper bounds** (`typer>=0.16.0,<0.30`, `rich>=13.8,<16`): the lower ones are the oldest versions that pass the test suite, and a CI job runs the suite with exactly those. The CI also pins every action and pre-commit hook by commit, gives every job a time limit, cancels superseded pull request runs and tests Python 3.14.
+- The script's `isNewTabPage` no longer rebuilds its list or imports its two modules on every new tab.
+- **`uninstall` also removes the `chrome/JS` and `chrome/resources` folders once they are empty.** After the
+  Peek-a-Foxy files are gone, each folder is removed with a single `rmdir`, so a folder that still holds
+  anything (another script of yours, for example), a folder that is a link or a junction, and a folder that
+  is missing or cannot be removed are all left as they are, quietly (the reason goes to the log). The plan
+  shown by `uninstall` and `--dry-run` says so.
+- **`logs` and `uninstall` have their own help for `--yes`, and `logs` for `--log-file`.** `logs --yes` says
+  that it only answers the question of `--clear`, `uninstall --yes` no longer mentions the Firefox
+  installation, which `uninstall` never looks at, and `logs --log-file` says that it names the log to look
+  at. The help of `--install-completion` says that it covers bash, zsh and fish and sends PowerShell to
+  `--show-completion`, and the help of `doctor` no longer breaks in the middle of a sentence in the list
+  of commands.
+
+### Fixed
+
+- **A broken pipe stopped `install` and `uninstall` half way.** Rich turned it into `SystemExit(1)` inside a step, so `peek-a-foxy install --yes | head -1` left the profile half installed. Output that cannot be written (a closed pipe, a closed stream, a full disk) is now lost quietly, the work finishes, and no command prints a traceback or exits with 120.
+- **Warnings broke `doctor --json` and `--markdown`.** Every warning now goes to the error output (stderr), so the report on the standard output can always be read by a program or pasted.
+- **Redaction.** A home folder that is a drive root (`C:\`) no longer removes every `C:` from the text; file names of eight characters such as `autohide.uc.js` in a stack frame are no longer replaced by `<profile>` (the same exclusion as the Firefox side); a profile or user named `profile` or `user` no longer turns `<profile>` into `<<profile 1>>`, and redacting a text twice gives the same text. A home folder is replaced only as a whole folder name (`/home/al` no longer turns `/home/alice` into `~ice`, in the program and in the script), also in the spelling that a link resolves to (`/var/home/you`), ignoring case on macOS; the 8.3 short name of a Windows user, `NAME_TOKEN=...`, `password: ...`, JSON secrets and `Bearer ...` are hidden; the pattern for credentials in URLs no longer takes quadratic time (a 30 KB line in `profiles.ini` made `doctor` run for 13 seconds); a line break in a message cannot forge a log line; and a bug's traceback is shown once, redacted, under `--verbose`.
+- **The message of `PAF-501` said that macOS works.** It now says that Peek-a-Foxy works on Linux and Windows
+  and that it also knows where Firefox keeps its files on macOS, but that this has never been tried on a
+  real Mac; the README says the same.
+- **The log only goes to a log.** `PEEK_A_FOXY_LOG` or `--log-file` pointing at another kind of file (a `user.js`, a named pipe) is refused with a warning, and `logs --clear` deletes only files that are logs. The log file is created with mode `600` and its new folder with `700`. `~name` in `PEEK_A_FOXY_LOG`, `--log-file` or `--save` is a warning or a coded error, not "a bug".
+- **The state of each bar did not come back with a restored session**, and a new window did not save its state until the first toggle: Firefox does not know a window to its SessionStore while it starts ("Window is not tracked"), and a restored window gets its saved values later. The script now applies the saved values when SessionStore knows the window and again whenever a window state is restored (`SSWindowStateReady`), and saves the state of a window that has none. One visible effect: in a restored window the bar may start in the default state and then move to the saved one a fraction of a second later.
+- **A false error in every popup window** that a page opened (the script ran before the window had its browser and toolbox) is gone, and a window that closes while the script starts no longer ends up in the health registry.
+- A `profiles.ini` with `IsRelative=` empty or with a value that is not a boolean, or with a NUL byte in a path, is `PAF-102` with a hint, and a missing home folder is `PAF-101`, instead of "this is a bug" (`PAF-900`, exit 70). `--profile` or `--firefox-dir` given as a link that loops is a usage error on every Python version.
+- `doctor` no longer waits for ever on a named pipe called `user.js`, `userChrome.css`, `prefs.js` or the status file, and it reports the loader pin the way `install` would refuse it (`PAF-203` for a malformed `FXAC_COMMIT`, `PAF-207` or `PAF-305` for an override, by system).
+- Adding the `@import` after a closing comment in a CRLF file without a final line break no longer leaves a lone CR, and running the edit twice changes nothing.
+- Ctrl+C in the middle of a plan says how many steps had finished and that the running step was interrupted.
+- The message "Firefox cannot run the script without them.run the script." is fixed; the texts that said `doctor` and `--dry-run` change nothing although they write the log now say so; error messages of an edit name `userChrome.css` and not its temporary file.
+- A folder is refused as Flatpak only when its path has `/flatpak/app/` or `/flatpak/runtime/`; `/usr/lib64/firefox` is searched; the invisible direction marks U+200E, U+200F and U+061C are neutralised in reports.
+
+### Security
+
+- **The root copy of the loader on Linux and macOS is verified.** The bytes of `config.js` and `defaults/pref/config-prefs.js` are checked against the SHA-256 values pinned next to the fx-autoconfig commit and the very bytes that were checked go to `sudo` (`sudo install -m 644 /dev/stdin <destination>` on Linux, `sudo tee` and `sudo chmod` on macOS, which has not been run on a Mac): the file in the temporary checkout is not read a second time. With `FXAC_REPO` or `FXAC_COMMIT` the copy is refused (`PAF-207`) unless `--allow-unverified-loader` is given, and the log then records that the copy was made without verification.
+- **`--firefox-dir` must be a Firefox folder** (`PAF-109`), so `--firefox-dir /usr/lib` can no longer make `sudo` write `/usr/lib/config.js`. A `chrome/utils` folder that is a symbolic link is refused (`PAF-404`) before anything is copied through it.
+- **A named pipe, a socket, a device or a folder behind `userChrome.css` or `user.js` is never replaced**: the command stops with `PAF-402` before it changes anything.
+- **`--install-completion` is refused for PowerShell.** Typer's installer first runs
+  `Set-ExecutionPolicy Unrestricted -Scope CurrentUser`, which lets any script run, before it writes to the
+  PowerShell profile, and it has no option to skip that. Peek-a-Foxy replaces that installer with a message
+  that exits with code 1 and changes nothing; in PowerShell, run `peek-a-foxy --show-completion` and add what
+  it prints to your PowerShell profile yourself. bash, zsh and fish are not affected.
+- **CI.** Every action, including the third-party `browser-actions/setup-firefox`, and every pre-commit hook is pinned by its full commit hash with the version in a comment; no checkout keeps the token in `.git/config` (`persist-credentials: false`); the standalone program is built from a lock where every file is hashed (`pip install --require-hashes`), and the job that can sign the attestation is separate from the job that runs the build.
+
+### Documentation
+
+- The READMEs now introduce Peek-a-Foxy as a customization tool for Firefox, say that macOS has never been tried on a real Mac, and describe the PowerShell completion, the empty folders that `uninstall` removes and the help of `--yes` and `--log-file` in `uninstall` and `logs`.
+- The READMEs, `CONTRIBUTING.md`, `SECURITY.md` and the issue forms now cover the diagnostics (`doctor`, `logs`, the log, the status file, the exit codes and a table of every `PAF-` code, in English and Portuguese), the new default shortcuts, the Windows install routes and the elevation model with its residual risk, and the release steps of the standalone program. The bug report form asks for the output of `peek-a-foxy doctor --copy`.
+- The roadmap section points to the GitHub Project instead of listing items.
+- The README says that the backup holds the file as it was when a version that makes backups first changed it, and that Firefox must be closed for `uninstall` to remove the status file for good.
+
+### Known issues
+
+- The administrator prompt, a Firefox update replacing its folder, Microsoft Store builds, per-user
+  installs, the real title bar and window dragging, hover and menus, native drag, AltGr layouts, the
+  consoles (cmd, PowerShell, Windows Terminal, Git Bash), antivirus and long paths have only been
+  exercised on a headless CI runner, not by hand on a desktop.
+- The elevated PowerShell script has been run with PowerShell 7 on Linux and in tests, but not yet on
+  Windows PowerShell 5.1, which is what the administrator step starts. Not yet checked on Windows: how
+  the script behaves under real Constrained Language Mode or AppLocker, whether an antivirus questions
+  an `-EncodedCommand` start, `install.ps1` under Windows PowerShell 5.1, the PyInstaller build and its
+  smoke test on a Windows runner, and the attestation job on a real release.
+- With the title bar drawn by Firefox, a slim row with the window buttons stays when the tab bar is
+  hidden; turn on Firefox's own title bar to collapse it fully.
+- The runner image's Firefox already uses autoconfig (`mozilla.cfg`); the loader still worked there.
+  Another `general.config.filename` set elsewhere is not detected.
+- The standalone Windows program is not published yet: the program, the install script and the Scoop
+  and winget manifests exist only as what a release will attach.
+- A hard kill (power loss, `kill -9`) between the temporary file and the rename leaves a file named `<file>.<pid>.<random>.peek-a-foxy.tmp` next to the user's file. The user's file itself is never half written; the leftover can be deleted by hand.
+- The edit replaces the file, so a hard link to `userChrome.css` is broken (the link becomes a separate file), and extended attributes, ACLs and the SELinux label of the old file are not copied to the new one.
+- The step that checks for a change made by another program compares the content just before the rename; a change in the few microseconds between that check and the rename is still lost.
+- When `install` creates `userChrome.css` (there was none) and `uninstall` is the first command to change it afterwards, the backup copy already holds Peek-a-Foxy's `@import` line.
+- A pref that shares a line with another (`user_pref("a", 1); user_pref("b", 2);`) is seen only when it is the first on its line.
+- The copy of `chrome/utils` is refused through a link, but the plain copy of the Peek-a-Foxy files into the profile still writes through a symbolic link at `chrome/` or `chrome/JS`, without a backup.
+- `--install-completion` is Typer's installer for bash, zsh and fish: it edits the shell's startup file outside the atomic edits and the log. For PowerShell it is refused (see *Security*).
+- On Windows, when the Firefox folder is writable by you but the direct copy still failed (a read-only `config.js`, a file held by an antivirus), a program of yours could in theory replace the `defaults` folder by a junction between the checks of the elevated script and its writes; what could be written is limited to the fixed content of the two pinned files.
+- Windows is unverified for: the broken pipe handling (the errors Windows raises for a closed pipe differ) and an antivirus holding the file when the rename happens (the edit fails with `PAF-402`, safe to repeat).
+- The settings-page check appears in the status file only after the Peek a Foxy settings page has been opened once in the current Firefox session.
+- If Firefox is running when you run `uninstall`, it writes the status file again; close Firefox first, or delete the file after closing it.
 
 ## [0.2.0] - 2026-11-04
 
@@ -343,5 +493,6 @@ The first public release.
   of the profile and of Firefox is not exercised there. Windows is not supported.
 - **Snap and Flatpak** builds of Firefox are not supported.
 
-[Unreleased]: https://github.com/paodelonga/peek-a-foxy/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/paodelonga/peek-a-foxy/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/paodelonga/peek-a-foxy/releases/tag/v0.2.0
 [0.1.0]: https://github.com/paodelonga/peek-a-foxy/releases/tag/v0.1.0

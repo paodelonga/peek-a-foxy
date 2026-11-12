@@ -145,3 +145,73 @@ def test_changing_a_reveal_pref_applies_at_once_in_every_window(browser):
     browser.js("window.close();")
     browser.switch_to(browser.first_window)
     assert second
+
+
+# --- what the new-tab check remembers, and what it must not --------------------------------------
+
+HOME = "browser.startup.homepage"
+
+
+def test_a_home_page_that_changes_while_firefox_runs_is_noticed_each_time(browser):
+    """Only the fixed list and the imported modules are kept; the addresses are read every time."""
+    first, second = "https://example.invalid/home-one", "https://example.invalid/home-two"
+    set_reveals(browser, switch=False, new=True, link=False)
+    try:
+        for home, other in ((first, second), (second, first), (first, second)):
+            browser.js("Services.prefs.setStringPref(arguments[0], arguments[1]);", HOME, home)
+            browser.js("document.documentElement.removeAttribute('tabs-flash');")
+            browser.js("gBrowser.addTrustedTab(arguments[0], {inBackground: true});", home)
+            expect_flash(browser, True, f"the home page {home}")
+            browser.js("document.documentElement.removeAttribute('tabs-flash');")
+            browser.js("gBrowser.addTrustedTab(arguments[0], {inBackground: true});", other)
+            expect_flash(browser, False, f"{other} is no longer the home page")
+    finally:
+        browser.js("Services.prefs.clearUserPref(arguments[0]);", HOME)
+
+
+def test_a_home_page_with_several_addresses_is_compared_as_the_whole_text(browser):
+    """What the check did before it kept anything: the value of the pref is one string."""
+    both = "https://example.invalid/a|https://example.invalid/b"
+    browser.js("Services.prefs.setStringPref(arguments[0], arguments[1]);", HOME, both)
+    try:
+        set_reveals(browser, switch=False, new=True, link=False)
+        browser.js("document.documentElement.removeAttribute('tabs-flash');")
+        browser.js("gBrowser.addTrustedTab('https://example.invalid/a', {inBackground: true});")
+        expect_flash(browser, False, "one of the addresses, which is a link, as before")
+    finally:
+        browser.js("Services.prefs.clearUserPref(arguments[0]);", HOME)
+
+
+IMPORTS = """
+    const seen = [];
+    const utils = window.ChromeUtils;  // the one the script of this window uses
+    const real = utils.importESModule;
+    utils.importESModule = function (url, ...rest) {
+      if (/AboutNewTab|HomePage/.test(url)) seen.push(url);
+      return real.call(this, url, ...rest);
+    };
+    window.__imports = { seen, restore: () => { utils.importESModule = real; } };
+"""
+
+
+def test_the_modules_are_imported_once_and_not_at_all_for_the_usual_addresses(browser):
+    browser.new_window()  # a window whose script has not looked at any tab yet
+    set_reveals(browser, switch=False, new=True, link=False)
+    browser.js(IMPORTS)
+    try:
+        for _ in range(6):
+            for address in ("about:newtab", "about:blank", "about:home", ""):
+                browser.js("gBrowser.addTrustedTab(arguments[0], {inBackground: true});", address)
+        time.sleep(0.7)
+        assert browser.js("return window.__imports.seen.length;") == 0  # the fixed list answers
+        for _ in range(6):
+            browser.js("gBrowser.addTrustedTab(arguments[0], {inBackground: true});", URL)
+        time.sleep(0.7)
+        assert 1 <= browser.js("return window.__imports.seen.length;") <= 2  # once per module
+        for _ in range(6):
+            browser.js("gBrowser.addTrustedTab(arguments[0], {inBackground: true});", URL)
+        time.sleep(0.7)
+        assert browser.js("return window.__imports.seen.length;") <= 2  # and never again
+    finally:
+        browser.js("window.__imports.restore();")
+        browser.js("for (const tab of [...gBrowser.tabs].slice(1)) gBrowser.removeTab(tab);")

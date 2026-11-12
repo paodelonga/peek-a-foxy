@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 from support import needs_symlinks
 
-from peek_a_foxy import platform
+from peek_a_foxy import errors, platform
+from peek_a_foxy.errors import DiscoveryError
 
 
 def fake_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
@@ -29,7 +30,10 @@ def test_profiles_root_macos(monkeypatch, tmp_path):
 @pytest.mark.parametrize("name", ["cygwin", "msys", "freebsd14", "sunos5"])
 def test_other_platforms_are_rejected_clearly(monkeypatch, name):
     monkeypatch.setattr(sys, "platform", name)
-    with pytest.raises(platform.UnsupportedPlatformError, match="Linux, macOS and Windows"):
+    with pytest.raises(
+        platform.UnsupportedPlatformError,
+        match="only the Linux, macOS and Windows locations are known",
+    ):
         platform.system()
 
 
@@ -215,6 +219,57 @@ def test_profiles_root_windows_falls_back_to_the_home_folder(windows, monkeypatc
     assert platform.profiles_root() == windows / "AppData" / "Roaming" / "Mozilla" / "Firefox"
 
 
+# --- a person with no home folder (a service account, a container, a task with no profile) ----
+
+
+def no_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    def cannot(cls):
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(Path, "home", classmethod(cannot))
+
+
+@pytest.mark.parametrize("name", ["linux", "darwin", "win32"])
+def test_no_home_folder_is_a_coded_error_not_a_crash(monkeypatch, name):
+    monkeypatch.setattr(sys, "platform", name)
+    monkeypatch.delenv("APPDATA", raising=False)
+    no_home(monkeypatch)
+    with pytest.raises(DiscoveryError) as caught:
+        platform.profiles_root()
+    assert caught.value.code is errors.NO_PROFILES_INI
+    assert "RuntimeError" in caught.value.detail  # what the system said, for the log
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("x"), OSError(5, "I/O error"), KeyError("HOME")])
+def test_whatever_the_home_lookup_raises_it_is_the_same_coded_error(monkeypatch, failure):
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    def cannot(cls):
+        raise failure
+
+    monkeypatch.setattr(Path, "home", classmethod(cannot))
+    with pytest.raises(DiscoveryError):
+        platform.profiles_root()
+
+
+def test_windows_with_appdata_never_asks_for_the_home_folder(windows, monkeypatch):
+    """USERPROFILE and HOMEDRIVE unset, APPDATA set: the profiles are found all the same."""
+    monkeypatch.setenv("APPDATA", str(windows / "Roaming"))
+    no_home(monkeypatch)
+    assert platform.profiles_root() == windows / "Roaming" / "Mozilla" / "Firefox"
+
+
+def test_windows_with_an_empty_appdata_falls_back_to_the_home_folder_or_says_so(
+    windows, monkeypatch
+):
+    monkeypatch.setenv("APPDATA", "")
+    fake_home(monkeypatch, windows)
+    assert platform.profiles_root() == windows / "AppData" / "Roaming" / "Mozilla" / "Firefox"
+    no_home(monkeypatch)
+    with pytest.raises(DiscoveryError):
+        platform.profiles_root()
+
+
 def test_the_registry_install_directory_is_found(windows, monkeypatch):
     ff = firefox_install(windows / "pf" / "Mozilla Firefox")
     registry = reg(("HKLM", 64, MOZ, {"Install Directory": str(ff)}))
@@ -358,3 +413,65 @@ def test_is_windows_follows_the_platform(monkeypatch):
     assert platform.is_windows()
     monkeypatch.setattr(sys, "platform", "linux")
     assert not platform.is_windows()
+
+
+@needs_symlinks
+def test_two_spellings_of_one_install_through_a_link_are_one_candidate(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "platform", "linux")
+    real = _install(tmp_path, "lib", "firefox")
+    link = tmp_path / "firefox-link"
+    link.symlink_to(real, target_is_directory=True)
+    monkeypatch.setattr(platform.shutil, "which", lambda name: None)
+    monkeypatch.setattr(platform, "LINUX_INSTALL_DIRS", (str(real), str(link)))
+    assert platform.firefox_dir_candidates() == [real]  # the first spelling is the one kept
+
+
+# --- files that Windows holds for a moment (adversarial) ----------------------------------------
+
+
+def _denied(times: int, calls: list[int]):
+    def action() -> str:
+        calls.append(1)
+        if len(calls) <= times:
+            raise PermissionError(13, "Access is denied")
+        return "done"
+
+    return action
+
+
+def test_a_denial_that_passes_is_waited_out_with_growing_waits(monkeypatch):
+    waits: list[float] = []
+    calls: list[int] = []
+    monkeypatch.setattr(platform, "DENIED_WAITS", (0.01, 0.02, 0.04))
+    monkeypatch.setattr(platform.time, "sleep", waits.append)
+    assert platform.retry_if_denied(_denied(2, calls)) == "done"
+    assert len(calls) == 3 and waits == [0.01, 0.02]
+
+
+def test_a_denial_that_lasts_is_raised_after_the_last_wait(monkeypatch):
+    waits: list[float] = []
+    calls: list[int] = []
+    monkeypatch.setattr(platform, "DENIED_WAITS", (0.01, 0.02, 0.04))
+    monkeypatch.setattr(platform.time, "sleep", waits.append)
+    with pytest.raises(PermissionError):
+        platform.retry_if_denied(_denied(10**6, calls))
+    assert len(calls) == 4 and waits == [0.01, 0.02, 0.04]
+
+
+def test_other_errors_are_never_tried_again(monkeypatch):
+    calls: list[int] = []
+    monkeypatch.setattr(platform, "DENIED_WAITS", (0.01, 0.02))
+
+    def missing() -> None:
+        calls.append(1)
+        raise FileNotFoundError(2, "No such file")
+
+    with pytest.raises(FileNotFoundError):
+        platform.retry_if_denied(missing)
+    assert calls == [1]
+
+
+def test_only_windows_waits_and_never_for_more_than_a_second():
+    """A denial elsewhere comes from the permissions: waiting would only slow the error down."""
+    assert bool(platform.DENIED_WAITS) is (sys.platform == "win32")
+    assert sum(platform.DENIED_WAITS) < 1

@@ -1,0 +1,6 @@
+# What the standalone program is built from, besides the runtime dependencies of pyproject.toml.
+# Regenerate the lock, from the repository root: uv pip compile pyproject.toml packaging/requirements-build.in --universal --python-version 3.13 --generate-hashes -o packaging/requirements-build.txt
+pyinstaller==6.22.3
+# The build backend of the project (pyproject.toml), installed from the lock so that building the
+# wheel needs no download of its own (pip install --no-build-isolation).
+hatchling

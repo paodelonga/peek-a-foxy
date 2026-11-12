@@ -1,5 +1,11 @@
+import errno
+import os
 from pathlib import Path
 
+import pytest
+from support import needs_permissions, needs_symlinks
+
+from peek_a_foxy import installer
 from peek_a_foxy import userfiles as uf
 from peek_a_foxy.assets import FILES
 from peek_a_foxy.installer import plan_install, plan_uninstall
@@ -32,9 +38,9 @@ def test_install_with_loader(profile: Path, firefox_dir: Path, fxac_repo: Path):
 
 def test_install_is_idempotent(profile: Path):
     install(profile)
-    first = {p: p.read_text() for p in profile.rglob("*") if p.is_file()}
+    first = {p: p.read_bytes() for p in profile.rglob("*") if p.is_file()}
     install(profile)
-    assert {p: p.read_text() for p in profile.rglob("*") if p.is_file()} == first
+    assert {p: p.read_bytes() for p in profile.rglob("*") if p.is_file()} == first
 
 
 def test_user_content_and_changed_prefs_are_preserved(profile: Path):
@@ -100,6 +106,202 @@ def test_uninstall_removes_only_what_was_installed(profile: Path):
 def test_uninstall_on_a_clean_profile_does_nothing(profile: Path):
     plan_uninstall(profile).execute()
     assert not (profile / "user.js").exists()
+
+
+# --- the folders that held only our files go with them ----------------------------------------
+
+
+def test_uninstall_removes_the_folders_that_are_left_empty(profile: Path):
+    chrome = profile / "chrome"
+    install(profile)
+    (chrome / "utils").mkdir()
+    (chrome / "utils" / "boot.sys.mjs").write_text("// the loader's, not ours\n")
+    assert (chrome / "JS").is_dir() and (chrome / "resources").is_dir()
+    assert plan_uninstall(profile).execute() == []
+    assert not os.path.lexists(chrome / "JS") and not os.path.lexists(chrome / "resources")
+    assert chrome.is_dir()  # the profile's own folder is never ours to remove
+    assert (chrome / "utils" / "boot.sys.mjs").is_file()  # nor is the loader's folder
+    assert plan_uninstall(profile).execute() == []  # and a second run has nothing to do
+
+
+def test_the_plan_says_which_folders_it_removes_and_when(profile: Path):
+    step = plan_uninstall(profile).steps[0].description
+    assert "JS" in step and "resources" in step and "nothing else is in them" in step
+
+
+def test_a_folder_that_holds_a_file_of_the_users_is_kept_with_that_file(profile: Path):
+    chrome = profile / "chrome"
+    install(profile)
+    (chrome / "JS" / "mine.uc.js").write_text("// mine\n")
+    (chrome / "resources" / "mine.png").write_bytes(b"\x89PNG")
+    assert plan_uninstall(profile).execute() == []
+    assert (chrome / "JS" / "mine.uc.js").read_text() == "// mine\n"
+    assert (chrome / "resources" / "mine.png").read_bytes() == b"\x89PNG"
+    assert not (chrome / "JS" / "autohide.uc.js").exists()  # but ours still went
+
+
+def test_only_one_of_the_two_folders_is_removed_when_the_other_is_in_use(profile: Path):
+    chrome = profile / "chrome"
+    install(profile)
+    (chrome / "JS" / "mine.uc.js").write_text("// mine\n")
+    plan_uninstall(profile).execute()
+    assert (chrome / "JS").is_dir() and not (chrome / "resources").exists()
+
+
+def test_a_folder_with_only_an_empty_folder_inside_is_not_emptied_by_force(profile: Path):
+    chrome = profile / "chrome"
+    install(profile)
+    (chrome / "JS" / "mine").mkdir()  # an empty folder is still the user's something
+    (chrome / "resources" / "a" / "b").mkdir(parents=True)
+    plan_uninstall(profile).execute()
+    assert (chrome / "JS" / "mine").is_dir() and (chrome / "resources" / "a" / "b").is_dir()
+
+
+def test_a_hidden_or_oddly_named_file_keeps_its_folder(profile: Path):
+    chrome = profile / "chrome"
+    install(profile)
+    (chrome / "JS" / ".hidden").write_text("")
+    (chrome / "resources" / "-rf").write_text("")  # looks like an option, is only a name
+    plan_uninstall(profile).execute()
+    assert (chrome / "JS" / ".hidden").is_file() and (chrome / "resources" / "-rf").is_file()
+
+
+def test_an_empty_utils_folder_is_not_ours_to_remove(profile: Path):
+    (profile / "chrome" / "utils").mkdir()  # the loader's folder, whatever it holds
+    install(profile)
+    plan_uninstall(profile).execute()
+    assert (profile / "chrome" / "utils").is_dir()
+
+
+def test_uninstall_without_those_folders_is_quiet(profile: Path):
+    assert plan_uninstall(profile).execute() == []
+    assert (profile / "chrome").is_dir()
+
+
+@needs_symlinks
+def test_a_link_to_an_empty_folder_is_neither_removed_nor_followed(profile: Path, tmp_path: Path):
+    chrome = profile / "chrome"
+    elsewhere = tmp_path / "dotfiles" / "scripts"
+    elsewhere.mkdir(parents=True)
+    (chrome / "JS").symlink_to(elsewhere, target_is_directory=True)
+    (chrome / "resources").symlink_to(tmp_path / "nowhere", target_is_directory=True)  # dangling
+    assert plan_uninstall(profile).execute() == []
+    assert (chrome / "JS").is_symlink() and os.path.lexists(chrome / "resources")
+    assert elsewhere.is_dir()
+
+
+@needs_symlinks
+def test_a_link_to_a_folder_with_our_file_loses_the_file_but_keeps_link_and_folder(
+    profile: Path, tmp_path: Path
+):
+    chrome = profile / "chrome"
+    elsewhere = tmp_path / "dotfiles" / "scripts"
+    elsewhere.mkdir(parents=True)
+    (chrome / "JS").symlink_to(elsewhere, target_is_directory=True)
+    (elsewhere / "autohide.uc.js").write_text("// ours, installed through the link\n")
+    plan_uninstall(profile).execute()
+    assert not (elsewhere / "autohide.uc.js").exists()
+    assert (chrome / "JS").is_symlink() and elsewhere.is_dir()
+
+
+def test_a_junction_or_other_reparse_point_is_not_removed(profile: Path, monkeypatch):
+    # Windows reports a junction as a reparse point that Python before 3.12 does not call a link;
+    # simulated here so every system exercises the check.
+    folder = profile / "chrome" / "JS"
+    folder.mkdir()
+    real_lstat = os.lstat
+
+    class Reparse:
+        def __init__(self, result: os.stat_result):
+            self._result = result
+            self.st_file_attributes = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
+
+        def __getattr__(self, name: str):
+            return getattr(self._result, name)
+
+    def lstat(path, *args, **kwargs):
+        result = real_lstat(path, *args, **kwargs)
+        return Reparse(result) if Path(path) == folder else result
+
+    removed: list[object] = []
+    monkeypatch.setattr(os, "lstat", lstat)
+    monkeypatch.setattr(installer.os, "rmdir", lambda path: removed.append(path))
+    assert plan_uninstall(profile).execute() == []
+    assert folder not in removed
+
+
+@needs_permissions
+def test_a_folder_that_the_system_refuses_to_remove_is_left_without_an_error(profile: Path):
+    chrome = profile / "chrome"
+    install(profile)
+    for name in ("userChrome.css", "autohide.css"):  # removing them needs a writable chrome
+        (chrome / name).unlink()
+    plan = plan_uninstall(profile)
+    chrome.chmod(0o555)  # our files can still go (their folders are writable), the folders cannot
+    try:
+        assert plan.execute() == []
+    finally:
+        chrome.chmod(0o755)
+    assert list((chrome / "JS").iterdir()) == [] and list((chrome / "resources").iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "code", [errno.EACCES, errno.EPERM, errno.EBUSY, errno.ENOTEMPTY, errno.EIO]
+)
+def test_whatever_stops_the_removal_only_leaves_the_folder_and_the_uninstall_goes_on(
+    profile: Path, monkeypatch, code: int
+):
+    chrome = profile / "chrome"
+    (chrome / "userChrome.css").write_text("body{}\n")
+    install(profile)
+
+    def refused(path):
+        raise OSError(code, os.strerror(code), str(path))
+
+    monkeypatch.setattr(installer.os, "rmdir", refused)
+    assert plan_uninstall(profile).execute() == []
+    assert (chrome / "JS").is_dir() and (chrome / "resources").is_dir()
+    assert (chrome / "userChrome.css").read_text() == "body{}\n"  # later steps still ran
+    assert "peekafoxy" not in (profile / "user.js").read_text()
+
+
+def test_a_file_that_appears_just_before_the_removal_is_not_lost(profile: Path, monkeypatch):
+    chrome = profile / "chrome"
+    install(profile)
+    real_rmdir = os.rmdir
+
+    def writer_wins(path):
+        if Path(path).name == "JS":  # a program saves a script right now
+            (Path(path) / "late.uc.js").write_text("// late\n")
+        real_rmdir(path)
+
+    monkeypatch.setattr(installer.os, "rmdir", writer_wins)
+    assert plan_uninstall(profile).execute() == []
+    assert (chrome / "JS" / "late.uc.js").read_text() == "// late\n"
+    assert not (chrome / "resources").exists()
+
+
+def test_a_folder_that_vanishes_before_the_removal_is_not_an_error(profile: Path, monkeypatch):
+    install(profile)
+    real_rmdir = os.rmdir
+
+    def somebody_else_was_first(path):
+        real_rmdir(path)
+        real_rmdir(path)  # the second one finds nothing
+
+    monkeypatch.setattr(installer.os, "rmdir", somebody_else_was_first)
+    assert plan_uninstall(profile).execute() == []
+
+
+def test_the_status_file_is_still_removed_with_the_folders(profile: Path):
+    chrome = profile / "chrome"
+    install(profile)
+    (chrome / "peekafoxy-status.json").write_text("{}")
+    (chrome / "peekafoxy-status.json.tmp").write_text("{")
+    assert plan_uninstall(profile).execute() == []
+    assert not (chrome / "peekafoxy-status.json").exists()
+    assert not (chrome / "peekafoxy-status.json.tmp").exists()
+    assert not (chrome / "JS").exists() and not (chrome / "resources").exists()
 
 
 # --- pref names moved from userchrome.* to peekafoxy.* ----------------------------------------

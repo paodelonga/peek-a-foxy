@@ -28,7 +28,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Turn on the urlbar autohide with Ctrl+Alt+U
+        1. Turn on the urlbar autohide with Ctrl+Alt+Shift+U
         2. ...
     validations:
       required: false
@@ -37,7 +37,7 @@ body:
     attributes:
       label: Peek-a-Foxy version
       description: Output of `peek-a-foxy --version`
-      placeholder: peek-a-foxy 0.1.0
+      placeholder: peek-a-foxy 0.2.0
     validations:
       required: true
   - type: dropdown
@@ -65,7 +65,7 @@ body:
     id: os
     attributes:
       label: Operating system
-      placeholder: Arch Linux, Ubuntu 24.04, ...
+      placeholder: Arch Linux, Ubuntu 24.04, Windows 11, macOS 15, ...
     validations:
       required: true
   - type: dropdown
@@ -75,6 +75,7 @@ body:
       options:
         - X11
         - Wayland
+        - Not applicable (Windows or macOS)
         - I don't know
     validations:
       required: true
@@ -82,7 +83,7 @@ body:
     id: desktop
     attributes:
       label: Desktop environment or window manager
-      description: Say so if it is a tiling window manager (i3, sway, dwm, Hyprland, ...)
+      description: Say so if it is a tiling window manager (i3, sway, dwm, Hyprland, ...). On Windows or macOS, write that.
       placeholder: GNOME, KDE Plasma, i3, ...
     validations:
       required: true
@@ -105,12 +106,31 @@ body:
         - uv tool
         - pip in a virtual environment
         - From a clone of the repository
+        - The standalone program or install.ps1 (Windows)
         - Other
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `peek-a-foxy doctor --copy`
+      description: |
+        Run `peek-a-foxy doctor --copy` and paste the report here. If you cannot use a terminal, open
+        Firefox's settings, choose **Peek a Foxy** and press **Copy diagnostic info** in the Support group.
+        The report hides your home folder and user name and nothing is sent anywhere, but read it before
+        you paste it.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log of the failing command
+      description: |
+        Only if a `peek-a-foxy` command failed: `peek-a-foxy logs` shows where the log file is and what the
+        last run did. Paste the last run here, or drag the file into this box after reading it. A message
+        such as `error [PAF-401]` is worth pasting too.
+      render: shell
   - type: textarea
     id: console
     attributes:
       label: Browser Console output
-      description: Open the Browser Console (Ctrl+Shift+J), filter for `autohide`, and paste what shows up.
+      description: Open the Browser Console (Ctrl+Shift+J), filter for `autohide` (and for `peekafoxy settings` if the problem is the settings page), and paste what shows up.
       render: shell
   - type: checkboxes
     id: checks

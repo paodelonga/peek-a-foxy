@@ -1,14 +1,15 @@
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from support import flat
 from typer.testing import CliRunner
 
-from peek_a_foxy import __version__, cli
+from peek_a_foxy import __version__, cli, errors
 from peek_a_foxy.cli import app
+from peek_a_foxy.errors import PlatformError
 
 runner = CliRunner()
 
@@ -124,7 +125,7 @@ def test_several_firefox_installations_are_not_guessed(profile: Path, tmp_path: 
 @pytest.mark.parametrize("args", [["-h"], ["install", "-h"], ["uninstall", "-h"]])
 def test_dash_h_is_help_everywhere(args):
     result = runner.invoke(app, args)
-    assert result.exit_code == 0 and "Usage" in result.output
+    assert result.exit_code == 0 and "Usage" in flat(result.output)
 
 
 def _complete(words: str, cword: int, **env: str) -> list[str]:
@@ -146,9 +147,11 @@ def _complete(words: str, cword: int, **env: str) -> list[str]:
 
 
 def test_commands_and_options_are_completed():
-    assert _complete("peek-a-foxy ", 1) == ["install", "uninstall"]
+    assert _complete("peek-a-foxy ", 1) == ["install", "uninstall", "logs", "doctor"]
     assert "--skip-loader" in _complete("peek-a-foxy install --s", 2)
     assert "--dry-run" in _complete("peek-a-foxy uninstall --d", 2)
+    assert "--save" in _complete("peek-a-foxy doctor --s", 2)
+    assert {"--profile", "--firefox-dir"} <= set(_complete("peek-a-foxy doctor --", 2))
 
 
 def test_profile_option_completes_from_profiles_ini(tmp_path: Path):
@@ -166,9 +169,10 @@ def test_profile_option_completes_from_profiles_ini(tmp_path: Path):
         "USERPROFILE": str(tmp_path),  # what Path.home() reads on Windows
         "APPDATA": str(tmp_path / "AppData" / "Roaming"),
     }
-    offered = _complete("peek-a-foxy install --profile ", 3, **home)
-    tails = {Path(path).parts[-2:] for path in offered}
-    assert ("Profiles", "one") in tails and ("Profiles", "two") in tails
+    for command in ("install", "doctor"):  # doctor completes --profile the same way as install
+        offered = _complete(f"peek-a-foxy {command} --profile ", 3, **home)
+        tails = {Path(path).parts[-2:] for path in offered}
+        assert ("Profiles", "one") in tails and ("Profiles", "two") in tails
 
 
 def test_completion_scripts_are_available_for_the_common_shells():
@@ -192,7 +196,7 @@ def test_completion_helpers_cope_with_missing_data(tmp_path: Path, monkeypatch):
     assert cli._complete_firefox_dir("") == []
 
     def unsupported():
-        raise cli.platform.UnsupportedPlatformError("nope")
+        raise PlatformError(errors.UNSUPPORTED_OS, "nope")
 
     monkeypatch.setattr(cli.platform, "profiles_root", unsupported)
     monkeypatch.setattr(cli.platform, "firefox_dir_candidates", unsupported)
@@ -208,10 +212,7 @@ def test_firefox_dir_completion_filters_by_prefix(monkeypatch):
 
 def test_the_yes_help_says_everything_it_skips():
     result = runner.invoke(app, ["install", "--help"])
-    # Typer decides on colors when it is imported (CI forces them), so strip any that are there.
-    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
-    flat = " ".join(plain.replace("│", " ").split())
-    help_text = flat.split("--yes -y")[1]
+    help_text = flat(result.output).split("--yes -y")[1]
     for skipped in ("confirming", "profile", "Firefox installation"):
         assert skipped in help_text
 
@@ -236,7 +237,7 @@ def test_an_installation_without_a_competing_one_is_used_without_asking(
 
 def test_a_platform_firefox_cannot_be_found_on_is_a_clean_error(profile: Path, monkeypatch):
     def unsupported():
-        raise cli.platform.UnsupportedPlatformError("only some platforms")
+        raise PlatformError(errors.UNSUPPORTED_OS, "only some platforms")
 
     monkeypatch.setattr(cli.platform, "firefox_dir_candidates", unsupported)
     result = runner.invoke(app, ["install", "--profile", str(profile), "--yes"])

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "peek-a-foxy"
-version = "0.2.0"
+version = "0.3.0rc1"
 description = "Peek-a-boo for Foxys: autohide the tab bar and navigation bar per window. They hide, they peek, then BOOO! out when you hover."
 readme = "README.md"
 license = "MIT"
@@ -14,14 +14,19 @@ authors = [{ name = "paodelonga" }]
 keywords = ["firefox", "userchrome", "autohide", "tabs", "urlbar", "fx-autoconfig", "peek-a-boo"]
 classifiers = [
   "Environment :: Console",
+  "Operating System :: MacOS",
   "Operating System :: POSIX :: Linux",
   "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python :: 3",
   "Topic :: Desktop Environment",
 ]
 dependencies = [
-  "typer>=0.12",
-  "rich>=13",
+  # The floors are the oldest Typer and Rich that pass the whole suite (the "lowest" job of ci.yml
+  # runs them; their own dependencies are not lowered). Typer is below 1.0 and the code reaches
+  # into TyperGroup and TyperCommand, so a new minor release can break it: the ceiling moves up
+  # when a release has been tried.
+  "typer>=0.16.0,<0.30",
+  "rich>=13.8,<16",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +38,7 @@ dev = [
   "pytest>=8",
   "pre-commit>=4",
   "pytest-cov>=5",
+  "pyyaml>=6",  # tests/test_workflows.py reads the workflow files; without it the file is skipped
   "ruff>=0.6",
 ]
 
@@ -45,9 +51,11 @@ packages = ["src/peek_a_foxy"]
 # The Firefox files live in chrome/ so the repository reads like a profile; ship them inside the package.
 [tool.hatch.build.targets.wheel.force-include]
 "chrome" = "peek_a_foxy/assets"
+# The few fx-autoconfig files that get installed (see fx-autoconfig/manifest.json).
+"fx-autoconfig" = "peek_a_foxy/fx-autoconfig"
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "chrome", "tests", "README.md", "README.pt-BR.md", "CONTRIBUTING.md", "LICENSE"]
+include = ["src", "chrome", "fx-autoconfig", "tests", "README.md", "README.pt-BR.md", "CONTRIBUTING.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

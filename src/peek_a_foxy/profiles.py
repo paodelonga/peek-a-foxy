@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import configparser
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from peek_a_foxy import errors
+from peek_a_foxy.errors import DiscoveryError
 
-class NoProfilesError(RuntimeError):
-    """``profiles.ini`` is missing or lists no profile."""
+log = logging.getLogger(__name__)
+
+NoProfilesError = DiscoveryError  # the name this error had before codes: ``profiles.ini`` problems
 
 
 @dataclass(frozen=True)
@@ -18,17 +22,25 @@ class Profile:
     is_default: bool = False
 
 
+def _unreadable(ini: Path, error: Exception) -> DiscoveryError:
+    """The coded error for a profiles.ini that cannot be understood; the quote is cut short."""
+    # configparser quotes the whole offending line, which a hostile file can make megabytes long.
+    return DiscoveryError(
+        errors.PROFILES_UNREADABLE, f"could not read {ini}", detail=errors.clip(repr(error))
+    )
+
+
 def read_profiles(root: Path) -> list[Profile]:
     """Profiles listed in ``root/profiles.ini``; each install's default one is flagged."""
     ini = root / "profiles.ini"
     if not ini.is_file():
-        raise NoProfilesError(f"no profiles.ini in {root}; pass --profile")
+        raise DiscoveryError(errors.NO_PROFILES_INI, f"no profiles.ini in {root}")
 
     parser = configparser.ConfigParser(interpolation=None, strict=False)
     try:
         parser.read(ini, encoding="utf-8-sig")  # tolerate a BOM
     except (configparser.Error, UnicodeDecodeError) as error:
-        raise NoProfilesError(f"could not parse {ini} ({error}); pass --profile") from error
+        raise _unreadable(ini, error) from error
 
     # Each [Install...] section names the default profile of one Firefox installation. With several
     # installations (release and developer edition, say) there are several, one per installation.
@@ -46,7 +58,15 @@ def read_profiles(root: Path) -> list[Profile]:
         raw_path = entry.get("path")
         if not raw_path:
             continue
-        path = root / raw_path if entry.getboolean("isrelative", fallback=True) else Path(raw_path)
+        if "\x00" in raw_path:
+            # No file system takes a NUL in a name: it would only fail later, in whatever touches
+            # the path first, as an exception that nobody explained.
+            raise _unreadable(ini, ValueError(f"a NUL character in the Path of [{section}]"))
+        try:
+            relative = entry.getboolean("isrelative", fallback=True)
+        except ValueError as error:  # ``IsRelative=`` or ``IsRelative=maybe``: a hand-edited file
+            raise _unreadable(ini, error) from error
+        path = root / raw_path if relative else Path(raw_path)
         if install_defaults:
             is_default = raw_path in install_defaults
         else:
@@ -54,7 +74,8 @@ def read_profiles(root: Path) -> list[Profile]:
         profiles.append(Profile(name=entry.get("name", raw_path), path=path, is_default=is_default))
 
     if not profiles:
-        raise NoProfilesError(f"{ini} lists no profile; pass --profile")
+        raise DiscoveryError(errors.NO_PROFILE_LISTED, f"{ini} lists no profile")
+    log.debug("profiles.ini: %d profile(s) in %s", len(profiles), ini)
     return profiles
 
 

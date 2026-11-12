@@ -6,7 +6,9 @@ body:
     attributes:
       value: |
         You can write in English or in Português (Brasil). Please check the
-        [Troubleshooting](https://github.com/paodelonga/peek-a-foxy#troubleshooting) section first.
+        [Troubleshooting](https://github.com/paodelonga/peek-a-foxy#troubleshooting) section first. If
+        something does not work, `peek-a-foxy doctor --copy` copies a report of what it found, and the
+        [error codes](https://github.com/paodelonga/peek-a-foxy#error-codes) say what a `PAF-` code means.
   - type: textarea
     id: question
     attributes:
@@ -19,3 +21,8 @@ body:
       label: What have you tried?
       description: Commands you ran, and what they printed.
       render: shell
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `peek-a-foxy doctor --copy`
+      description: Optional. The report hides your home folder and user name and nothing is sent anywhere, but read it before you paste it.

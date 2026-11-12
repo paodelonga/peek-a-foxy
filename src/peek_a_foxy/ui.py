@@ -8,16 +8,100 @@ written in this package's source may contain markup, and they must not contain u
 
 from __future__ import annotations
 
+import logging
+import os
 import sys
-from typing import NoReturn
+from collections.abc import Callable
+from pathlib import Path
+from typing import IO, Any
 
-import typer
 from rich.console import Console, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-console = Console()
-errors = Console(stderr=True)
+from peek_a_foxy import errors as paf
+from peek_a_foxy.errors import PeekError
+
+_output_lost = False  # set when a write to stdout or stderr failed for good (no reader, no space)
+
+
+def output_lost() -> bool:
+    """Whether some output could not be written (the reader closed the pipe: ``... | head -c1``)."""
+    return _output_lost
+
+
+def reset_output_state() -> None:
+    """Forget an earlier loss of output: each run of the program starts clean."""
+    global _output_lost
+    _output_lost = False
+
+
+def silence(stream: IO[str] | None) -> None:
+    """Point the file descriptor of ``stream`` at nowhere.
+
+    After a broken pipe every later write, and the interpreter's own flush at exit, would fail
+    again and print a traceback; with the descriptor going nowhere they succeed and say nothing.
+    """
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        return
+    try:
+        if stream is not None:
+            os.dup2(devnull, stream.fileno())
+    except (OSError, ValueError, AttributeError):  # no real descriptor (a test, a closed stream)
+        pass
+    finally:
+        os.close(devnull)
+
+
+def lost_output(stream: IO[str] | None) -> None:
+    """Remember that ``stream`` cannot be written to, and make every later write harmless."""
+    global _output_lost
+    _output_lost = True
+    silence(stream)
+
+
+class _Console(Console):
+    """A Rich console that does not end the program when its reader goes away.
+
+    Rich's own reaction to a broken pipe is ``raise SystemExit(1)`` from inside ``print``. That
+    would stop an installation half way through just because its output was piped into ``head``.
+    """
+
+    def on_broken_pipe(self) -> None:
+        self.quiet = True  # nothing more to render for a reader that is gone
+        lost_output(self.file)
+
+
+console = _Console()
+errors = _Console(stderr=True)
+
+
+def _print(target: Console, *args: Any, **kwargs: Any) -> None:
+    """``target.print`` that treats output which cannot be written as lost output, not a crash.
+
+    A command that is half way through changing files must still finish them when the person
+    pipes its output into ``head`` (a broken pipe), or sends it to a full disk (``> /dev/full``)
+    or a closed stream. Only the text is lost; the first failure is logged.
+    """
+    try:
+        target.print(*args, **kwargs)
+    except (OSError, ValueError) as error:  # ValueError: "I/O operation on closed file"
+        if not _output_lost:
+            logging.getLogger(__name__).info("output to %s was lost: %r", target.file, error)
+        lost_output(target.file)
+
+
+class QuietStreamHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    """The verbose console log, which also gives up quietly on a broken pipe."""
+
+    def handleError(self, record: logging.LogRecord) -> None:
+        error = sys.exc_info()[1]
+        if isinstance(error, (OSError, ValueError)):
+            lost_output(self.stream)
+            return
+        super().handleError(record)
 
 
 def can_print(text: str) -> bool:
@@ -44,21 +128,79 @@ def setup_streams() -> None:
 
 def say(message: str, style: str = "") -> None:
     """Print ``message`` literally."""
-    console.print(Text(message, style=style), soft_wrap=True)
+    _print(console, Text(message, style=style), soft_wrap=True)
+
+
+def note(message: str) -> None:
+    """A remark for the person, on stderr so that a report on stdout stays clean."""
+    _print(errors, Text(message, style="dim"), soft_wrap=True)
 
 
 def warn(message: str) -> None:
-    console.print(Text.assemble(("warning: ", "yellow"), message), soft_wrap=True)
+    """A warning, on stderr: stdout is for the product (a plan, a report that a program reads)."""
+    _print(errors, Text.assemble(("warning: ", "yellow"), message), soft_wrap=True)
 
 
 def step_line(number: int, total: int, description: str) -> None:
-    console.print(Text.assemble((f"({number}/{total}) ", "cyan"), description), soft_wrap=True)
+    _print(console, Text.assemble((f"({number}/{total}) ", "cyan"), description), soft_wrap=True)
 
 
-def fail(message: str) -> NoReturn:
+def _error_line(text: Text | str) -> None:
     # soft_wrap: a path must not be broken across lines, people copy it from the message.
-    errors.print(Text.assemble(("error: ", "bold red"), message), soft_wrap=True)
-    raise typer.Exit(1)
+    _print(errors, text if isinstance(text, Text) else Text(text), soft_wrap=True)
+
+
+def report(
+    error: PeekError,
+    *,
+    verbose: bool,
+    log_path: Path | None,
+    redact: Callable[[str], str],
+) -> None:
+    """Print an expected failure: the code and message, what to do, then the extras.
+
+    ``redact`` hides the user name and home folder in the technical extras (``--verbose``), which
+    people paste into public places.
+    """
+    _error_line(Text.assemble((f"error [{error.code.code}]: ", "bold red"), error.message))
+    if error.hint:
+        _error_line(Text.assemble(("What to do: ", "bold"), error.hint))
+    context = paf.get_context(error)
+    if context:
+        _error_line(context)
+    if verbose:
+        _verbose_details(error, error.detail, redact)
+    _log_line(log_path)
+
+
+def report_unexpected(error: BaseException, *, log_path: Path | None) -> None:
+    """Print a bug: the unexpected-error code and hint.
+
+    The traceback is not printed here: with ``--verbose`` the log's console handler has already
+    shown it, redacted, and without it the log file keeps it.
+    """
+    code = paf.UNEXPECTED
+    _error_line(Text.assemble((f"error [{code.code}]: ", "bold red"), code.meaning))
+    _error_line(Text.assemble(("What to do: ", "bold"), code.hint))
+    context = paf.get_context(error)
+    if context:
+        _error_line(context)
+    _log_line(log_path)
+
+
+def _verbose_details(error: BaseException, detail: str, redact: Callable[[str], str]) -> None:
+    if detail:
+        _error_line(Text.assemble(("Details: ", "bold"), redact(detail)))
+    cause = error.__cause__
+    if cause is not None:
+        _error_line(
+            Text.assemble(("Caused by: ", "bold"), redact(f"{type(cause).__name__}: {cause}"))
+        )
+
+
+def _log_line(log_path: Path | None) -> None:
+    if log_path is not None:
+        _error_line(f"Details were saved to {log_path}")
 
 
 def new_table(title: str, *, header: bool = True) -> Table:
@@ -71,4 +213,4 @@ def row(table: Table, *cells: str) -> None:
 
 
 def show(renderable: RenderableType) -> None:
-    console.print(renderable)
+    _print(console, renderable)

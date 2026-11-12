@@ -8,15 +8,21 @@ import ntpath
 import os
 import shutil
 import sys
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import ModuleType
+from typing import TypeVar
+
+from peek_a_foxy import errors
+from peek_a_foxy.errors import DiscoveryError, PlatformError
 
 FIREFOX_BINARIES = ("firefox", "firefox-developer-edition", "firefox-esr")
 LINUX_INSTALL_DIRS = (
     "/usr/lib/firefox",
     "/usr/lib/firefox-developer-edition",
     "/usr/lib/firefox-esr",
+    "/usr/lib64/firefox",  # Fedora and openSUSE
     "/opt/firefox",
 )
 MACOS_APPS = (
@@ -27,10 +33,17 @@ MACOS_APPS = (
 # Folder names Firefox's Windows installers use, under Program Files and in the user's local folder.
 WINDOWS_APP_DIRS = ("Mozilla Firefox", "Firefox Developer Edition", "Firefox Nightly")
 WINDOWS_BASE_VARIABLES = ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)", "LOCALAPPDATA")
+# Windows refuses to open, replace or remove a file for a moment while another program has it open
+# or is replacing it ("access denied"): a virus scanner, Firefox saving a file, a second run of this
+# program. Elsewhere a denial comes from the permissions, which waiting does not change.
+DENIED_WAITS: tuple[float, ...] = (
+    (0.01, 0.02, 0.04, 0.08, 0.16, 0.32) if sys.platform == "win32" else ()
+)
 # Lowercase: Windows paths do not care about case. Each marker names the kind of build it betrays.
 SANDBOX_MARKERS = {
     "/snap/": "Snap",
-    "/flatpak/": "Flatpak",
+    "/flatpak/app/": "Flatpak",  # not any folder that happens to be called flatpak
+    "/flatpak/runtime/": "Flatpak",
     "/windowsapps/": "Microsoft Store (MSIX)",
 }
 
@@ -38,8 +51,22 @@ SANDBOX_MARKERS = {
 BACKSLASH = "\\"
 
 
-class UnsupportedPlatformError(RuntimeError):
-    """The current operating system is not supported."""
+UnsupportedPlatformError = PlatformError  # the name this error had before codes
+
+_T = TypeVar("_T")
+
+
+def retry_if_denied(action: Callable[[], _T]) -> _T:
+    """``action()``, tried again after each wait of :data:`DENIED_WAITS` while it is denied.
+
+    A denial that lasts (about 0.6 s on Windows, at once elsewhere) is raised as it is.
+    """
+    for wait in DENIED_WAITS:
+        try:
+            return action()
+        except PermissionError:
+            time.sleep(wait)
+    return action()
 
 
 def system() -> str:
@@ -50,8 +77,10 @@ def system() -> str:
         return "macos"
     if sys.platform == "win32":
         return "windows"
-    raise UnsupportedPlatformError(
-        f"unsupported platform '{sys.platform}': only Linux, macOS and Windows are handled"
+    raise PlatformError(
+        errors.UNSUPPORTED_OS,
+        f"unsupported platform '{sys.platform}': only the Linux, macOS and Windows locations "
+        "are known",
     )
 
 
@@ -59,17 +88,33 @@ def is_windows() -> bool:
     return sys.platform == "win32"
 
 
+def _home() -> Path:
+    """The user's home folder, or a coded error when the system cannot say where it is.
+
+    A service account, a scheduled task or a container may have no home at all; that is a
+    situation to explain (and to get around with ``--profile``), not a bug.
+    """
+    try:
+        return Path.home()
+    except (RuntimeError, OSError, KeyError) as error:
+        raise DiscoveryError(
+            errors.NO_PROFILES_INI,
+            "could not find your home folder, so Firefox's profiles cannot be located",
+            detail=repr(error),
+        ) from error
+
+
 def profiles_root() -> Path:
     """Directory that holds ``profiles.ini`` and the profiles."""
-    home = Path.home()
     kind = system()
-    if kind == "macos":
-        return home / "Library" / "Application Support" / "Firefox"
     if kind == "windows":
+        # APPDATA alone is enough: the home folder is only the fallback, so it is asked last.
         appdata = os.environ.get("APPDATA")
-        roaming = Path(appdata) if appdata else home / "AppData" / "Roaming"
+        roaming = Path(appdata) if appdata else _home() / "AppData" / "Roaming"
         return roaming / "Mozilla" / "Firefox"
-    return home / ".mozilla" / "firefox"
+    if kind == "macos":
+        return _home() / "Library" / "Application Support" / "Firefox"
+    return _home() / ".mozilla" / "firefox"
 
 
 def _looks_like_firefox(directory: Path) -> bool:
@@ -77,6 +122,14 @@ def _looks_like_firefox(directory: Path) -> bool:
     if not (directory / "omni.ja").is_file():
         return False
     return system() != "windows" or (directory / "firefox.exe").is_file()
+
+
+def is_firefox_dir(directory: Path) -> bool:
+    """Whether ``directory`` looks like a Firefox install folder (the rule discovery uses)."""
+    try:
+        return _looks_like_firefox(directory)
+    except (OSError, ValueError):
+        return False
 
 
 # --- Windows: registry and well-known folders ---------------------------------------------------
@@ -197,7 +250,11 @@ def firefox_dir_candidates() -> list[Path]:
 
 def sandbox_kind(path: Path) -> str | None:
     """Name of the sandbox that keeps this Firefox read-only (so no loader), or ``None``."""
-    text = f"{str(path.resolve()).replace(BACKSLASH, '/')}/".lower()
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError):  # a symbolic link loop (RuntimeError before Python 3.13)
+        resolved = Path(os.path.abspath(path))
+    text = f"{str(resolved).replace(BACKSLASH, '/')}/".lower()
     return next((kind for marker, kind in SANDBOX_MARKERS.items() if marker in text), None)
 
 

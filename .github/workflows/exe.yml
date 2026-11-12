@@ -1,0 +1,170 @@
+name: Standalone program
+
+# Builds peek-a-foxy.exe with PyInstaller, smoke-tests it, and on a published release attaches the
+# program, its SHA-256, install.ps1 and the filled-in Scoop and winget manifests to that release.
+on:
+  pull_request:
+    paths:
+      - "packaging/**"
+      - "src/**"
+      - "chrome/**"
+      - "pyproject.toml"
+      - ".github/workflows/exe.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.13"
+      # Everything the program is built from is pinned with hashes (regenerate the lock with the
+      # command in its first lines). The project itself is then built with no download at all:
+      # hatchling comes from the lock (--no-build-isolation) and --no-index forbids any index.
+      - name: Install the pinned build tools and the project
+        run: |
+          python -m pip install --require-hashes --no-deps -r packaging/requirements-build.txt
+          python -m pip install --no-deps --no-build-isolation --no-index .
+      # PyInstaller follows static imports only, so what the program reaches by name or by metadata
+      # is listed here: winreg (platform._winreg imports it with importlib.import_module, to find
+      # Firefox through the registry) and the package metadata that __version__ reads.
+      - name: Build
+        run: >
+          pyinstaller --onefile --name peek-a-foxy --noconfirm
+          --hidden-import winreg
+          --copy-metadata peek-a-foxy
+          --add-data "chrome;peek_a_foxy/assets"
+          --add-data "fx-autoconfig;peek_a_foxy/fx-autoconfig"
+          packaging/entry.py
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $exe = "dist\peek-a-foxy.exe"
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version failed" }
+          # The program has no elevated mode of its own (the elevated process is System32 Windows
+          # PowerShell): the old flag must be an unknown option, a usage error (2).
+          & $exe --elevated-copy "$env:RUNNER_TEMP" AAAA AAAA
+          if ($LASTEXITCODE -ne 2) { throw "--elevated-copy returned $LASTEXITCODE, expected 2" }
+          # The embedded Firefox files are found: install them into a throwaway profile.
+          $profile = Join-Path $env:RUNNER_TEMP "profile"
+          New-Item -ItemType Directory -Path $profile | Out-Null
+          & $exe install --profile $profile --skip-loader --yes
+          if ($LASTEXITCODE -ne 0) { throw "install failed" }
+          if (-not (Test-Path "$profile\chrome\JS\autohide.uc.js")) { throw "autohide.uc.js was not installed" }
+      # The program must find a Firefox through the registry and report its own version, and both
+      # depend on things PyInstaller cannot see (see Build). A throwaway registration under HKCU
+      # (no administrator rights, removed afterwards) names a fake Firefox folder that no
+      # well-known folder or PATH entry would lead to, so it can only be found through winreg; a
+      # registry module that was left out would be swallowed by the discovery code as "no registry",
+      # which is why this looks at the folders doctor lists instead of at its exit code.
+      - name: Smoke test - registry discovery and version
+        shell: pwsh
+        env:
+          PEEK_A_FOXY_LOG: "off"
+        run: |
+          $exe = "dist\peek-a-foxy.exe"
+          $expected = python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+          $fake = Join-Path $env:RUNNER_TEMP "peek-a-foxy-smoke-firefox"
+          New-Item -ItemType Directory -Path $fake | Out-Null
+          foreach ($name in "firefox.exe", "omni.ja") { New-Item -ItemType File -Path (Join-Path $fake $name) | Out-Null }
+          Set-Content -Path (Join-Path $fake "application.ini") -Value "[App]", "Name=Firefox"
+          $key = "HKCU:\SOFTWARE\Mozilla\PeekAFoxySmoke"
+          try {
+            New-Item -Path "$key\999.0\Main" -Force | Out-Null
+            New-ItemProperty -Path "$key\999.0\Main" -Name "Install Directory" -Value $fake | Out-Null
+            $json = & $exe doctor --json
+            # 0 (all fine) and 1 (a check failed, such as a missing profile) are normal here.
+            if ($LASTEXITCODE -notin 0, 1) { throw "doctor returned $LASTEXITCODE" }
+            $report = ($json -join "`n") | ConvertFrom-Json
+          } finally {
+            Remove-Item -Path $key -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          $checks = @($report.sections | ForEach-Object { $_.checks })
+          $version = @($checks | Where-Object { $_.id -eq "program.version" })[0].value
+          if ($version -ne $expected) { throw "the program says it is version '$version', pyproject.toml says '$expected'" }
+          # The fx-autoconfig files that come inside the program are found and match their manifest.
+          $loader = @($checks | Where-Object { $_.id -eq "program.loader_files" })[0]
+          if ($loader.status -ne "ok") { throw "the bundled loader files are not fine: $($loader | ConvertTo-Json -Compress)" }
+          $folders = @($checks | Where-Object { $_.id -eq "firefox.path" } | ForEach-Object { $_.value })
+          if (-not ($folders | Where-Object { $_ -like "*peek-a-foxy-smoke-firefox" })) {
+            throw "the Firefox registered in the registry was not found; doctor listed: $($folders -join ', ')"
+          }
+          # The runner ends the step with the last exit code it saw, doctor's 1, which is normal here.
+          exit 0
+      - name: install.ps1 parses
+        shell: pwsh
+        run: |
+          $errors = $null
+          [void][Management.Automation.Language.Parser]::ParseFile("$PWD\packaging\install.ps1", [ref]$null, [ref]$errors)
+          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 dist\peek-a-foxy.exe).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText("$PWD\dist\peek-a-foxy.exe.sha256", "$hash  peek-a-foxy.exe`n")
+          "SHA256=$hash" >> $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: peek-a-foxy-windows
+          path: |
+            dist/peek-a-foxy.exe
+            dist/peek-a-foxy.exe.sha256
+
+  # Signs a statement that this workflow run built peek-a-foxy.exe (SLSA build provenance, through
+  # Sigstore). It is a job of its own so that the token that can sign exists only here and never
+  # beside the build, which runs third-party code (PyInstaller and its dependencies).
+  attest:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: peek-a-foxy-windows
+          path: dist
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/peek-a-foxy.exe
+
+  publish:
+    if: github.event_name == 'release'
+    needs: [build, attest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: peek-a-foxy-windows
+          path: dist
+      - name: Fill the manifests
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          hash="$(cut -d' ' -f1 dist/peek-a-foxy.exe.sha256)"
+          python packaging/render_manifests.py "$version" "$hash" dist/manifests
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release upload "$GITHUB_REF_NAME" --clobber
+          dist/peek-a-foxy.exe dist/peek-a-foxy.exe.sha256 packaging/install.ps1
+          dist/manifests/peek-a-foxy.json dist/manifests/paodelonga.PeekAFoxy.yaml
+          dist/manifests/paodelonga.PeekAFoxy.installer.yaml
+          dist/manifests/paodelonga.PeekAFoxy.locale.en-US.yaml

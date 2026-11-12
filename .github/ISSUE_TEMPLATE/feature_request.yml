@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Thanks for the idea. You can write in English or in Português (Brasil).
-        The [roadmap](https://github.com/paodelonga/peek-a-foxy#roadmap) lists what is already planned.
+        The [roadmap](https://github.com/paodelonga/peek-a-foxy#roadmap) links to the GitHub Project that tracks what is already planned.
   - type: textarea
     id: problem
     attributes:

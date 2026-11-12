@@ -1,14 +1,15 @@
 """A real Firefox for the tests in this folder.
 
 Opt-in: ``pytest -m browser``. It needs a Firefox install (``PEEK_A_FOXY_FIREFOX`` = path to its
-binary, otherwise the first one found), ``marionette-driver`` and network access (the real
-fx-autoconfig is cloned). Firefox runs headless with a throwaway profile, and from a *copy* of its
-install directory, because the loader has to be written there.
+binary, otherwise the first one found) and ``marionette-driver``; the fx-autoconfig files that
+come with the program are installed. Firefox runs headless with a throwaway profile, and from a
+*copy* of its install directory, because the loader has to be written there.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -86,12 +87,31 @@ def _stop(process: subprocess.Popen) -> None:
         process.kill()
 
 
+# A keydown for a shortcut, as a dispatchEvent on the window. ``arguments``: the key code, then
+# whether Shift is held (null: as in the default shortcut of that bar, which depends on the system).
+KEYDOWN = """
+  const prefs = {KeyT: 'peekafoxy.tabs.shortcut', KeyU: 'peekafoxy.urlbar.shortcut'};
+  let shift = arguments[1];
+  if (shift === null) {
+    const name = prefs[arguments[0]];
+    shift = !!name && Services.prefs.getDefaultBranch('').getStringPref(name).includes('Shift');
+  }
+  window.dispatchEvent(new KeyboardEvent('keydown',
+    {code: arguments[0], ctrlKey: true, altKey: true, shiftKey: shift,
+     bubbles: true, cancelable: true}));
+"""
+
+
 class Browser:
     """Thin helper around a Marionette session in the browser's chrome (privileged) context."""
 
     #: JS expressions (see TABS_HOLDER), for use inside wait() conditions.
     TABS_HOLDER = TABS_HOLDER
     TABS_HEIGHT = TABS_HEIGHT
+
+    profile: Path
+    install_dir: Path
+    process: subprocess.Popen
 
     def __init__(self, client) -> None:
         self.client = client
@@ -151,6 +171,38 @@ class Browser:
         self.js("gURLBar.blur(); gBrowser.selectedBrowser.focus();")
         self.wait("!gURLBar.focused", message="the URL bar kept the focus")
 
+    #: A function body that has the shared module (``Peek``) and its ``Diag`` at hand.
+    DIAG = (
+        "const Peek = ChromeUtils.importESModule("
+        "'chrome://userchrome/content/peekafoxy.sys.mjs'); const Diag = Peek.Diag;"
+    )
+
+    def diag(self, script: str, *args):
+        """Run ``script`` (a function body) with ``Peek`` and ``Diag`` of the real module."""
+        return self.js(self.DIAG + script, *args)
+
+    def flush(self) -> None:
+        """Wait until Diag has written the status file (or failed to)."""
+        self.client.set_context(self.client.CONTEXT_CHROME)
+        self.client.execute_async_script(
+            self.DIAG + "const done = arguments[arguments.length - 1];"
+            "Diag.flush().then(() => done(true));"
+        )
+
+    @property
+    def chrome_dir(self) -> Path:
+        return self.profile / "chrome"
+
+    def wait_for_status_file(self, timeout: float = 30.0) -> Path:
+        """The status file once Firefox has written it (it is written after the window is idle)."""
+        path = self.chrome_dir / "peekafoxy-status.json"
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if path.is_file():
+                return path
+            time.sleep(0.2)
+        raise AssertionError(f"{path} was never written")
+
     def open_settings(self, hash_: str = "") -> None:
         """Open about:preferences in a new tab of the current window and wait for it to be ready."""
         self.js(
@@ -180,6 +232,18 @@ class Browser:
                }"""
         )
 
+    def quit_gracefully(self) -> None:
+        """Quit the way a person does (Firefox saves the session on the way out) and wait for it."""
+        try:
+            self.client.set_context(self.client.CONTEXT_CHROME)
+            self.client.execute_script(
+                "Services.tm.dispatchToMainThread(() =>"
+                " Services.startup.quit(Services.startup.eAttemptQuit));"
+            )
+        except Exception:
+            pass  # the connection goes away with Firefox
+        self.process.wait(timeout=60)
+
     def switch_to(self, handle: str) -> None:
         self.client.switch_to_window(handle)
 
@@ -195,6 +259,52 @@ class Browser:
             elif time.monotonic() - since >= quiet:
                 return current
         raise AssertionError(f"layout never settled: {last}")
+
+    def move_pointer(self, x: float, y: float) -> None:
+        """A real pointer move (Marionette actions), so that :hover is updated like for a person."""
+        self.client.set_context(self.client.CONTEXT_CHROME)
+        self.client.actions.sequence("pointer", "mouse", {"pointerType": "mouse"}).pointer_move(
+            int(x), int(y), duration=0
+        ).perform()
+        self.client.actions.release()
+
+    def default_shortcut(self, bar: str) -> str:
+        """The default shortcut of ``tabs`` or ``urlbar`` as registered in about:config."""
+        return self.js(
+            "return Services.prefs.getDefaultBranch('').getStringPref(arguments[0]);",
+            f"peekafoxy.{bar}.shortcut",
+        )
+
+    def keydown(self, code: str, shift: bool | None = None) -> None:
+        """A synthetic Ctrl+Alt keydown, with Shift as the default shortcut of KeyT / KeyU has it
+        unless ``shift`` says otherwise (use ``shift=False`` for a shortcut that was recorded)."""
+        self.js(KEYDOWN, code, shift)
+
+    def real_shortcut(self, bar: str) -> None:
+        """Press the default shortcut of ``tabs`` or ``urlbar`` with real keys."""
+        from marionette_driver.keys import Keys
+
+        text = self.default_shortcut(bar)
+        modifiers = {"Ctrl": Keys.CONTROL, "Alt": Keys.ALT, "Shift": Keys.SHIFT}
+        *held, letter = text.split("+")
+        self.real_keys(letter.lower(), *(modifiers[name] for name in held))
+
+    def real_keys(self, key: str, *modifiers: str) -> None:
+        """Press ``key`` with ``modifiers`` the way a keyboard does: through Firefox's key handling.
+
+        A ``dispatchEvent`` on the window skips that path (the capture phase, ``preventDefault``
+        and what a page gets to see); a chain of Marionette key actions takes it.
+        """
+        self.client.set_context(self.client.CONTEXT_CHROME)
+        self.js("window.focus();")
+        keys = self.client.actions.sequence("key", "keyboard")
+        for modifier in modifiers:
+            keys.key_down(modifier)
+        keys.key_down(key).key_up(key)
+        for modifier in reversed(modifiers):
+            keys.key_up(modifier)
+        keys.perform()
+        self.client.actions.release()
 
     def tabs_height(self) -> int:
         """Height of whatever collapses with the tab bar (see TABS_HOLDER)."""
@@ -228,23 +338,54 @@ def launched(
     root: Path,
     extra_user_js: str = "",
     edit_script: Callable[[str], str] | None = None,
+    edit_module: Callable[[str], str] | None = None,
+    before_start: Callable[[Path], None] | None = None,
+    existing_profile: Path | None = None,
 ) -> Iterator[Browser]:
     """Install into a fresh profile, start Firefox headless on it, and yield a connected helper.
 
-    ``edit_script`` may rewrite each installed ``*.uc.js`` before Firefox starts.
-    """
-    profile = root / "profile"
-    profile.mkdir()
-    port = _free_port()
-    (profile / "user.js").write_text(SETTINGS.format(port=port) + extra_user_js)
+    ``edit_script`` may rewrite each installed ``*.uc.js`` and ``edit_module`` the shared module
+    before Firefox starts; ``before_start`` is called with the profile folder, once everything is
+    installed, to set up a state (a hostile file, a read-only folder) for Firefox to find.
 
-    plan_install(profile, install_dir).execute()  # the real loader, into the copy
-    if edit_script is not None:
+    ``existing_profile`` starts Firefox again on a profile that an earlier ``launched`` left behind
+    (to see what survives a restart): nothing is installed again, and only the Marionette port in
+    its user.js is replaced.
+    """
+    port = _free_port()
+    if existing_profile is not None:
+        profile = existing_profile
+        user_js = profile / "user.js"
+        user_js.write_text(
+            re.sub(
+                r'user_pref\("marionette.port", \d+\);',
+                f'user_pref("marionette.port", {port});',
+                user_js.read_text(encoding="utf-8"),
+            ),
+            encoding="utf-8",
+        )
+    else:
+        profile = root / "profile"
+        profile.mkdir()
+        (profile / "user.js").write_text(SETTINGS.format(port=port) + extra_user_js)
+        plan_install(profile, install_dir).execute()  # the real loader, into the copy
+    if existing_profile is None and edit_script is not None:
         for installed in sorted((profile / "chrome" / "JS").glob("*.uc.js")):
             installed.write_text(
                 edit_script(installed.read_text(encoding="utf-8")), encoding="utf-8"
             )
 
+    if existing_profile is None and edit_module is not None:
+        module = profile / "chrome" / "resources" / "peekafoxy.sys.mjs"
+        module.write_text(edit_module(module.read_text(encoding="utf-8")), encoding="utf-8")
+    if before_start is not None:
+        before_start(profile)
+
+    # Firefox unpacks a built-in add-on of about 3.5 MB into its temporary folder on every start and
+    # does not always remove it when it is stopped, which filled /tmp (and its quota) after a few
+    # hundred launches. It gets a folder of its own, removed with the launch.
+    firefox_tmp = root / "firefox-tmp"
+    firefox_tmp.mkdir(exist_ok=True)
     process = subprocess.Popen(
         [
             str(install_dir / FIREFOX_BINARY),
@@ -255,7 +396,14 @@ def launched(
             "--profile",
             str(profile),
         ],
-        env={**os.environ, "MOZ_HEADLESS": "1", "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS": "1"},
+        env={
+            **os.environ,
+            "MOZ_HEADLESS": "1",
+            "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS": "1",
+            "TMPDIR": str(firefox_tmp),
+            "TEMP": str(firefox_tmp),
+            "TMP": str(firefox_tmp),
+        },
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -271,6 +419,9 @@ def launched(
                     raise
                 time.sleep(0.5)
         helper = Browser(client)
+        helper.profile = profile
+        helper.install_dir = install_dir
+        helper.process = process
         helper.wait(
             "typeof UC_API !== 'undefined'", timeout=30, message="fx-autoconfig did not load"
         )
@@ -289,9 +440,14 @@ def launched(
                };"""
         )
         yield helper
-        client.delete_session()
+        try:
+            client.delete_session()
+        except Exception:
+            if process.poll() is None:  # a test may have quit Firefox on purpose
+                raise
     finally:
         _stop(process)
+        shutil.rmtree(firefox_tmp, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
@@ -357,5 +513,25 @@ def browser_with_a_changed_settings_page(
     root = tmp_path_factory.mktemp("changed-settings")
     with launched(
         firefox_install, root, edit_script=_after_firefox_renames_the_pane_container
+    ) as helper:
+        yield helper
+
+
+def _after_firefox_renames_the_last_category(source: str) -> str:
+    """Pretend Firefox renamed ``gLastCategory``: the settings page asks for a name that is gone."""
+    if "@include        about:preferences*" not in source:
+        return source  # the script for the browser window is left alone
+    assert "gLastCategory" in source, "gLastCategory is not in the settings script"
+    return source.replace("gLastCategory", "gLastCategoryRenamedByFirefox")
+
+
+@pytest.fixture(scope="session")
+def browser_with_a_renamed_last_category(
+    firefox_install: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[Browser]:
+    """A Firefox whose about:preferences has no ``gLastCategory`` any more."""
+    root = tmp_path_factory.mktemp("renamed-last-category")
+    with launched(
+        firefox_install, root, edit_script=_after_firefox_renames_the_last_category
     ) as helper:
         yield helper

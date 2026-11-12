@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
+from marionette_driver.keys import Keys
 
 pytestmark = pytest.mark.browser
 
@@ -15,14 +18,13 @@ KEYDOWN_IN_PAGE = """
     altKey: arguments[3].includes('a'), shiftKey: arguments[3].includes('s'),
     metaKey: arguments[3].includes('m'), bubbles: true, cancelable: true,
   }));
+"""
+PROBLEM = """
+  const input = doc.getElementById(arguments[0]);
   return input.closest('div').parentNode.querySelector('.pf-problem').textContent;
 """
 PANE = "gBrowser.selectedBrowser.contentDocument.getElementById('peekafoxy-pane')"
 FIELD = "gBrowser.selectedBrowser.contentDocument.getElementById('peekafoxy-%s')"
-KEYDOWN = """
-  window.dispatchEvent(new KeyboardEvent('keydown',
-    {code: arguments[0], ctrlKey: true, altKey: true, bubbles: true, cancelable: true}));
-"""
 OPEN_TAB = (
     "gBrowser.addTab('about:blank', "
     "{triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});"
@@ -50,6 +52,17 @@ def clean(browser):
     reset()
 
 
+def problem_under(browser, field_id: str, settle: float = 0.6) -> str:
+    """The message under a field. It is announced a moment after the change (so that the same
+    message twice is announced twice), hence the wait; an empty answer is only trusted after it."""
+    deadline = time.monotonic() + settle
+    while True:
+        text = browser.settings(PROBLEM, field_id)
+        if text or time.monotonic() >= deadline:
+            return text
+        time.sleep(0.05)
+
+
 def root_var(browser, name: str) -> str:
     return browser.js("return document.documentElement.style.getPropertyValue(arguments[0]);", name)
 
@@ -75,7 +88,7 @@ def test_the_category_is_listed_and_opens_its_pane_from_the_address(browser):
     )
     assert shown == {
         "current": "panePeekafoxy",
-        "label": "Peek-a-Foxy",
+        "label": "Peek a Foxy",
         "hash": "#peekafoxy",
         "visible": ["panePeekafoxy"],
     }
@@ -123,13 +136,14 @@ def test_the_controls_show_the_current_prefs(browser):
                    urlbar: v('peekafoxy-peekafoxy.urlbar.shortcut').value,
                    startTabs: v('peekafoxy-peekafoxy.tabs.autohide').checked};"""
     )
+    tabs, urlbar = browser.default_shortcut("tabs"), browser.default_shortcut("urlbar")
     assert shown == {
         "strip": "20",
         "show": "120",
         "hide": "300",
         "flash": "1500",
-        "tabs": "Ctrl+Alt+T",
-        "urlbar": "Ctrl+Alt+U",
+        "tabs": tabs,
+        "urlbar": urlbar,
         "startTabs": False,
     }
 
@@ -147,14 +161,14 @@ def test_a_pref_changed_elsewhere_updates_the_open_page(browser):
 
 
 def set_number(browser, pref: str, value: str) -> str:
-    return browser.settings(
+    browser.settings(
         """const input = doc.getElementById('peekafoxy-' + arguments[0]);
            input.value = arguments[1];
-           input.dispatchEvent(new win.Event('change', {bubbles: true}));
-           return input.closest('div').parentNode.querySelector('.pf-problem').textContent;""",
+           input.dispatchEvent(new win.Event('change', {bubbles: true}));""",
         pref,
         value,
     )
+    return problem_under(browser, f"peekafoxy-{pref}")
 
 
 def test_a_number_is_saved_as_a_real_pref(browser):
@@ -255,6 +269,12 @@ def test_the_timings_are_applied_as_css_variables(browser):
         "document.documentElement.style.getPropertyValue('--autohide-show-duration') === '250ms'"
     )
     assert root_var(browser, "--autohide-hide-delay") == "900ms"
+    # The media query for reduced motion is re-evaluated a moment after the pref changes, so wait
+    # for the value to settle instead of reading it once.
+    browser.wait(
+        "getComputedStyle(document.documentElement).getPropertyValue('--autohide-hide').trim()"
+        " === '0.2s ease-in 900ms'"
+    )
     computed = browser.js(
         "return getComputedStyle(document.documentElement)"
         ".getPropertyValue('--autohide-hide').trim();"
@@ -307,9 +327,9 @@ def test_the_starting_state_of_new_windows_comes_from_the_checkboxes(browser):
 
 
 def record(browser, field: str, key: str, code: str, mods: str) -> str:
-    return browser.settings(
-        KEYDOWN_IN_PAGE, f"peekafoxy-peekafoxy.{field}.shortcut", key, code, mods
-    )
+    field_id = f"peekafoxy-peekafoxy.{field}.shortcut"
+    browser.settings(KEYDOWN_IN_PAGE, field_id, key, code, mods)
+    return problem_under(browser, field_id)
 
 
 def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
@@ -321,9 +341,9 @@ def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
     )
     browser.close_settings_tabs()
 
-    browser.js(KEYDOWN, "KeyT")  # the old one does nothing now
+    browser.keydown("KeyT")  # the old one does nothing now
     assert not browser.js(f"return {HAS};", "autohide-tabs")
-    browser.js(KEYDOWN, "KeyG")
+    browser.keydown("KeyG", shift=False)
     assert browser.js(f"return {HAS};", "autohide-tabs")
     assert "Ctrl+Alt+G" in browser.js(
         "return CustomizableUI.getWidget('tabs-autohide-button').forWindow(window).node"
@@ -334,11 +354,10 @@ def test_a_recorded_shortcut_replaces_the_old_one_in_every_window(browser):
 @pytest.mark.parametrize(
     ("key", "code", "mods", "message"),
     [
-        ("g", "KeyG", "", "Include Ctrl, Alt or Meta."),
-        ("g", "KeyG", "s", "Include Ctrl, Alt or Meta."),
-        ("Enter", "Enter", "ca", "That key cannot be used."),
-        ("ArrowUp", "ArrowUp", "ca", "That key cannot be used."),
-        ("u", "KeyU", "ca", "The other bar already uses this shortcut."),
+        ("g", "KeyG", "", "Add Ctrl, Alt or Meta."),
+        ("g", "KeyG", "s", "Add Ctrl, Alt or Meta."),
+        ("ArrowUp", "ArrowUp", "ca", "That key can't be used."),
+        ("u", "KeyU", "cas", "The other bar already uses this shortcut."),
     ],
 )
 def test_a_bad_shortcut_is_refused_with_a_message_and_changes_nothing(
@@ -359,7 +378,7 @@ def test_pressing_only_a_modifier_waits_and_tab_still_leaves_the_field(browser):
 def test_a_shortcut_that_is_garbage_in_the_pref_falls_back_to_the_default(browser):
     browser.js("Services.prefs.setStringPref('peekafoxy.tabs.shortcut', 'Ctrl+Nonsense+');")
     browser.wait("Services.prefs.getStringPref('peekafoxy.tabs.shortcut') === 'Ctrl+Nonsense+'")
-    browser.js(KEYDOWN, "KeyT")
+    browser.keydown("KeyT")
     assert browser.js(f"return {HAS};", "autohide-tabs")
 
 
@@ -368,32 +387,9 @@ def test_the_two_bars_can_swap_their_shortcuts(browser):
     assert record(browser, "tabs", "g", "KeyG", "ca") == ""
     assert record(browser, "urlbar", "t", "KeyT", "ca") == ""  # free now
     browser.close_settings_tabs()
-    browser.js(KEYDOWN, "KeyT")
+    browser.keydown("KeyT", shift=False)  # recorded as Ctrl+Alt+T, without Shift
     assert browser.js(f"return {HAS};", "autohide-urlbar")
     assert not browser.js(f"return {HAS};", "autohide-tabs")
-
-
-# --- the greeting --------------------------------------------------------------------------------
-
-
-def test_show_the_greeting_again_resets_the_pref_for_the_next_window(browser):
-    assert browser.js("return Services.prefs.getBoolPref('peekafoxy.welcomed');") is True
-    browser.open_settings("#peekafoxy")
-    browser.settings("doc.getElementById('peekafoxy-greeting').click();")
-    assert browser.js("return Services.prefs.getBoolPref('peekafoxy.welcomed');") is False
-    assert "next window" in browser.settings(
-        "return doc.getElementById('peekafoxy-greeting').parentNode"
-        ".querySelector('.pf-note').textContent;"
-    )
-    browser.close_settings_tabs()
-    browser.new_window()
-    browser.wait(
-        "[...window.gNotificationBox.allNotifications]"
-        ".some(n => n.getAttribute('value') === 'peekafoxy-welcome')",
-        message="the greeting did not come back",
-    )
-    browser.js("window.close();")
-    browser.switch_to(browser.first_window)
 
 
 # --- languages and a Firefox that changed --------------------------------------------------------
@@ -413,20 +409,16 @@ def test_the_page_is_in_portuguese_for_a_portuguese_firefox(browser_in_portugues
     assert texts == {
         "group": [
             "Novas janelas",
-            "Revelar a barra de abas quando",
+            "Mostrar a barra de abas ao:",
             "Tamanho e tempos",
+            "Barra de favoritos",
             "Atalhos",
-            "Saudação",
+            "Suporte",
         ],
-        "start": "Ocultar a barra de abas automaticamente em novas janelas",
-        "reset": "Restaurar",
+        "start": "Ocultar a barra de abas em novas janelas",
+        "reset": "Restaurar padrão",
     }
-    message = browser.settings(
-        """const input = doc.getElementById('peekafoxy-peekafoxy.strip.px');
-           input.value = '99'; input.dispatchEvent(new win.Event('change', {bubbles: true}));
-           return input.closest('div').parentNode.querySelector('.pf-problem').textContent;"""
-    )
-    assert message == "Digite um número entre 1 e 40."
+    assert set_number(browser, "peekafoxy.strip.px", "99") == "Digite um número entre 1 e 40."
     browser.close_settings_tabs()
 
 
@@ -458,6 +450,32 @@ def test_when_firefox_changes_the_page_nothing_breaks_and_the_console_says_why(
     browser.close_settings_tabs()
 
 
+def test_when_firefox_renames_the_last_category_the_page_is_not_left_half_installed(
+    browser_with_a_renamed_last_category,
+):
+    """Adversarial: opened straight at #peekafoxy, the page used to attach itself and then fail."""
+    browser = browser_with_a_renamed_last_category
+    browser.open_settings("#peekafoxy")
+    browser.wait(
+        "gBrowser.selectedBrowser.contentDocument.getElementById('category-downloads')", 10
+    )
+    time.sleep(1)  # the script has run by now, whichever way it went
+    assert browser.settings("return doc.getElementById('category-peekafoxy');") is None
+    assert browser.settings("return doc.getElementById('peekafoxy-pane');") is None
+    messages = browser.js(
+        """const storage = Cc["@mozilla.org/consoleAPI-storage;1"]
+             .getService(Ci.nsIConsoleAPIStorage);
+           return storage.getEvents().filter(e => e.level === "warn")
+             .map(e => e.arguments.map(String).join(" "))
+             .filter(m => m.includes("peekafoxy settings"));"""
+    )
+    assert any("gLastCategoryRenamedByFirefox" in m for m in messages), (
+        messages
+    )  # it names the cause
+    assert browser.js("return !!document.getElementById('tabs-autohide-button');") is True
+    browser.close_settings_tabs()
+
+
 def test_prefs_are_real_and_listed_with_their_types(browser):
     types = browser.js(
         """const out = {};
@@ -471,11 +489,21 @@ def test_prefs_are_real_and_listed_with_their_types(browser):
         "peekafoxy.urlbar.autohide": "bool",
         "peekafoxy.strip.px": "int",
         "peekafoxy.show.ms": "int",
+        "peekafoxy.tabs.strip.px": "int",
+        "peekafoxy.urlbar.strip.px": "int",
+        "peekafoxy.hide.ms": "int",
+        "peekafoxy.show.delay.ms": "int",
+        "peekafoxy.easing": "string",
+        "peekafoxy.bookmarks": "string",
         "peekafoxy.hide.delay.ms": "int",
         "peekafoxy.tabs.flash.ms": "int",
         "peekafoxy.tabs.reveal.switch": "bool",
         "peekafoxy.tabs.reveal.new": "bool",
         "peekafoxy.tabs.reveal.link": "bool",
+        "peekafoxy.tabs.reveal.load": "bool",
+        "peekafoxy.tabs.reveal.download": "bool",
+        "peekafoxy.tabs.reveal.title": "bool",
+        "peekafoxy.tabs.reveal.move": "bool",
         "peekafoxy.tabs.shortcut": "string",
         "peekafoxy.urlbar.shortcut": "string",
         "peekafoxy.welcomed": "bool",
@@ -503,7 +531,7 @@ def test_reduced_motion_still_wins_over_the_timing_settings(browser):
         browser.js("Services.prefs.clearUserPref('ui.prefersReducedMotion');")
 
 
-@pytest.mark.parametrize("name", ["switch", "new", "link"])
+@pytest.mark.parametrize("name", ["switch", "new", "link", "move"])
 def test_the_reveal_checkboxes_start_on_and_write_real_prefs(browser, name):
     pref = f"peekafoxy.tabs.reveal.{name}"
     browser.open_settings("#peekafoxy")
@@ -515,12 +543,184 @@ def test_the_reveal_checkboxes_start_on_and_write_real_prefs(browser, name):
     browser.wait(f"{FIELD % pref}.checked === true", message="the box did not follow the pref")
 
 
-def test_the_shortcut_hint_matches_the_operating_system_running_firefox(browser):
+def test_the_shortcut_hint_has_the_windows_note_only_on_windows(browser):
     browser.open_settings("#peekafoxy")
     system = browser.js("return Services.appinfo.OS;")
     hint = browser.settings(
         "return doc.getElementById('peekafoxy-peekafoxy.urlbar.shortcut')"
-        ".closest('.pf-card').querySelector('.pf-note').textContent;"
+        ".closest('.pf-card').lastElementChild.textContent;"
     )
-    assert ("GNOME" in hint) is (system == "Linux")
+    assert "GNOME" not in hint  # no system-specific note besides the AltGr one on Windows
     assert ("AltGr" in hint) is (system == "WINNT")
+
+
+# --- the three extra reasons to open the tab bar (all off by default) -------------------------
+
+FLASHING = "document.documentElement.hasAttribute('tabs-flash')"
+REMOVE_TABS = (
+    "for (const tab of [...gBrowser.tabs].slice(1)) gBrowser.removeTab(tab);"
+    "document.documentElement.removeAttribute('tabs-flash');"
+)
+CLEAR_FLASH = (
+    REMOVE_TABS + "Services.prefs.setIntPref('peekafoxy.tabs.flash.ms', 4000);"
+    "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.new', false);"
+    "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.link', false);"
+    "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.switch', false);"
+    "Services.prefs.setBoolPref('peekafoxy.tabs.reveal.move', false);"
+)
+RESET_FLASH = (
+    "for (const name of ['load', 'download', 'title', 'move', 'new', 'link', 'switch'])"
+    " Services.prefs.clearUserPref('peekafoxy.tabs.reveal.' + name);"
+    "Services.prefs.clearUserPref('peekafoxy.tabs.flash.ms');"
+)
+
+
+@pytest.fixture()
+def quiet_flash(browser):
+    """Only the reason under test can flash the bar: the other three stay off."""
+    browser.js(CLEAR_FLASH)
+    yield
+    browser.js(RESET_FLASH)
+    browser.js(REMOVE_TABS)
+
+
+@pytest.mark.parametrize("name", ["load", "download", "title"])
+def test_the_extra_reveal_checkboxes_start_off_and_write_real_prefs(browser, name):
+    pref = f"peekafoxy.tabs.reveal.{name}"
+    browser.open_settings("#peekafoxy")
+    box = f"doc.getElementById('peekafoxy-{pref}')"
+    assert browser.settings(f"return {box}.checked;") is False
+    browser.settings(f"{box}.checked = true; {box}.dispatchEvent(new win.Event('change'));")
+    assert browser.js("return Services.prefs.getBoolPref(arguments[0]);", pref) is True
+    browser.js("Services.prefs.clearUserPref(arguments[0]);", pref)
+    browser.wait(f"{FIELD % pref}.checked === false", message="the box did not follow the pref")
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_a_page_finishing_to_load_flashes_the_bar_only_when_asked(browser, quiet_flash, enabled):
+    browser.js(f"Services.prefs.setBoolPref('peekafoxy.tabs.reveal.load', {str(enabled).lower()});")
+    browser.js(
+        "gBrowser.selectedBrowser.loadURI(Services.io.newURI(arguments[0]), "
+        "{triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});",
+        "data:text/html,<title>loaded</title>hello",
+    )
+    if enabled:
+        browser.wait(FLASHING, 5, "the finished load did not flash the bar")
+    else:
+        time.sleep(1.5)
+        assert not browser.js(f"return {FLASHING};")
+
+
+def test_a_page_loading_in_the_background_does_not_flash_the_bar(browser, quiet_flash):
+    """Adversarial: the reason is the current tab's page, not any tab's."""
+    browser.js("Services.prefs.setBoolPref('peekafoxy.tabs.reveal.load', true);")
+    browser.js(
+        "const tab = gBrowser.addTab(arguments[0], {inBackground: true, "
+        "triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});",
+        "data:text/html,<title>background</title>quiet",
+    )
+    time.sleep(2)
+    assert not browser.js(f"return {FLASHING};")
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_a_finished_download_flashes_the_bar_only_when_asked(browser, quiet_flash, enabled):
+    browser.js(
+        f"Services.prefs.setBoolPref('peekafoxy.tabs.reveal.download', {str(enabled).lower()});"
+    )
+    browser.js(
+        """(async () => {
+             const { Downloads } = ChromeUtils.importESModule('resource://gre/modules/Downloads.sys.mjs');
+             const dir = Services.dirsvc.get('ProfD', Ci.nsIFile).path;
+             const target = PathUtils.join(dir, 'flash-test.txt');
+             const source = 'data:text/plain,hello';
+             const download = await Downloads.createDownload({source, target});
+             (await Downloads.getList(Downloads.ALL)).add(download);
+             await download.start();
+           })();"""
+    )
+    if enabled:
+        browser.wait(FLASHING, 5, "the finished download did not flash the bar")
+    else:
+        time.sleep(1.5)
+        assert not browser.js(f"return {FLASHING};")
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_a_background_tab_changing_its_title_flashes_the_bar_only_when_asked(
+    browser, quiet_flash, enabled
+):
+    browser.js(
+        f"Services.prefs.setBoolPref('peekafoxy.tabs.reveal.title', {str(enabled).lower()});"
+    )
+    browser.js(
+        "gBrowser.addTab(arguments[0], {inBackground: true, "
+        "triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});",
+        "data:text/html,<title>one</title>"
+        "<script>setTimeout(() => document.title = 'two', 1500)</script>",
+    )
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 3)
+    if enabled:
+        browser.wait(FLASHING, 8, "the changed title did not flash the bar")
+    else:
+        time.sleep(3)
+        assert not browser.js(f"return {FLASHING};")
+
+
+TABS_IN_A_ROW = """
+  for (let i = 0; i < 2; i++) {
+    gBrowser.addTab('about:blank', {
+      inBackground: true, triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+  }
+  gBrowser.selectedTab = gBrowser.tabs[2];
+  window.focus(); gBrowser.selectedBrowser.focus();
+  document.documentElement.removeAttribute('tabs-flash');
+"""
+SELECTED_INDEX = "return [...gBrowser.tabs].indexOf(gBrowser.selectedTab);"
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_moving_a_tab_with_the_keyboard_flashes_the_bar_only_when_asked(
+    browser, quiet_flash, enabled
+):
+    """Real keys: Ctrl+Shift+PageUp moves the selected tab one place to the left."""
+    browser.js(f"Services.prefs.setBoolPref('peekafoxy.tabs.reveal.move', {str(enabled).lower()});")
+    browser.js(TABS_IN_A_ROW)
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 3)
+    assert browser.js(SELECTED_INDEX) == 2
+    browser.real_keys(Keys.PAGE_UP, Keys.CONTROL, Keys.SHIFT)
+    browser.wait(
+        "[...gBrowser.tabs].indexOf(gBrowser.selectedTab) === 1", 5, "the tab did not move"
+    )
+    if enabled:
+        browser.wait(FLASHING, 5, "the moved tab did not flash the bar")
+    else:
+        time.sleep(1.5)
+        assert not browser.js(f"return {FLASHING};")
+
+
+def test_moving_a_tab_in_both_directions_and_by_code_flashes_each_time(browser, quiet_flash):
+    """Adversarial: down as well as up, and a move made by the browser's own code."""
+    browser.js("Services.prefs.setBoolPref('peekafoxy.tabs.reveal.move', true);")
+    browser.js(TABS_IN_A_ROW)
+    for move in (
+        "gBrowser.moveTabTo(gBrowser.selectedTab, {tabIndex: 0});",
+        "gBrowser.moveTabForward();",
+        "gBrowser.moveTabBackward();",
+    ):
+        browser.js("document.documentElement.removeAttribute('tabs-flash');")
+        browser.js(move)
+        browser.wait(FLASHING, 5, f"{move} did not flash the bar")
+
+
+def test_the_tab_that_stays_where_it_is_does_not_flash(browser, quiet_flash):
+    """Adversarial: pressing the move key on the first tab moves nothing, so nothing flashes."""
+    browser.js("Services.prefs.setBoolPref('peekafoxy.tabs.reveal.move', true);")
+    browser.js(TABS_IN_A_ROW)
+    browser.js("gBrowser.selectedTab = gBrowser.tabs[0]; gBrowser.selectedBrowser.focus();")
+    browser.wait("!document.documentElement.hasAttribute('tabs-flash')", 3)
+    browser.real_keys(Keys.PAGE_UP, Keys.CONTROL, Keys.SHIFT)
+    time.sleep(1.5)
+    assert not browser.js(f"return {FLASHING};")
+    assert browser.js(SELECTED_INDEX) == 0

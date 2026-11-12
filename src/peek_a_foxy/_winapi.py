@@ -8,6 +8,7 @@ Only imported on Windows. Everything else (what to run, what the exit codes mean
 from __future__ import annotations
 
 import ctypes
+import os
 from ctypes import wintypes
 
 SEE_MASK_NOCLOSEPROCESS = 0x00000040
@@ -15,6 +16,12 @@ SEE_MASK_NOASYNC = 0x00000100
 WAIT_OBJECT_0 = 0
 WAIT_TIMEOUT = 0x102
 ERROR_CANCELLED = 1223  # the user said no to the UAC prompt
+FILE_APPEND_DATA = 0x0004
+SYNCHRONIZE = 0x00100000
+FILE_SHARE_ALL = 0x1 | 0x2 | 0x4  # read, write and delete (a rotation renames the file)
+OPEN_ALWAYS = 4
+FILE_ATTRIBUTE_NORMAL = 0x80
+INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 
 class ElevationFailed(OSError):
@@ -41,8 +48,31 @@ class _ShellExecuteInfo(ctypes.Structure):  # pragma: no cover
     ]
 
 
+def short_path(path: str) -> str | None:  # pragma: no cover
+    """The 8.3 name of an existing folder (``C:\\Users\\ANAMAR~1``), or ``None``."""
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    kernel32.GetShortPathNameW.restype = wintypes.DWORD
+    buffer = ctypes.create_unicode_buffer(32768)
+    size = kernel32.GetShortPathNameW(path, buffer, len(buffer))
+    return buffer.value if 0 < size < len(buffer) else None
+
+
 def is_admin() -> bool:  # pragma: no cover
     return bool(ctypes.windll.shell32.IsUserAnAdmin())
+
+
+def system_directory() -> str:  # pragma: no cover
+    """The system folder (``C:\\Windows\\System32``) from Windows itself, not from SystemRoot."""
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetSystemDirectoryW.argtypes = [wintypes.LPWSTR, wintypes.UINT]
+    kernel32.GetSystemDirectoryW.restype = wintypes.UINT
+    buffer = ctypes.create_unicode_buffer(wintypes.MAX_PATH + 1)
+    length = kernel32.GetSystemDirectoryW(buffer, len(buffer))
+    # 0 is a failure; a length that does not fit is the size it would need, which is not normal.
+    if length == 0 or length >= len(buffer):
+        raise ElevationFailed(ctypes.get_last_error(), "could not read the system folder")
+    return buffer.value
 
 
 def run_elevated(
@@ -84,3 +114,43 @@ def run_elevated(
         return int(code.value)
     finally:
         kernel32.CloseHandle(info.hProcess)
+
+
+def open_for_appending(path: str) -> int:  # pragma: no cover
+    """A file descriptor that can only add to the end of ``path``, which is created if missing.
+
+    The C runtime's append mode moves to the end of the file and then writes: two steps, and a
+    second process writing to the same file can come in between and have its line overwritten.
+    A handle with the right to append but not to write elsewhere makes Windows itself put every
+    write at the end, in one step.
+    """
+    import msvcrt
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.CreateFileW(
+        path,
+        FILE_APPEND_DATA | SYNCHRONIZE,
+        FILE_SHARE_ALL,
+        None,
+        OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        None,
+    )
+    if handle is None or handle == INVALID_HANDLE_VALUE:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return int(msvcrt.open_osfhandle(handle, os.O_APPEND))
+    except BaseException:
+        kernel32.CloseHandle(handle)
+        raise

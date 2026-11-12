@@ -71,13 +71,17 @@ def test_the_caveats_are_decided_by_what_happened(skipped_loader, loader_conflic
 # --- a failure says what was left behind --------------------------------------------------------
 
 
-def break_the_second_step(profile: Path) -> None:
-    """userChrome.css being a directory fails the @import step, after the files were copied."""
-    (profile / "chrome" / "userChrome.css").mkdir()
+def break_the_second_step(profile: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Writing userChrome.css is refused: the @import step fails after the files were copied."""
+
+    def refused(path: Path, *args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr("peek_a_foxy.installer._write", refused)
 
 
-def test_a_failure_in_the_middle_says_which_steps_were_done(profile: Path):
-    break_the_second_step(profile)
+def test_a_failure_in_the_middle_says_which_steps_were_done(profile: Path, monkeypatch):
+    break_the_second_step(profile, monkeypatch)
     result = install(profile, None)
     assert result.exit_code == 1 and "Traceback" not in result.output
     assert (profile / "chrome" / "autohide.css").is_file()  # step 1 really ran
@@ -106,13 +110,13 @@ def test_a_failure_in_uninstall_is_reported_the_same_way(profile: Path, monkeypa
     monkeypatch.setattr("peek_a_foxy.installer.userfiles.without_css_import", broken)
     result = runner.invoke(app, ["uninstall", "--profile", str(profile), "--yes"])
     assert result.exit_code == 1
-    assert "1 of 3 steps finished" in result.output
+    assert "2 of 4 steps finished" in result.output  # the status file step is the second
 
 
-def test_the_failed_step_is_named_in_odd_paths_literally(tmp_path: Path):
+def test_the_failed_step_is_named_in_odd_paths_literally(tmp_path: Path, monkeypatch):
     profile = tmp_path / "[/x]"
     (profile / "chrome").mkdir(parents=True)
-    break_the_second_step(profile)
+    break_the_second_step(profile, monkeypatch)
     result = install(profile, None)
     assert result.exit_code == 1 and "Traceback" not in result.output
     assert "1 of 3 steps finished" in result.output
