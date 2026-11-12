@@ -48,7 +48,7 @@ bookmarks 0.
 | 13 | Pointer moves from the navigation bar down into the bookmarks bar (follow) | - | stays open | stays open | `chrome/autohide.css:157` (`:not(:has(#PersonalToolbar:is(:hover, :focus-within)))`), `:174`, `:212` | `test_pointer.py::test_moving_into_the_bookmarks_bar_keeps_the_navigation_group_open` (:207) | suite pass / pass / pass |
 | 14 | Pointer on a `visible` bookmarks bar | - | must stay collapsed | visible | `chrome/autohide.css:159-160` has no bookmarks-hover clause; `:174` excludes `visible` | `test_pointer.py::...stay_visible_while_the_navigation_bar_hides` (:376) | suite pass / **FAIL** (the pointer lands on the ESR ghost urlbar and the nav bar opens to 41 px) / pass |
 | 15 | Pointer drifts off a bar and comes back within the hide delay | stays open | stays open | - | `--autohide-hide` with delay, `chrome/autohide.css:37` | `test_pointer.py::test_drifting_off_a_bar_and_back_within_the_hide_delay_does_not_close_it` (:240, tabs and nav, both variants) | suite pass / pass / pass |
-| 16 | Show delay applies only when the pointer alone opens the bar (not for focus, flash, popup, drag or peek) | - | - | - | `chrome/autohide.css:220-229` (`transition-delay` only under `:hover:not(:focus-within…)` and without the root markers) | delay itself: `test_pointer.py::test_the_pointer_must_rest_for_the_show_delay_before_a_bar_opens` (:273). That focus or flash skip the delay: **none** | suite pass / pass / pass (the delay part only) |
+| 16 | Show delay applies only when the pointer alone opens the bar (not for focus, flash, popup, drag or peek) | - | - | - | `chrome/autohide.css:220-229` (`transition-delay` only under `:hover:not(:focus-within…)` and without the root markers) | delay itself: `test_pointer.py::test_the_pointer_must_rest_for_the_show_delay_before_a_bar_opens` (:273). focus keys, a tab-switch flash and a real application menu skip it: `test_real_popups.py::test_the_real_focus_keys_do_not_wait_for_the_show_delay`, `::test_a_tab_switch_flash_does_not_wait_for_the_show_delay`, `::test_a_real_popup_does_not_wait_for_the_show_delay` | suite pass / pass / pass (R / E / B) |
 | 17 | `customtitlebar`: pointer over the window buttons (minimize/maximize/close) | the tabs open (the whole row is the hover target) | - | - | `chrome/autohide.css:97` / `:115` (`#TabsToolbar:hover .toolbar-items`) | `test_pointer.py` customtitlebar variants hover the row's centre, not the buttons. Buttons: **none** | read |
 | 18 | Per-bar strip heights (0 = follow the shared one) | strip = `peekafoxy.tabs.strip.px` or `strip.px` | strip = `urlbar.strip.px` or `strip.px` | - | `chrome/autohide.uc.js:104-112`, `chrome/autohide.css:39-41` | `test_pointer.py::test_each_bar_can_have_a_strip_of_its_own_and_zero_follows_the_shared_one` (:298); `test_settings.py::test_the_strip_height_really_changes_how_far_a_bar_collapses` (:228) | suite pass / pass / pass |
 
@@ -62,7 +62,7 @@ bookmarks 0.
 | 22 | Keyboard focus on a button of the navigation bar (toolbar keyboard navigation) | - | open | open | `chrome/autohide.css:170`, `:208` | **none** | read |
 | 23 | New tab (**Ctrl+T**, `BrowserCommands.openTab()`) | flashes for `flash.ms` (1500 ms) | **stays open as long as the urlbar keeps the focus** (Firefox focuses it for a new tab) | open with it | flash: `chrome/autohide.uc.js:253-262`; nav: `chrome/autohide.css:170` | flash: `test_triggers.py::test_every_trigger_opens_the_bar_by_default[new tab, selected]` (:75), attribute only. Nav staying open: **none** | probe: at 0.4 s tabs 36, nav 37, bookmarks 23; at 2.4 s tabs 8, nav and bookmarks still open (urlbar focused) on R / E / B |
 | 24 | New window (urlbar may take the focus) | - | open while the urlbar is focused | open | `chrome/autohide.css:170` | none. The suite deliberately blurs the urlbar of every new window (`tests/browser/conftest.py:160-171`, `settle_window`) | not run (see section 3) |
-| 25 | Window becomes inactive (another window takes the focus) while its urlbar is focused | - | **closes**: `gURLBar.focused` stays true, but `#nav-bar:focus-within` is false | closes | `:focus-within` does not match in an inactive window, so `chrome/autohide.css:170` stops matching | **none** | probe (headless): nav 37 → 8, bookmarks 23 → 0 on R / E / B |
+| 25 | Window becomes inactive (another window takes the focus) while its urlbar is focused | - | **closes**: `gURLBar.focused` stays true, but `#nav-bar:focus-within` is false | closes | `:focus-within` does not match in an inactive window, so `chrome/autohide.css:170` stops matching | `test_real_popups.py::test_the_navigation_bar_of_a_window_that_is_not_in_front_stays_hidden` (decided in #88: it stays hidden) | suite pass / pass / pass |
 | 26 | Find bar open (**Ctrl+F**) | stays collapsed | stays collapsed | stays collapsed | the find bar is outside `#navigator-toolbox`; nothing reveals | none | probe: no change on R / E / B |
 
 ### D. Tab flashes (`tabs-flash` on the root)
@@ -158,13 +158,7 @@ button, its shortcut and every flash do nothing visible, and the probe found no 
 
 **G4. Tab changes that produce no flash (closed, #87).** Closing a background tab, pinning or unpinning, muting or unmuting and a background tab asking for attention are now reasons of their own, each a preference that is off by default (situations 35 to 35d). The keyboard tab move has its own reason since `reveal.move`.
 
-**G5. An inactive window drops its navigation bar even with the urlbar focused (decide).** #25. Switching to
-Tracked in #88.
-
-another window collapses the nav bar of the window where you were typing, and it opens again when you come back.
-That may be what people want. It is untested either way.
-- Proposed test (whichever behaviour is chosen): focus the urlbar in window A, open window B, and read A's nav
-  height without focusing A (`switch_to_window(a, focus=False)`).
+**G5. An inactive window drops its navigation bar even with the urlbar focused (decided, #88).** The bar stays hidden in a window that is not in front; the decision is pinned by `test_the_navigation_bar_of_a_window_that_is_not_in_front_stays_hidden`. Whether the bar comes back when the window is brought forward again was not tested.
 
 **G6. A new tab, and probably a new window, leave the navigation bar open until the focus moves (decide).** #23,
 Tracked in #89.
@@ -190,21 +184,13 @@ exclude `[peekafoxy-bookmarks="visible"]`, so while the nav group is revealed a 
 `max-height: 40px` with no `overflow: hidden` (the base rule at `:188` excludes `visible`). Not triggered at default
 or touch density (35 px). It only matters for a bookmarks bar taller than 40 px.
 
-**G9. Weaker spots in existing tests (coverage, not behaviour).**
-Tracked in #92.
+**G9. Weaker spots in existing tests (closed, #92).**
 
-- `test_in_firefox.py:230` (Customize) and `:252` (full screen) assert only the navigation bar. Also assert the tab
-  bar and the bookmarks bar.
-- The tab context menu (`test_customtitlebar.py:141`) and tab-strip focus (`:133`) are tested only with
-  `customtitlebar`, and the context menu only by setting `state` by hand. Add a native-title-bar variant that opens
-  the real menu (`openPopupAtScreen(x, y, true, event)` with an event dispatched on the tab, as the probe did).
-- The `open` markers (`test_popups.py:299`) and the nav popups (`:255`) use hand-set attributes or synthetic panels.
-  The probe showed that the real app menu, extensions panel, downloads panel, `PopupNotifications` and urlbar
-  results all work. A test with `PanelUI.show()` and `PopupNotifications.show(...)` would catch a Firefox change in
-  how those are anchored.
-- No test uses the real focus keys (Ctrl+L, F6, Alt+D, Ctrl+K). The suite already has `Browser.real_keys`
-  (`tests/browser/conftest.py:292-307`), and the probe used it successfully on all three builds.
-- Nothing checks that focus, flash or popup reveals skip the show delay (#16).
+- Customize Toolbar and full screen now check all three bars (`test_real_reveals.py`).
+- The real focus keys (Ctrl+L, Alt+D, F6, Ctrl+K) are pressed through `Browser.real_keys` (`test_real_reveals.py`).
+- `test_real_popups.py` opens the real application menu, a real permission notification (`PopupNotifications.show`) and the real tab context menu (`openPopupAtScreen` with an event dispatched on the tab), with the native title bar and with `customtitlebar`, and checks that each keeps its bar open until it closes.
+- The same file checks that the focus keys, a tab-switch flash and a real popup do not wait for the show delay (a 3 s delay, a 1.8 s limit). The delay tests fail when the delay is applied to every reveal.
+- Not covered: a keyboard-navigation focus on a button of the navigation bar (situation 22), and the other real panels (extensions, downloads, identity).
 
 ## 3. Not verified, and why
 
