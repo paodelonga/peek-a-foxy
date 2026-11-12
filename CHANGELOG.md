@@ -126,6 +126,7 @@ is and what controls it, with a *Known issues* section for what is not covered.
 - **`uninstall` removes `chrome/peekafoxy-status.json` and its `.tmp` leftover**, and only warns if something else is at that name.
 - **The weekly Firefox run also covers the ESR** (`latest-esr`), and every test job of the CI uploads a doctor report for its system and Python version.
 - **A link, a file or a tab dragged over a hidden bar opens it**, so it can be dropped there: a link on the tab strip opens in a new tab, a link on the address bar, a tab into another window's strip. The bar closes again when the item moves on to the page, leaves the window, or is dropped. The bookmarks bar has no strip of its own, so it opens together with the navigation bar.
+- **Four more reasons for the tab bar to open for a moment**, all off by default: a tab in the background is closed (`peekafoxy.tabs.reveal.close`), a tab is pinned or unpinned (`peekafoxy.tabs.reveal.pin`), a tab is muted or unmuted (`peekafoxy.tabs.reveal.mute`) and a tab in the background asks for attention (`peekafoxy.tabs.reveal.attention`). Each one is a checkbox in the group *Show the tab bar when*, with texts in English and Brazilian Portuguese. Closing the tab you are on is not one of them: the switch to the next tab already counts.
 
 ### Changed
 
