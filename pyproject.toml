@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "peek-a-foxy"
-version = "0.2.0"
+version = "0.3.0rc1"
 description = "Peek-a-boo for Foxys: autohide the tab bar and navigation bar per window. They hide, they peek, then BOOO! out when you hover."
 readme = "README.md"
 license = "MIT"

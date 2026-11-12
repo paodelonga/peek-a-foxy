@@ -23,8 +23,9 @@ OUTPUT_NAMES = {
 
 
 def render(version: str, sha256: str, output: Path) -> list[Path]:
-    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-        raise ValueError(f"version must look like 1.2.3, not {version!r}")
+    # A release candidate (0.3.0rc1, the way commitizen and PEP 440 write it) is allowed too.
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:rc\d+)?", version):
+        raise ValueError(f"version must look like 1.2.3 or 1.2.3rc1, not {version!r}")
     if not re.fullmatch(r"[0-9a-fA-F]{64}", sha256):
         raise ValueError("sha256 must be 64 hexadecimal digits")
     values = {"@VERSION@": version, "@SHA256@": sha256.lower(), "@SHA256_UPPER@": sha256.upper()}

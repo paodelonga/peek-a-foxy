@@ -15,7 +15,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 // The version of the Peek-a-Foxy files (a test keeps it equal to the package version).
-export const SCRIPT_VERSION = "0.2.0";
+export const SCRIPT_VERSION = "0.3.0rc1";
 
 // The default shortcuts, the same on every system. Ctrl+Alt+U is Firefox's own shortcut for the tabs
 // sidebar, so the navigation bar uses Ctrl+Alt+Shift+U.
